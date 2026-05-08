@@ -347,6 +347,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
           <select id="loginUser">
             <option value="">⏳ Loading users...</option>
+            <option value="admin">Admin (All Access)</option>
           </select>
         </div>
       </div>
@@ -435,7 +436,7 @@ let nextSl=1;
 //  GOOGLE SHEETS SYNC LAYER — REAL-TIME POLLING
 //  Replace GAS_URL below with your deployed Apps Script URL
 // ═══════════════════════════════════════════════════════════════
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbzHqKSJlEl3EM5E__LOrVEBrHVri_e56EcF2Qu6rhRQGLz2Bq40O3RR9OghB_dWOuJr/exec'; // ← TODO: paste your Web App URL here
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbw5-FJsgykgRUt7qW53mun5Vzi8ocNVFmrCJKufHOK10-vMnWpqlVT0_fTaqJFmsOVt/exec'; // ← TODO: paste your Web App URL here
 const POLL_INTERVAL_MS = 8000; // poll every 8 seconds
 
 let _syncDebounce = null;
@@ -574,9 +575,11 @@ async function initFromSheets() {
       PERSONS = data.users.filter(u => u.name !== 'admin').map(u => u.name);
       const sel = document.getElementById('loginUser');
       if (sel) {
-        sel.innerHTML = '<option value="">-- Choose your name --</option>'
-          + data.users.map(u => '<option value="'+u.name+'">'+u.name+'</option>').join('')
-          + '<option value="Sayed/Johir">Sayed / Johir (Shared)</option>'
+        const uOpts = data.users
+          .filter(u => u.name !== 'admin')
+          .map(u => '<option value="'+u.name+'">'+u.name+'</option>').join('');
+        sel.innerHTML = '<option value="">-- Select your name --</option>'
+          + uOpts
           + '<option value="admin">Admin (All Access)</option>';
       }
     }
@@ -661,8 +664,11 @@ async function populateLoginDropdown() {
 
       // Rebuild dropdown
       if (sel) {
+        const userOpts = users
+          .filter(u => u.name !== 'admin')
+          .map(u => '<option value="'+u.name+'">'+u.name+'</option>').join('');
         sel.innerHTML = '<option value="">-- Select your name --</option>'
-          + users.map(u => '<option value="'+u.name+'">'+u.name+'</option>').join('')
+          + userOpts
           + '<option value="admin">Admin (All Access)</option>';
       }
     } catch(e) {
@@ -688,7 +694,7 @@ function doLogin(){
   const u=document.getElementById('loginUser').value;
   const p=document.getElementById('loginPass').value.trim();
   const err=document.getElementById('loginErr');
-  if(!u){err.textContent='⚠ Please select your name.';err.style.display='block';return;}
+  if(!u){err.textContent='⚠ Please select your name from the list.';err.style.display='block';return;}
   if(CREDS[u]!==p){err.textContent='⚠ Incorrect password.';err.style.display='block';document.getElementById('loginPass').value='';return;}
   err.style.display='none';currentUser=u;openApp();
 }
