@@ -436,7 +436,7 @@ let nextSl=1;
 //  GOOGLE SHEETS SYNC LAYER — REAL-TIME POLLING
 //  Replace GAS_URL below with your deployed Apps Script URL
 // ═══════════════════════════════════════════════════════════════
-const GAS_URL = 'YOUR_GAS_URL_HERE'; // ← TODO: paste your Web App URL here
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbzHqKSJlEl3EM5E__LOrVEBrHVri_e56EcF2Qu6rhRQGLz2Bq40O3RR9OghB_dWOuJr/exec'; // ← TODO: paste your Web App URL here
 const POLL_INTERVAL_MS = 8000; // poll every 8 seconds
 
 let _syncDebounce = null;
@@ -456,8 +456,14 @@ async function gasGet(action='all') {
 async function gasPost(body) {
   if (!GAS_URL || GAS_URL === 'YOUR_GAS_URL_HERE') return;
   try {
-    await fetch(GAS_URL, {method:'POST', body:JSON.stringify(body)});
-  } catch(e) { setSyncStatus('error'); }
+    // mode:'no-cors' required when hosted on GitHub Pages (cross-origin POST to GAS)
+    await fetch(GAS_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: {'Content-Type': 'text/plain'},
+      body: JSON.stringify(body)
+    });
+  } catch(e) { console.warn('POST failed:', e); setSyncStatus('error'); }
 }
 
 // ── Sync indicator ───────────────────────────────────────────────
@@ -628,7 +634,31 @@ function actualBadge(k){
 
 // ─── LOGIN ───
 document.getElementById('loginBtn').onclick=async()=>{await initFromSheets();doLogin();};
-document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+
+// ── Page load: populate dropdown from Sheets immediately ──
+(async function populateLoginDropdown() {
+  if (!GAS_URL || GAS_URL === 'YOUR_GAS_URL_HERE') return;
+  try {
+    const res = await fetch(GAS_URL + '?action=users', {cache:'no-store'});
+    const data = await res.json();
+    if (!data.users || data.users.length === 0) return;
+
+    // Update local state
+    userRegistry = data.users;
+    data.users.forEach(u => { CREDS[u.name] = u.password; });
+    PERSONS = data.users.filter(u => u.name !== 'admin').map(u => u.name);
+
+    // Rebuild dropdown
+    const sel = document.getElementById('loginUser');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">-- Choose your name --</option>'
+      + data.users.map(u => '<option value="'+u.name+'">'+u.name+'</option>').join('')
+      + '<option value="admin">Admin (All Access)</option>';
+  } catch(e) {
+    console.warn('Could not pre-load users:', e);
+  }
+})();
+document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('loginBtn').click();});
 function doLogin(){
   const u=document.getElementById('loginUser').value;
   const p=document.getElementById('loginPass').value.trim();
