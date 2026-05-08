@@ -346,8 +346,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
         <div class="input-wrap">
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
           <select id="loginUser">
-            <option value="">-- Choose your name --</option>
-            <option value="admin">Admin (All Access)</option>
+            <option value="">⏳ Loading users...</option>
           </select>
         </div>
       </div>
@@ -636,28 +635,54 @@ function actualBadge(k){
 document.getElementById('loginBtn').onclick=async()=>{await initFromSheets();doLogin();};
 
 // ── Page load: populate dropdown from Sheets immediately ──
-(async function populateLoginDropdown() {
-  if (!GAS_URL || GAS_URL === 'YOUR_GAS_URL_HERE') return;
-  try {
-    const res = await fetch(GAS_URL + '?action=users', {cache:'no-store'});
-    const data = await res.json();
-    if (!data.users || data.users.length === 0) return;
-
-    // Update local state
-    userRegistry = data.users;
-    data.users.forEach(u => { CREDS[u.name] = u.password; });
-    PERSONS = data.users.filter(u => u.name !== 'admin').map(u => u.name);
-
-    // Rebuild dropdown
-    const sel = document.getElementById('loginUser');
-    if (!sel) return;
-    sel.innerHTML = '<option value="">-- Choose your name --</option>'
-      + data.users.map(u => '<option value="'+u.name+'">'+u.name+'</option>').join('')
+// ── Populate login dropdown (with retry) ──────────────────────
+async function populateLoginDropdown() {
+  const sel = document.getElementById('loginUser');
+  if (!GAS_URL || GAS_URL === 'YOUR_GAS_URL_HERE') {
+    if (sel) sel.innerHTML = '<option value="">-- Choose your name --</option>'
       + '<option value="admin">Admin (All Access)</option>';
-  } catch(e) {
-    console.warn('Could not pre-load users:', e);
+    return;
   }
-})();
+
+  let attempts = 0;
+  const maxAttempts = 5;
+
+  async function tryFetch() {
+    attempts++;
+    try {
+      const res = await fetch(GAS_URL + '?action=users', {cache:'no-store'});
+      const data = await res.json();
+
+      const users = data.users || [];
+      // Update local state
+      userRegistry = users;
+      users.forEach(u => { CREDS[u.name] = u.password; });
+      PERSONS = users.filter(u => u.name !== 'admin').map(u => u.name);
+
+      // Rebuild dropdown
+      if (sel) {
+        sel.innerHTML = '<option value="">-- Select your name --</option>'
+          + users.map(u => '<option value="'+u.name+'">'+u.name+'</option>').join('')
+          + '<option value="admin">Admin (All Access)</option>';
+      }
+    } catch(e) {
+      if (attempts < maxAttempts) {
+        // Retry after delay (2s, 4s, 6s...)
+        setTimeout(tryFetch, attempts * 2000);
+      } else {
+        // Final fallback — show admin only
+        if (sel) sel.innerHTML = '<option value="">-- Select your name --</option>'
+          + '<option value="admin">Admin (All Access)</option>';
+        console.warn('Could not load users after', maxAttempts, 'attempts');
+      }
+    }
+  }
+
+  tryFetch();
+}
+
+// Run on page load
+populateLoginDropdown();
 document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('loginBtn').click();});
 function doLogin(){
   const u=document.getElementById('loginUser').value;
@@ -687,6 +712,7 @@ document.getElementById('logoutBtn').onclick=()=>{
   document.getElementById('appScreen').style.display='none';
   document.getElementById('loginScreen').style.display='flex';
   document.getElementById('loginUser').value='';
+  populateLoginDropdown(); // refresh users on logout
   document.getElementById('loginErr').style.display='none';
 };
 
