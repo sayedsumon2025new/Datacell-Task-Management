@@ -318,6 +318,16 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .pct-table tr:last-child td{border-bottom:none;}
 .pct-table tr:hover td{background:var(--surface2);}
 
+/* ═══ LIVE SYNC INDICATOR ═══ */
+.sync-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;transition:background .4s;}
+.sync-dot.live{background:#3ef0b0;box-shadow:0 0 0 2px rgba(62,240,176,.25);animation:syncPulse 2s infinite;}
+.sync-dot.syncing{background:#f5c842;box-shadow:0 0 0 2px rgba(245,200,66,.25);animation:syncPulse 0.6s infinite;}
+.sync-dot.error{background:#f87171;box-shadow:0 0 0 2px rgba(248,113,113,.2);}
+.sync-dot.offline{background:var(--border);}
+@keyframes syncPulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+.sync-label{font-family:'DM Mono',monospace;font-size:.62rem;letter-spacing:.06em;transition:color .4s;}
+.sync-wrap{display:flex;align-items:center;gap:5px;}
+
 </style>
 </head>
 <body>
@@ -337,11 +347,6 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
           <select id="loginUser">
             <option value="">-- Choose your name --</option>
-            <option>Onzana</option><option>Samima</option><option>Sayed</option>
-            <option>Johir</option><option>Shajia</option><option>Rabeya</option>
-            <option>Moni</option><option>Rakib</option><option>Popi</option>
-            <option>Jobayat</option><option>Sumaya</option>
-            <option value="Sayed/Johir">Sayed / Johir (Shared)</option>
             <option value="admin">Admin (All Access)</option>
           </select>
         </div>
@@ -356,7 +361,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
       <div class="login-err" id="loginErr">⚠ Incorrect password.</div>
       <button class="login-btn" id="loginBtn">LOGIN →</button>
     </div>
-    <div class="login-footer">Passwords → your name lowercase &nbsp;·&nbsp; Admin:XXXX</div>
+    <div class="login-footer">Login with your assigned credentials &nbsp;·&nbsp; Admin: admin@1234</div>
   </div>
 </div>
 
@@ -371,6 +376,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
     </div>
     <span class="admin-badge" id="adminBadge" style="display:none">ADMIN</span>
     <div class="topbar-right">
+      <div class="sync-wrap" id="syncWrap" style="display:none"><div class="sync-dot offline" id="syncDot"></div><span class="sync-label" id="syncLabel" style="color:var(--muted)">OFFLINE</span></div>
       <button class="logout-btn" id="logoutBtn">
         <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>LOGOUT
       </button>
@@ -393,25 +399,10 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 
 <script>
 // ─── CREDENTIALS ───
-let CREDS={Onzana:'onzana',Samima:'samima',Sayed:'sayed',Johir:'johir',Shajia:'shajia',Rabeya:'rabeya',Moni:'moni',Rakib:'rakib',Popi:'popi',Jobayat:'jobayat',Sumaya:'sumaya','Sayed/Johir':'sayedjohir',admin:'admin@1234'};
-let PERSONS=['Onzana','Samima','Sayed','Johir','Shajia','Rabeya','Moni','Rakib','Popi','Jobayat','Sumaya','Sayed/Johir'];
+let CREDS={admin:'admin@1234'}; // users loaded from Google Sheets
+let PERSONS=[]; // loaded from Google Sheets
 // ─ USER REGISTRY (dynamic, admin-managed) ─
-let userRegistry=[
-  {name:'Onzana',password:'onzana',color:'#3b82f6'},
-  {name:'Samima',password:'samima',color:'#a855f7'},
-  {name:'Sayed',password:'sayed',color:'#10b981'},
-  {name:'Johir',password:'johir',color:'#f97316'},
-  {name:'Shajia',password:'shajia',color:'#ef4444'},
-  {name:'Rabeya',password:'rabeya',color:'#06b6d4'},
-  {name:'Moni',password:'moni',color:'#eab308'},
-  {name:'Rakib',password:'rakib',color:'#d946ef'},
-  {name:'Popi',password:'popi',color:'#14b8a6'},
-  {name:'Jobayat',password:'jobayat',color:'#f43f5e'},
-  {name:'Sumaya',password:'sumaya',color:'#84cc16'},
-  {name:'Sayed/Johir',password:'sayedjohir',color:'#22c55e'},
-];
-// ─ MODULE ACCESS per user {username:[allowed tab ids]} (empty = personal view only) ─
-let moduleAccess={};
+let userRegistry=[]; // loaded from Google Sheets
 // ─ PALETTE for user color picker ─
 const COLOR_PALETTE=['#3b82f6','#a855f7','#10b981','#f97316','#ef4444','#06b6d4','#eab308','#d946ef','#14b8a6','#f43f5e','#84cc16','#22c55e','#f5c842','#e879f9','#fb7185','#38bdf8','#4ade80','#fbbf24','#f472b6','#a78bfa'];
 // ─ SETTINGS active sub-tab ─
@@ -437,109 +428,158 @@ const TH={
 function th(p){return TH[p]||{bg:'#1e2536',color:'#94a3b8',accent:'#64748b'};}
 function ini(n){return n.split('/')[0].trim().substring(0,2).toUpperCase();}
 
-// ─── TASK DATA ───
-// planTime: "HH:MM" string set by admin, actualTime: "HH:MM" set by user when done
-let tasks=[
-  {sl:1,task:"Cutting Efficiency",person:"Onzana",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:2,task:"RIB Cut Pannel Inspection report",person:"Onzana",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:3,task:"Embroidery Efficiency Report",person:"Onzana",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:4,task:"Print DHU",person:"Samima",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:5,task:"EMB DHU",person:"Samima",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:6,task:"Finishing Efficiency Report",person:"Onzana",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:7,task:"Pack Carton Update in ERP",person:"Samima",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:8,task:"Department Wise LTO% Update On 2.0",person:"Sayed",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:9,task:"Line Wise attendance 45 Team Excel",person:"Onzana",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:10,task:"Attendance In ERP (HRMS)",person:"Johir",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:11,task:"NPT Collect-Level-04",person:"Shajia",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:12,task:"Line Behind Report",person:"Rabeya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:13,task:"Teams Report",person:"Rabeya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:14,task:"QCO 1st Five Days Efficiency Report",person:"Onzana",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:15,task:"QCO Actual Feeding Report",person:"Moni",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:16,task:"RMG Line Status (Idle status Report)",person:"Rabeya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:17,task:"Line Feeding Status Pending Summary",person:"Moni",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:18,task:"Daily loss Hour update in ERP",person:"Rabeya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:19,task:"Daily NPT Update in ERP",person:"Rabeya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:20,task:"FR Plan Update Line Wise In ERP",person:"Rabeya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:21,task:"Style Wise Machine Update In ERP",person:"Rabeya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:22,task:"Daily NPT variance report",person:"Rabeya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:23,task:"Auto Motion Report Update",person:"Rakib",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:24,task:"Daily 1st Ten Hour Report",person:"Rakib",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:25,task:"Hourly CTPAT Report",person:"Rakib",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:26,task:"SAH Summary",person:"Johir",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:27,task:"NPT Sheet Collect-Level-03",person:"Popi",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:28,task:"ERP Manpower Realised",person:"Rabeya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:29,task:"ERP Idle Line Update",person:"Moni",priority:true,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:30,task:"QCO Activity",person:"Moni",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:31,task:"Daily Line wise plan vs Actual Summary with behind Reason",person:"Rabeya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:32,task:"Section Wise SAH Behind Summary",person:"Rabeya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:33,task:"IE wise & GL Wise dashboard",person:"Rabeya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:34,task:"TM Release summary",person:"Rabeya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:35,task:"Daily Head count Report",person:"Onzana",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:36,task:"Plan VS Actual Feeding status",person:"Moni",priority:true,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:37,task:"Feeding GAP report",person:"Rakib",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:38,task:"Daily sewing Capacity Utilization Report",person:"Rabeya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:39,task:"FR plan update",person:"Johir",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:40,task:"1st Five Day's Daily Plan Vs Actual Hit Rate Status",person:"Moni",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:41,task:"Actual Feeding Gantt Chart",person:"Moni",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:42,task:"Plan VS Actual Working Hour Status",person:"Johir",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:43,task:"Visual Display",person:"Shajia",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:44,task:"Weekly 2.0 Data update",person:"Sayed",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:45,task:"Hourly Production Collect & Update In ERP-Level-04",person:"Shajia",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:46,task:"Wash WIP Transaction Data Update",person:"Johir",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:47,task:"Daily Sewing Event Closed",person:"Johir",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:48,task:"Individual iron efficiency report",person:"Samima",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:49,task:"Wash Size Wise Hourly Report",person:"Johir",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:50,task:"Hourly Excel 47 Line Production report",person:"Rakib",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:51,task:"Hourly Production Collect & Update In ERP-Level-03",person:"Popi",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:52,task:"Forecast vs Actual Dashboard",person:"Johir",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:53,task:"Forecast summary",person:"Johir",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:54,task:"Sewing Reject Update in ERP",person:"Johir",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:55,task:"OT Cost Data update",person:"Rabeya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:56,task:"Andon Report",person:"Rabeya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:57,task:"Target Vs Actual Efficiency Behind Reason Summary",person:"Johir",priority:true,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:58,task:"Work Hour Approval report",person:"Johir",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:59,task:"ERP Sewing Input Allocation (47 Line)",person:"Jobayat",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:60,task:"Forecast File Actual Output",person:"Shajia",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:61,task:"Inventory",person:"Onzana",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:62,task:"Sudden Plan Summary",person:"Moni",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:63,task:"Upcoming Style Status",person:"Moni",priority:true,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:64,task:"Print DHU Data Update 2.0",person:"Sayed",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:65,task:"Sewing Efficiency Data Update 2.0",person:"Sayed",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:66,task:"Printing Efficiency Data Update 2.0",person:"Sayed",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:67,task:"Printing Efficiency Report",person:"Onzana",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:68,task:"TQM Board Update (level-04)",person:"Shajia",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:69,task:"TQM Board Update (level-03)",person:"Popi",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:70,task:"1st Output Audit Report",person:"Sumaya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:71,task:"Daily GPQ Audit Report Update 2.0",person:"Sayed",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:72,task:"Line Wise Sewing DHU (46 Line) 2.0",person:"Sayed",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:73,task:"CPI DHU & Cut Kit Report 2.0",person:"Sayed",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:74,task:"GPQ Po Wise Inspection Update",person:"Onzana",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:75,task:"Line Wise Spot Report",person:"Onzana",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:76,task:"Cut panel audit report",person:"Onzana",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:77,task:"Daily Basis Line Wise Oil Report Summary",person:"Samima",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:78,task:"Finishing Rejection Update in ERP",person:"Johir",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:79,task:"Sub department wise quality NPT Update (Excel)",person:"Moni",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:80,task:"CPI Inspection Update In ERP",person:"Moni",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:81,task:"Daily Touchup report",person:"Samima",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:82,task:"Daily Red dot report",person:"Sumaya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:83,task:"Contamination report",person:"Samima",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:84,task:"Hourly DHU Report - Finishing",person:"Sumaya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:85,task:"Hourly DHU Report - Inline",person:"Sumaya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:86,task:"Hourly Audite report",person:"Sayed/Johir",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:87,task:"Garments Rejection",person:"Sumaya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:88,task:"Rejection hard copy file up",person:"Sumaya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:89,task:"Hourly DHU Audit report",person:"Sumaya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:90,task:"Quality Accessories DHU Report",person:"Sumaya",priority:true,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:91,task:"Collar And Cuff Report",person:"Onzana",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:92,task:"Size Set Production report",person:"Rakib",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:93,task:"Actual Working hour with Hr puanch report",person:"Sayed",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:94,task:"Sewing Efficiency",person:"Rabeya",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:95,task:"Block wise summary",person:"Shajia",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:96,task:"Feeding & EWO Split Status",person:"Moni",priority:true,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:97,task:"Sample MRS Update & ERP Update",person:"Jobayat",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-  {sl:98,task:"QCO Summary Dashboard",person:"Moni",priority:false,planDate:'',planTime:'',actualDate:'',actualTime:'',leadTime:''},
-];
-let nextSl=99;
+// ─── TASK DATA ─── (loaded from Google Sheets)
+let tasks=[];
+let nextSl=1;
+
+// ═══════════════════════════════════════════════════════════════
+//  GOOGLE SHEETS SYNC LAYER — REAL-TIME POLLING
+//  Replace GAS_URL below with your deployed Apps Script URL
+// ═══════════════════════════════════════════════════════════════
+const GAS_URL = 'YOUR_GAS_URL_HERE'; // ← TODO: paste your Web App URL here
+const POLL_INTERVAL_MS = 8000; // poll every 8 seconds
+
+let _syncDebounce = null;
+let _pollTimer    = null;
+let _lastVersion  = null;
+let _isSyncing    = false;
+
+// ── Low-level fetch ─────────────────────────────────────────────
+async function gasGet(action='all') {
+  if (!GAS_URL || GAS_URL === 'YOUR_GAS_URL_HERE') return null;
+  try {
+    const res = await fetch(GAS_URL + '?action=' + action, {cache:'no-store'});
+    return await res.json();
+  } catch(e) { setSyncStatus('error'); return null; }
+}
+
+async function gasPost(body) {
+  if (!GAS_URL || GAS_URL === 'YOUR_GAS_URL_HERE') return;
+  try {
+    await fetch(GAS_URL, {method:'POST', body:JSON.stringify(body)});
+  } catch(e) { setSyncStatus('error'); }
+}
+
+// ── Sync indicator ───────────────────────────────────────────────
+function setSyncStatus(status) {
+  const dot  = document.getElementById('syncDot');
+  const lbl  = document.getElementById('syncLabel');
+  const wrap = document.getElementById('syncWrap');
+  if (!dot || !lbl) return;
+  dot.className = 'sync-dot ' + status;
+  const map = {live:'LIVE', syncing:'SYNCING...', error:'RETRY', offline:'OFFLINE'};
+  const col = {live:'#3ef0b0', syncing:'#f5c842', error:'#f87171', offline:'var(--muted)'};
+  lbl.textContent = map[status] || status.toUpperCase();
+  lbl.style.color = col[status] || 'var(--muted)';
+  if (wrap) wrap.style.display = (!currentUser || status === 'offline') ? 'none' : 'flex';
+}
+
+// ── Serialize helpers ────────────────────────────────────────────
+function doneStateToObj() {
+  const obj = {};
+  Object.entries(doneState).forEach(([u, set]) => { obj[u] = Array.from(set); });
+  return obj;
+}
+
+function applyRemoteData(data) {
+  if (!data) return false;
+  let changed = false;
+  if (data.tasks && data.tasks.length > 0) {
+    const n = JSON.stringify(data.tasks), c = JSON.stringify(tasks);
+    if (n !== c) { tasks = data.tasks; changed = true; }
+  }
+  if (data.nextSl && data.nextSl > nextSl) nextSl = data.nextSl;
+  if (data.doneState) {
+    const n = JSON.stringify(data.doneState), c = JSON.stringify(doneStateToObj());
+    if (n !== c) {
+      Object.entries(data.doneState).forEach(([u, sls]) => {
+        doneState[u] = new Set(Array.isArray(sls) ? sls : []);
+      });
+      changed = true;
+    }
+  }
+  if (data.users && data.users.length > 0) {
+    userRegistry = data.users;
+    data.users.forEach(u => { CREDS[u.name] = u.password; });
+  }
+  return changed;
+}
+
+// ── Outbound sync (local → Sheets) ──────────────────────────────
+function syncToSheets() {
+  clearTimeout(_syncDebounce);
+  _syncDebounce = setTimeout(async () => {
+    setSyncStatus('syncing');
+    await gasPost({action:'saveAll', tasks, nextSl, doneState:doneStateToObj()});
+    const v = await gasGet('version');
+    if (v && v.version) _lastVersion = v.version;
+    setSyncStatus('live');
+  }, 800);
+}
+
+function syncUsers() {
+  gasPost({action:'saveUsers', users:userRegistry});
+}
+
+// ── Inbound sync (Sheets → local) via polling ───────────────────
+async function pollSheets() {
+  if (!currentUser || _isSyncing) return;
+  _isSyncing = true;
+  try {
+    const v = await gasGet('version');
+    if (!v) { setSyncStatus('error'); return; }
+    if (v.version && v.version !== _lastVersion) {
+      if (_lastVersion !== null) {
+        setSyncStatus('syncing');
+        const data = await gasGet('all');
+        const changed = applyRemoteData(data);
+        if (changed) { renderContent(); toast('\u21bb Updated by another user', 'info'); }
+      }
+      _lastVersion = v.version;
+    }
+    setSyncStatus('live');
+  } catch(e) {
+    setSyncStatus('error');
+  } finally {
+    _isSyncing = false;
+  }
+}
+
+function startPolling() {
+  stopPolling();
+  if (!GAS_URL || GAS_URL === 'YOUR_GAS_URL_HERE') return;
+  setSyncStatus('syncing');
+  pollSheets();
+  _pollTimer = setInterval(pollSheets, POLL_INTERVAL_MS);
+}
+
+function stopPolling() {
+  clearInterval(_pollTimer);
+  _pollTimer = null;
+}
+
+// ── Initial load on login ────────────────────────────────────────
+async function initFromSheets() {
+  const loginBtn = document.getElementById('loginBtn');
+  if (loginBtn) { loginBtn.textContent = 'Connecting...'; loginBtn.disabled = true; }
+  const data = await gasGet('all');
+  if (data) {
+    applyRemoteData(data);
+    if (data.users && data.users.length > 0) {
+      PERSONS = data.users.filter(u => u.name !== 'admin').map(u => u.name);
+      const sel = document.getElementById('loginUser');
+      if (sel) {
+        sel.innerHTML = '<option value="">-- Choose your name --</option>'
+          + data.users.map(u => '<option value="'+u.name+'">'+u.name+'</option>').join('')
+          + '<option value="Sayed/Johir">Sayed / Johir (Shared)</option>'
+          + '<option value="admin">Admin (All Access)</option>';
+      }
+    }
+    const v = await gasGet('version');
+    if (v && v.version) _lastVersion = v.version;
+  }
+  if (loginBtn) { loginBtn.textContent = 'LOGIN \u2192'; loginBtn.disabled = false; }
+}
 
 // ─── STATE ───
 let currentUser=null,taskFilter='all',searchQ='',adminTab='overview',userView='list';
@@ -587,7 +627,7 @@ function actualBadge(k){
 }
 
 // ─── LOGIN ───
-document.getElementById('loginBtn').onclick=doLogin;
+document.getElementById('loginBtn').onclick=async()=>{await initFromSheets();doLogin();};
 document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 function doLogin(){
   const u=document.getElementById('loginUser').value;
@@ -597,7 +637,7 @@ function doLogin(){
   if(CREDS[u]!==p){err.textContent='⚠ Incorrect password.';err.style.display='block';document.getElementById('loginPass').value='';return;}
   err.style.display='none';currentUser=u;openApp();
 }
-function openApp(){
+function openApp(){startPolling();
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('appScreen').style.display='block';
   document.getElementById('loginPass').value='';
@@ -613,7 +653,7 @@ function openApp(){
   renderContent();
 }
 document.getElementById('logoutBtn').onclick=()=>{
-  currentUser=null;
+  stopPolling();currentUser=null;
   document.getElementById('appScreen').style.display='none';
   document.getElementById('loginScreen').style.display='flex';
   document.getElementById('loginUser').value='';
@@ -750,7 +790,7 @@ function renderPersonal(){
 
     document.getElementById('taskRows').addEventListener('click',e=>{
       const tog=e.target.closest('.tog');
-      if(tog){const sl=+tog.dataset.sl,d=getDone(currentUser);d.has(sl)?d.delete(sl):d.add(sl);updatePersonalStats(myTasks,t);renderUserRows(myTasks,t,cols);return;}
+      if(tog){const sl=+tog.dataset.sl,d=getDone(currentUser);d.has(sl)?d.delete(sl):d.add(sl);syncToSheets();updatePersonalStats(myTasks,t);renderUserRows(myTasks,t,cols);return;}
       const saveBtn=e.target.closest('.save-actual');
       if(saveBtn){
         const sl=+saveBtn.dataset.sl;
@@ -1383,7 +1423,7 @@ function buildAdd(c){
     tasks.push({sl:nextSl++,task:name,person,priority,planTime,actualTime:''});
     document.getElementById('nName').value='';document.getElementById('nPerson').value='';
     document.getElementById('nPlanTime').value='';document.getElementById('nPrio').checked=false;
-    toast(`Task added → ${person}${planTime?' | Plan: '+planTime:''}`, 'success');
+    toast(`Task added → ${person}${planTime?' | Plan: '+planTime:''}`, 'success');syncToSheets();
     buildRecentList(rWrap);
   };
 }
@@ -1450,7 +1490,7 @@ function buildDelete(c){
     wrap.appendChild(list);
     wrap.querySelectorAll('.del-btn').forEach(btn=>{
       btn.onclick=()=>{const sl=+btn.dataset.sl,k=tasks.find(t=>t.sl===sl);if(!k)return;
-        confirm2('Delete Task?',`"${k.task}" assigned to ${k.person} will be permanently deleted.`,()=>{tasks=tasks.filter(t=>t.sl!==sl);toast('Task deleted','error');draw();});};
+        confirm2('Delete Task?',`"${k.task}" assigned to ${k.person} will be permanently deleted.`,()=>{tasks=tasks.filter(t=>t.sl!==sl);syncToSheets();toast('Task deleted','error');draw();});};
     });
   };
   draw();
@@ -1493,8 +1533,8 @@ function buildAssign(c){
       list.appendChild(row);
     });
     wrap.appendChild(list);
-    wrap.querySelectorAll('.person-sel').forEach(sel=>{sel.onchange=()=>{const sl=+sel.dataset.sl,k=tasks.find(t=>t.sl===sl);if(!k)return;const old=k.person;k.person=sel.value;const t2=th(k.person);sel.style.color=t2.color;sel.style.borderColor=t2.accent+'33';if(k.priority)sel.closest('.trow').style.borderLeftColor=t2.accent;toast(`#${k.sl} reassigned: ${old} → ${k.person}`,'info');};});
-    wrap.querySelectorAll('.star-btn').forEach(btn=>{btn.onclick=()=>{const sl=+btn.dataset.sl,k=tasks.find(t=>t.sl===sl);if(!k)return;k.priority=!k.priority;btn.classList.toggle('on',k.priority);const row=btn.closest('.trow');row.classList.toggle('priority',k.priority);if(k.priority){row.style.borderLeft='3px solid '+th(k.person).accent;}else{row.style.borderLeft='';}toast(k.priority?`"${k.task}" → ★ priority`:`"${k.task}" priority removed`,'info');};});
+    wrap.querySelectorAll('.person-sel').forEach(sel=>{sel.onchange=()=>{const sl=+sel.dataset.sl,k=tasks.find(t=>t.sl===sl);if(!k)return;const old=k.person;k.person=sel.value;const t2=th(k.person);sel.style.color=t2.color;sel.style.borderColor=t2.accent+'33';if(k.priority)sel.closest('.trow').style.borderLeftColor=t2.accent;toast(`#${k.sl} reassigned: ${old} → ${k.person}`,'info');syncToSheets();};});
+    wrap.querySelectorAll('.star-btn').forEach(btn=>{btn.onclick=()=>{const sl=+btn.dataset.sl,k=tasks.find(t=>t.sl===sl);if(!k)return;k.priority=!k.priority;btn.classList.toggle('on',k.priority);const row=btn.closest('.trow');row.classList.toggle('priority',k.priority);if(k.priority){row.style.borderLeft='3px solid '+th(k.person).accent;}else{row.style.borderLeft='';}toast(k.priority?`"${k.task}" → ★ priority`:`"${k.task}" priority removed`,'info');syncToSheets();};});
   };
   draw();
   document.getElementById('asQ').oninput=draw;
@@ -1609,7 +1649,7 @@ function buildPlanTime(c){
         const timeEl=document.getElementById('pt-'+sl);
         const k=tasks.find(t=>t.sl===sl);if(!k)return;
         k.planTime=timeEl?timeEl.value:'';
-        toast(k.planTime?'Plan time set for #'+sl+' → '+k.planTime:'Plan time cleared for #'+sl,'success');
+        toast(k.planTime?'Plan time set for #'+sl+' → '+k.planTime:'Plan time cleared for #'+sl,'success');syncToSheets();
         draw();
       };
     });
@@ -2098,7 +2138,7 @@ function renderSettingsUsers(body){
     const acc=selectedColor;
     const rgb=hexToRgb(acc);
     TH[name]={bg:`rgba(${rgb},0.15)`,color:selectedColor,accent:selectedColor};
-    toast('User "'+name+'" added successfully','success');
+    toast('User "'+name+'" added successfully','success');syncUsers();
     renderSettingsBody(body);
   };
 
@@ -2157,7 +2197,7 @@ function renderSettingsUsers(body){
         if(np.length<3){toast('Min 3 characters required','error');return;}
         if(np!==cp){toast('Passwords do not match','error');return;}
         CREDS[name]=np;const reg=userRegistry.find(x=>x.name===name);if(reg)reg.password=np;
-        toast('\u2713 Password updated for '+name,'success');activePwUser=null;
+        syncUsers();toast('\u2713 Password updated for '+name,'success');activePwUser=null;
         renderSettingsBody(body);
       };
       document.getElementById('pw-cancel-btn').onclick=()=>{activePwUser=null;pwEditWrap.innerHTML='';grid.querySelectorAll('.user-card-pw-btn').forEach(b=>b.style.color='');};
@@ -2173,7 +2213,7 @@ function renderSettingsUsers(body){
         userRegistry=userRegistry.filter(u=>u.name!==name);
         delete CREDS[name];
         const idx=PERSONS.indexOf(name);if(idx>-1)PERSONS.splice(idx,1);
-        toast('User "'+name+'" removed','error');
+        toast('User "'+name+'" removed','error');syncUsers();
         renderSettingsBody(body);
       });
     };
@@ -2193,7 +2233,7 @@ function renderSettingsUsers(body){
     const cp=document.getElementById('admin-confirmpass').value;
     if(!np){toast('Enter new password','error');return;}
     if(np!==cp){toast('Passwords do not match','error');return;}
-    CREDS['admin']=np;toast('Admin password updated','success');
+    CREDS['admin']=np;syncUsers();toast('Admin password updated','success');
     document.getElementById('admin-newpass').value='';document.getElementById('admin-confirmpass').value='';
   };
 }
@@ -2451,7 +2491,7 @@ function renderSettingsLeadTime(body){
         const sl=+btn.dataset.sl;const k=tasks.find(t=>t.sl===sl);if(!k)return;
         const val=document.getElementById('lt-'+sl)?.value;
         k.leadTime=val?parseFloat(val)+'h':'';
-        toast(k.leadTime?'Lead time set: '+k.task+' → '+k.leadTime:'Lead time cleared for #'+sl,'success');
+        toast(k.leadTime?'Lead time set: '+k.task+' → '+k.leadTime:'Lead time cleared for #'+sl,'success');syncToSheets();
         drawLT();
       };
     });
@@ -2460,7 +2500,7 @@ function renderSettingsLeadTime(body){
       const val=document.getElementById('lt-bulk-val')?.value;
       if(!val){toast('Enter hours first','error');return;}
       fil.forEach(k=>{k.leadTime=parseFloat(val)+'h';});
-      toast('Lead time set to '+val+'h for '+fil.length+' tasks','success');
+      toast('Lead time set to '+val+'h for '+fil.length+' tasks','success');syncToSheets();
       drawLT();
     };
     document.getElementById('lt-clear-all').onclick=()=>{
@@ -2575,7 +2615,7 @@ function renderSettingsUsers(body){
     const acc=selectedColor;
     const rgb=hexToRgb(acc);
     TH[name]={bg:`rgba(${rgb},0.15)`,color:selectedColor,accent:selectedColor};
-    toast('User "'+name+'" added successfully','success');
+    toast('User "'+name+'" added successfully','success');syncUsers();
     renderSettingsBody(body);
   };
 
@@ -2634,7 +2674,7 @@ function renderSettingsUsers(body){
         if(np.length<3){toast('Min 3 characters required','error');return;}
         if(np!==cp){toast('Passwords do not match','error');return;}
         CREDS[name]=np;const reg=userRegistry.find(x=>x.name===name);if(reg)reg.password=np;
-        toast('\u2713 Password updated for '+name,'success');activePwUser=null;
+        syncUsers();toast('\u2713 Password updated for '+name,'success');activePwUser=null;
         renderSettingsBody(body);
       };
       document.getElementById('pw-cancel-btn').onclick=()=>{activePwUser=null;pwEditWrap.innerHTML='';grid.querySelectorAll('.user-card-pw-btn').forEach(b=>b.style.color='');};
@@ -2650,7 +2690,7 @@ function renderSettingsUsers(body){
         userRegistry=userRegistry.filter(u=>u.name!==name);
         delete CREDS[name];
         const idx=PERSONS.indexOf(name);if(idx>-1)PERSONS.splice(idx,1);
-        toast('User "'+name+'" removed','error');
+        toast('User "'+name+'" removed','error');syncUsers();
         renderSettingsBody(body);
       });
     };
@@ -2670,7 +2710,7 @@ function renderSettingsUsers(body){
     const cp=document.getElementById('admin-confirmpass').value;
     if(!np){toast('Enter new password','error');return;}
     if(np!==cp){toast('Passwords do not match','error');return;}
-    CREDS['admin']=np;toast('Admin password updated','success');
+    CREDS['admin']=np;syncUsers();toast('Admin password updated','success');
     document.getElementById('admin-newpass').value='';document.getElementById('admin-confirmpass').value='';
   };
 }
@@ -2928,7 +2968,7 @@ function renderSettingsLeadTime(body){
         const sl=+btn.dataset.sl;const k=tasks.find(t=>t.sl===sl);if(!k)return;
         const val=document.getElementById('lt-'+sl)?.value;
         k.leadTime=val?parseFloat(val)+'h':'';
-        toast(k.leadTime?'Lead time set: '+k.task+' → '+k.leadTime:'Lead time cleared for #'+sl,'success');
+        toast(k.leadTime?'Lead time set: '+k.task+' → '+k.leadTime:'Lead time cleared for #'+sl,'success');syncToSheets();
         drawLT();
       };
     });
@@ -2937,7 +2977,7 @@ function renderSettingsLeadTime(body){
       const val=document.getElementById('lt-bulk-val')?.value;
       if(!val){toast('Enter hours first','error');return;}
       fil.forEach(k=>{k.leadTime=parseFloat(val)+'h';});
-      toast('Lead time set to '+val+'h for '+fil.length+' tasks','success');
+      toast('Lead time set to '+val+'h for '+fil.length+' tasks','success');syncToSheets();
       drawLT();
     };
     document.getElementById('lt-clear-all').onclick=()=>{
