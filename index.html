@@ -197,67 +197,646 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .ovcal-legend-item{display:flex;align-items:center;gap:5px;font-family:'DM Mono',monospace;font-size:.64rem;color:var(--muted);}
 .ovcal-legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
 .ovcal-detail-task{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 14px;display:flex;align-items:flex-start;gap:12px;}
-</style>
-<script>
-// Safe defaults inserted: demo credentials and placeholder GAS_URL
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbwpFsWL1zF687pCFjZCuSRalNhTOrqrURSP4a9ts1ZcHDoG9KDeR0HUEELPHUt78_R6/exec'; // replace to enable Google Apps Script sync
-const CREDS = { 'admin': 'admin', 'demo': 'demo123' };
-let tasks = [];
-let userRegistry = [{name: 'admin', password: CREDS['admin']}, {name: 'demo', password: CREDS['demo']}];
-let PERSONS = userRegistry.filter(u=>u.name!=='admin').map(u=>u.name);
-let TH = {};
-const COLOR_PALETTE = ['#34d399','#60a5fa','#f5c842','#f87171','#a78bfa','#fb7185'];
-let settingsTab='users', adminTab='overview', userView='list';
-let taskFilter='all', searchQ='';
-let currentUser = null;
-let nextSl = 1;
-function syncToSheets(){console.info('syncToSheets called — GAS_URL=',GAS_URL);} // noop until GAS_URL set
+.ovcal-detail-task.has-plan{border-left:3px solid #3b82f6;}
+.ovcal-detail-task.has-actual{border-left:3px solid #3ef0b0;}
+.ovcal-detail-task.has-both{border-left:3px solid #a855f7;}
+.ovcal-person-chip{display:inline-flex;align-items:center;gap:5px;font-size:.7rem;}
+.ovcal-section-hdr{font-family:'DM Mono',monospace;font-size:.64rem;letter-spacing:.08em;color:var(--muted);padding:6px 0 4px;border-bottom:1px solid var(--border);margin-bottom:8px;}
+/* ─ CALENDAR ─ */
+.view-toggle{display:flex;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:4px;}
+.vt-btn{flex:1;padding:7px 14px;border-radius:7px;cursor:pointer;font-family:'DM Mono',monospace;font-size:.68rem;letter-spacing:.08em;color:var(--muted);border:none;background:transparent;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:6px;}
+.vt-btn:hover{color:var(--text);background:var(--surface2);}
+.vt-btn.active{background:var(--surface2);color:#f5c842;border:1px solid rgba(245,200,66,.2);}
+.cal-wrap{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;margin-bottom:20px;}
+.cal-header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;background:var(--surface2);border-bottom:1px solid var(--border);}
+.cal-title{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;}
+.cal-nav{background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--muted);padding:6px 12px;cursor:pointer;font-size:.8rem;transition:all .18s;}
+.cal-nav:hover{color:var(--text);border-color:rgba(255,255,255,.2);background:var(--surface);}
+.cal-days-hdr{display:grid;grid-template-columns:repeat(7,1fr);background:var(--surface2);border-bottom:1px solid var(--border);}
+.cal-day-hdr{text-align:center;padding:8px 4px;font-family:'DM Mono',monospace;font-size:.62rem;letter-spacing:.08em;color:var(--muted);}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);}
+.cal-cell{min-height:52px;padding:6px;border-right:1px solid rgba(31,37,53,.4);border-bottom:1px solid rgba(31,37,53,.4);cursor:pointer;transition:background .15s;position:relative;}
+.cal-cell:nth-child(7n){border-right:none;}
+.cal-cell.other-month{opacity:.3;pointer-events:none;}
+.cal-cell.today{background:rgba(245,200,66,.06);border:1px solid rgba(245,200,66,.2);}
+.cal-cell.has-tasks{background:rgba(62,240,176,.04);}
+.cal-cell.selected{background:rgba(96,165,250,.1);border:1px solid rgba(96,165,250,.3);}
+.cal-cell:hover:not(.other-month){background:var(--surface2);}
+.cal-date-num{font-family:'DM Mono',monospace;font-size:.72rem;color:var(--muted);line-height:1;}
+.cal-cell.today .cal-date-num{color:#f5c842;font-weight:700;}
+.cal-cell.selected .cal-date-num{color:#60a5fa;font-weight:700;}
+.cal-dot-row{display:flex;gap:2px;flex-wrap:wrap;margin-top:4px;}
+.cal-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0;}
+.cal-task-count{font-family:'DM Mono',monospace;font-size:.58rem;color:#3ef0b0;margin-top:3px;}
+/* Day detail panel */
+.day-detail{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;margin-bottom:20px;animation:rowIn .25s ease both;}
+.day-detail-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:var(--surface2);border-bottom:1px solid var(--border);}
+.day-detail-title{font-family:'Syne',sans-serif;font-size:.95rem;font-weight:700;display:flex;align-items:center;gap:10px;}
+.day-readonly-badge{font-family:'DM Mono',monospace;font-size:.6rem;letter-spacing:.08em;background:rgba(80,88,112,.2);color:var(--muted);border:1px solid var(--border);border-radius:20px;padding:2px 9px;}
+.day-today-badge{font-family:'DM Mono',monospace;font-size:.6rem;letter-spacing:.08em;background:rgba(245,200,66,.1);color:#f5c842;border:1px solid rgba(245,200,66,.25);border-radius:20px;padding:2px 9px;}
 
-// Helpers added to restore missing utilities
-let doneState = {};
-function getDone(user){ if(!doneState[user]) doneState[user]=new Set(); return doneState[user]; }
-function ini(name){ if(!name) return ''; return name.split(' ').map(s=>s[0]||'').join('').slice(0,2).toUpperCase(); }
-function th(name){ if(!name) return {bg:'#111',color:'#fff',accent:'#f5c842'}; if(TH[name]) return TH[name]; const h = name.split('').reduce((s,c)=>s+c.charCodeAt(0),0); const color = COLOR_PALETTE[h % COLOR_PALETTE.length]; const rgb = hexToRgbSafe(color); const obj = {bg:`rgba(${rgb},0.12)`,color:color,accent:color}; TH[name]=obj; return obj; }
-function checkIcon(){ return '<svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align:middle"><polyline points="20 6 9 17 4 12"/></svg>'; }
-function clockIcon(){ return '<svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align:middle"><circle cx="12" cy="12" r="10"/><path d="M12 7v6l4 2"/></svg>'; }
-function timeDiff(planDate,planTime,actualDate,actualTime){ try{ if(!planTime||!actualTime) return ''; const p = planTime.split(':'); const a = actualTime.split(':'); const pd = new Date(); pd.setHours(+p[0],+p[1],0,0); const ad = new Date(); ad.setHours(+a[0],+a[1],0,0); const mins = Math.round((ad - pd)/60000); if(mins===0) return 'On time'; if(mins>0) return '+'+mins+'m late'; return mins+'m early'; }catch(e){return '';}}
-function timeCmp(planDate,planTime,actualDate,actualTime){ if(!actualTime) return 'pending'; const diff = (function(){const p=planTime?planTime.split(':'):[0,0];const a=actualTime.split(':');return (a[0]-p[0])*60 + (a[1]-p[1]);})(); if(diff>0) return 'late'; if(diff<0) return 'early'; return 'ontime'; }
-function planBadge(k){ if(!k) return '<span class="time-badge unset">—</span>'; if(k.planTime) return `<span class="time-badge plan">${clockIcon()} ${k.planTime}</span>`; return `<span class="time-badge unset">—</span>`; }
-function actualBadge(k){ if(!k) return '<span class="time-badge unset">—</span>'; if(k.actualTime){ const cls = timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='late'?'overdue':'actual'; const diff = timeDiff(k.planDate,k.planTime,k.actualDate,k.actualTime); return `<span class="time-badge ${cls}">${checkIcon()} Done: ${k.actualTime}${diff?` <span style="opacity:0.7;font-size:0.6rem">(${diff})</span>`:''}</span>`; } return `<span class="time-badge unset">—</span>`; }
-function isTaskLocked(task){ return !!(task && task.actualTime); }
+/* ─ SETTINGS PANEL ─ */
+.settings-layout{display:grid;grid-template-columns:200px 1fr;gap:20px;min-height:400px;}
+@media(max-width:650px){.settings-layout{grid-template-columns:1fr;}}
+.settings-nav{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:8px;height:fit-content;}
+.snav-btn{width:100%;text-align:left;padding:10px 13px;border-radius:9px;cursor:pointer;font-family:'DM Mono',monospace;font-size:.68rem;letter-spacing:.07em;color:var(--muted);border:none;background:transparent;transition:all .2s;display:flex;align-items:center;gap:9px;margin-bottom:2px;}
+.snav-btn:hover{color:var(--text);background:var(--surface2);}
+.snav-btn.active{color:#f5c842;background:rgba(245,200,66,.08);border:1px solid rgba(245,200,66,.15);}
+.snav-sep{height:1px;background:var(--border);margin:8px 6px;}
+.settings-body{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px;}
+.s-section-title{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;margin-bottom:4px;display:flex;align-items:center;gap:8px;}
+.s-section-sub{font-family:'DM Mono',monospace;font-size:.66rem;color:var(--muted);margin-bottom:20px;letter-spacing:.06em;}
+/* user cards */
+.user-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;margin-bottom:20px;}
+.user-card{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;position:relative;}
+.user-card-av{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-size:.8rem;font-weight:700;flex-shrink:0;}
+.user-card-info{flex:1;min-width:0;}
+.user-card-name{font-family:'Syne',sans-serif;font-size:.88rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.user-card-pass{font-family:'DM Mono',monospace;font-size:.62rem;color:var(--muted);margin-top:2px;}
+.user-card-del{position:absolute;top:8px;right:8px;background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:.7rem;padding:3px 6px;border-radius:5px;transition:all .18s;}
+.user-card-del:hover{color:#f87171;background:rgba(248,113,113,.1);}
+.user-card-pw-btn{position:absolute;top:8px;right:32px;background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:.72rem;padding:3px 6px;border-radius:5px;transition:all .18s;}
+.user-card-pw-btn:hover{color:#f5c842;background:rgba(245,200,66,.1);}
+.pw-edit-panel{background:rgba(245,200,66,.04);border:1px solid rgba(245,200,66,.18);border-radius:12px;padding:16px 18px;margin-bottom:16px;animation:rowIn .2s ease both;}
+.pw-edit-panel h5{font-family:'Syne',sans-serif;font-size:.82rem;font-weight:700;color:#f5c842;margin-bottom:12px;display:flex;align-items:center;gap:7px;}
+.pw-edit-row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;}
+/* add user form */
+.add-user-form{background:rgba(245,200,66,.04);border:1px solid rgba(245,200,66,.15);border-radius:12px;padding:18px 20px;margin-bottom:20px;}
+.add-user-form h4{font-family:'Syne',sans-serif;font-size:.88rem;font-weight:700;color:#f5c842;margin-bottom:14px;}
+.aug{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;}
+@media(max-width:600px){.aug{grid-template-columns:1fr 1fr;}}
+.color-swatch-row{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px;}
+.cswatch{width:20px;height:20px;border-radius:5px;cursor:pointer;border:2px solid transparent;transition:all .18s;flex-shrink:0;}
+.cswatch:hover,.cswatch.selected{border-color:#fff;transform:scale(1.15);}
+/* module access */
+.module-grid{display:grid;gap:0;border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+.module-header{display:grid;background:var(--surface2);padding:10px 14px;font-family:'DM Mono',monospace;font-size:.62rem;letter-spacing:.08em;color:var(--muted);border-bottom:1px solid var(--border);}
+.module-row{display:grid;padding:11px 14px;border-bottom:1px solid rgba(31,37,53,.5);align-items:center;transition:background .15s;}
+.module-row:last-child{border-bottom:none;}
+.module-row:hover{background:var(--surface2);}
+.mod-toggle{width:32px;height:17px;border-radius:20px;background:var(--border);border:none;cursor:pointer;position:relative;transition:background .25s;flex-shrink:0;}
+.mod-toggle::after{content:'';position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:var(--muted);transition:all .25s;}
+.mod-toggle.on{background:rgba(245,200,66,.25);}
+.mod-toggle.on::after{background:#f5c842;transform:translateX(15px);}
+/* lead time */
+.lead-table{width:100%;border-collapse:collapse;}
+.lead-table th{font-family:'DM Mono',monospace;font-size:.62rem;letter-spacing:.08em;color:var(--muted);text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);}
+.lead-table td{padding:8px 12px;border-bottom:1px solid rgba(31,37,53,.5);font-size:.82rem;}
+.lead-table tr:last-child td{border-bottom:none;}
+.lead-table tr:hover td{background:rgba(31,37,53,.3);}
+.lead-inp{background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'DM Mono',monospace;font-size:.72rem;padding:4px 8px;outline:none;width:80px;transition:border-color .18s;}
+.lead-inp:focus{border-color:#f5c842;}
+.lead-save{background:rgba(245,200,66,.15);color:#f5c842;border:1px solid rgba(245,200,66,.25);border-radius:5px;font-family:'DM Mono',monospace;font-size:.62rem;padding:4px 10px;cursor:pointer;transition:all .18s;}
+.lead-save:hover{background:rgba(245,200,66,.28);}
+.lead-badge{display:inline-flex;align-items:center;gap:3px;font-family:'DM Mono',monospace;font-size:.63rem;padding:2px 7px;border-radius:20px;background:rgba(163,230,53,.1);color:#a3e635;border:1px solid rgba(163,230,53,.2);}
 
-async function initFromSheets(){
-  // Try to load from GAS, else keep local demo data
-  if(GAS_URL && GAS_URL!=='https://script.google.com/macros/s/AKfycbwpFsWL1zF687pCFjZCuSRalNhTOrqrURSP4a9ts1ZcHDoG9KDeR0HUEELPHUt78_R6/exec'){
-    try{ const res = await fetch(GAS_URL+'?action=all',{cache:'no-store'}); const j = await res.json(); if(j.tasks) tasks = j.tasks; if(j.users) userRegistry = j.users; PERSONS = userRegistry.filter(u=>u.name!=='admin').map(u=>u.name); nextSl = tasks.reduce((m,t)=>Math.max(m,t.sl),0)+1; return; }catch(e){console.warn('initFromSheets fetch failed',e);} }
-  // fallback demo data
-  if(!tasks.length){ tasks = [{sl:1,task:'Demo task A',person:PERSONS[0]||'demo',priority:false,planTime:'09:30',actualTime:''}]; nextSl = 2; }
+/* ─ DATE RANGE BAR ─ */
+.dr-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface);border:1px solid rgba(96,165,250,.2);border-radius:12px;padding:12px 16px;margin-bottom:18px;}
+.dr-bar label{font-family:'DM Mono',monospace;font-size:.68rem;letter-spacing:.08em;color:#60a5fa;display:flex;align-items:center;gap:5px;}
+.date-inp{background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Mono',monospace;font-size:.78rem;padding:7px 10px;outline:none;cursor:pointer;transition:border-color .18s;color-scheme:dark;}
+.date-inp:focus{border-color:#60a5fa;}
+.dr-sep{color:var(--muted);font-size:.75rem;}
+.dr-clear{background:transparent;border:1px solid var(--border);border-radius:7px;color:var(--muted);font-family:'DM Mono',monospace;font-size:.68rem;padding:6px 12px;cursor:pointer;transition:all .18s;}
+.dr-clear:hover{color:var(--text);background:var(--surface2);}
+.dr-info{font-family:'DM Mono',monospace;font-size:.68rem;color:var(--muted);margin-left:auto;}
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px;}
+@media(max-width:700px){.kpi-grid{grid-template-columns:repeat(2,1fr);}}
+.kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;position:relative;overflow:hidden;}
+.kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;}
+.kpi-val{font-family:'Syne',sans-serif;font-size:2rem;font-weight:800;line-height:1;margin-bottom:4px;}
+.kpi-lbl{font-family:'DM Mono',monospace;font-size:.66rem;letter-spacing:.1em;color:var(--muted);}
+.kpi-sub{font-family:'DM Mono',monospace;font-size:.62rem;margin-top:6px;}
+.chart-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;}
+@media(max-width:680px){.chart-grid{grid-template-columns:1fr;}}
+.chart-box{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;}
+.chart-box h4{font-family:'Syne',sans-serif;font-size:.88rem;font-weight:700;margin-bottom:14px;}
+.chart-box h4 span{font-family:'DM Mono',monospace;font-size:.62rem;color:var(--muted);font-weight:400;margin-left:6px;}
+.chart-full{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;}
+.pct-table{width:100%;border-collapse:collapse;}
+.pct-table th{font-family:'DM Mono',monospace;font-size:.62rem;letter-spacing:.08em;color:var(--muted);text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);}
+.pct-table td{padding:9px 12px;font-size:.82rem;border-bottom:1px solid rgba(31,37,53,.5);}
+.pct-table tr:last-child td{border-bottom:none;}
+.pct-table tr:hover td{background:var(--surface2);}
+
+/* ═══ LIVE SYNC INDICATOR ═══ */
+.sync-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;transition:background .4s;}
+.sync-dot.live{background:#3ef0b0;box-shadow:0 0 0 2px rgba(62,240,176,.25);animation:syncPulse 2s infinite;}
+.sync-dot.syncing{background:#f5c842;box-shadow:0 0 0 2px rgba(245,200,66,.25);animation:syncPulse 0.6s infinite;}
+.sync-dot.error{background:#f87171;box-shadow:0 0 0 2px rgba(248,113,113,.2);}
+.sync-dot.offline{background:var(--border);}
+@keyframes syncPulse{0%,100%{opacity:1;}50%{opacity:.4;}}
+.sync-label{font-family:'DM Mono',monospace;font-size:.62rem;letter-spacing:.06em;transition:color .4s;}
+.sync-wrap{display:flex;align-items:center;gap:5px;}
+
+
+
+/* Module access - hide inaccessible items */
+.module-restricted { display: none !important; }
+
+/* Locked task styling */
+.task-locked {opacity: 0.6; pointer-events: none;}
+.task-locked .task-name::before {content: '🔒 '; color: var(--muted);}
+
+/* Module access control */
+.admin-nav .nav-btn[data-module]:not(.has-access) {
+  opacity: 0.3;
+  pointer-events: none;
+  cursor: not-allowed;
 }
 
-let pollTimer = null;
-function startPolling(){ if(pollTimer) return; pollTimer = setInterval(()=>{ if(GAS_URL && GAS_URL!=='https://script.google.com/macros/s/AKfycbwpFsWL1zF687pCFjZCuSRalNhTOrqrURSP4a9ts1ZcHDoG9KDeR0HUEELPHUt78_R6/exec'){ fetch(GAS_URL+'?action=all',{cache:'no-store'}).then(r=>r.json()).then(d=>{ if(d.tasks) tasks=d.tasks; }).catch(e=>{}); } },8000); }
-function stopPolling(){ if(pollTimer) clearInterval(pollTimer); pollTimer=null; }
-function gasGet(action){ if(!GAS_URL||GAS_URL==='https://script.google.com/macros/s/AKfycbwpFsWL1zF687pCFjZCuSRalNhTOrqrURSP4a9ts1ZcHDoG9KDeR0HUEELPHUt78_R6/exec') return Promise.resolve(null); return fetch(GAS_URL+'?action='+action,{cache:'no-store'}).then(r=>r.json()).catch(()=>null); }
-function gasPost(action,payload){ if(!GAS_URL||GAS_URL==='https://script.google.com/macros/s/AKfycbwpFsWL1zF687pCFjZCuSRalNhTOrqrURSP4a9ts1ZcHDoG9KDeR0HUEELPHUt78_R6/exec') return Promise.resolve(null); return fetch(GAS_URL+'?action='+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json()).catch(()=>null); }
-function syncUsers(){ if(GAS_URL && GAS_URL!=='https://script.google.com/macros/s/AKfycbwpFsWL1zF687pCFjZCuSRalNhTOrqrURSP4a9ts1ZcHDoG9KDeR0HUEELPHUt78_R6/exec'){ gasPost('users', {users:userRegistry}); } }
-function inRange(d,from,to){ if(!d) return false; const dt=new Date(d); if(from){ const f = new Date(from.split('/').reverse().join('-')); if(dt<f) return false;} if(to){ const t = new Date(to.split('/').reverse().join('-')); if(dt>t) return false;} return true; }
-function fmtDate(d){ if(!d) return ''; const dt=new Date(d); return dt.toLocaleDateString(); }
+/* Module access restriction */
+.module-restricted {
+  opacity: 0.4 !important;
+  pointer-events: none !important;
+  cursor: not-allowed !important;
+}
+.module-restricted::after {
+  content: ' 🔒';
+  font-size: 0.7em;
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ LOGIN ═══ -->
+<div id="loginScreen">
+  <div class="login-box">
+    <div class="login-top">
+      <div class="login-logo">FT</div>
+      <h1>Factory <span>Task</span> System</h1>
+      <p>// SECURE PERSONAL TASK PORTAL</p>
+    </div>
+    <div class="login-form">
+      <div class="form-group">
+        <label>SELECT YOUR NAME</label>
+        <div class="input-wrap">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+          <select id="loginUser">
+            <option value="">⏳ Loading users...</option>
+            <option value="admin">Admin (All Access)</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>PASSWORD</label>
+        <div class="input-wrap">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <input type="password" id="loginPass" placeholder="Enter your password" autocomplete="off">
+        </div>
+      </div>
+      <div class="login-err" id="loginErr">⚠ Incorrect password.</div>
+      <button class="login-btn" id="loginBtn">LOGIN →</button>
+    </div>
+    <div class="login-footer">Login with your assigned credentials &nbsp;·&nbsp; Admin: admin@1234</div>
+  </div>
+</div>
+
+<!-- ═══ APP ═══ -->
+<div id="appScreen">
+  <div class="topbar">
+    <div class="topbar-logo">Factory <span>Task</span></div>
+    <div class="topbar-div"></div>
+    <div class="user-chip">
+      <div class="uc-av" id="ucAv"></div>
+      <div class="uc-nm" id="ucNm"></div>
+    </div>
+    <span class="admin-badge" id="adminBadge" style="display:none">ADMIN</span>
+    <div class="topbar-right">
+      <div class="sync-wrap" id="syncWrap" style="display:none"><div class="sync-dot offline" id="syncDot"></div><span class="sync-label" id="syncLabel" style="color:var(--muted)">OFFLINE</span></div>
+      <button class="logout-btn" id="logoutBtn">
+        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>LOGOUT
+      </button>
+    </div>
+  </div>
+  <div class="content" id="mainContent"></div>
+</div>
+
+<!-- ═══ CONFIRM ═══ -->
+<div class="co" id="confirmOverlay" style="display:none">
+  <div class="cb">
+    <h4 id="confirmTitle">Delete Task?</h4>
+    <p id="confirmMsg"></p>
+    <div class="cb-acts">
+      <button class="c-cancel" id="confirmCancel">CANCEL</button>
+      <button class="c-del" id="confirmOk">DELETE</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── CREDENTIALS ───
+let CREDS={admin:'admin@1234'}; // users loaded from Google Sheets
+let PERSONS=[]; // loaded from Google Sheets
+// ─ USER REGISTRY (dynamic, admin-managed) ─
+let userRegistry=[]; // loaded from Google Sheets
+// ─ PALETTE for user color picker ─
+const COLOR_PALETTE=['#3b82f6','#a855f7','#10b981','#f97316','#ef4444','#06b6d4','#eab308','#d946ef','#14b8a6','#f43f5e','#84cc16','#22c55e','#f5c842','#e879f9','#fb7185','#38bdf8','#4ade80','#fbbf24','#f472b6','#a78bfa'];
+// ─ SETTINGS active sub-tab ─
+let settingsTab='users';
+
+// ─── THEMES ───
+const TH={
+  Onzana:{bg:'#0f2040',color:'#60a5fa',accent:'#3b82f6'},
+  Samima:{bg:'#200f35',color:'#c084fc',accent:'#a855f7'},
+  Sayed:{bg:'#0f2820',color:'#34d399',accent:'#10b981'},
+  Johir:{bg:'#2a1a0a',color:'#fb923c',accent:'#f97316'},
+  Shajia:{bg:'#250f0f',color:'#f87171',accent:'#ef4444'},
+  Rabeya:{bg:'#0a2025',color:'#22d3ee',accent:'#06b6d4'},
+  Moni:{bg:'#252510',color:'#facc15',accent:'#eab308'},
+  Rakib:{bg:'#1a0f25',color:'#e879f9',accent:'#d946ef'},
+  Popi:{bg:'#0f2525',color:'#2dd4bf',accent:'#14b8a6'},
+  Jobayat:{bg:'#25100f',color:'#fb7185',accent:'#f43f5e'},
+  Sumaya:{bg:'#182510',color:'#a3e635',accent:'#84cc16'},
+  'Sayed/Johir':{bg:'#0f2515',color:'#4ade80',accent:'#22c55e'},
+  '—':{bg:'#151515',color:'#6b7280',accent:'#4b5563'},
+  admin:{bg:'#201a08',color:'#f5c842',accent:'#eab308'}
+};
+function th(p){return TH[p]||{bg:'#1e2536',color:'#94a3b8',accent:'#64748b'};}
+function ini(n){return n.split('/')[0].trim().substring(0,2).toUpperCase();}
+
+// ─── TASK DATA ─── (loaded from Google Sheets)
+let tasks=[];
+let nextSl=1;
+
+// ═══════════════════════════════════════════════════════════════
+//  GOOGLE SHEETS SYNC LAYER — REAL-TIME POLLING
+//  Replace GAS_URL below with your deployed Apps Script URL
+// ═══════════════════════════════════════════════════════════════
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbw5iJwVIutwUru7PHshvRnE_EMmBBP5q9lHjKzH7AHva07ZPJ_z5wwxPW-HZ89u3ccP/exec'; // ← TODO: paste your Web App URL here
+const POLL_INTERVAL_MS = 8000; // poll every 8 seconds
+
+let _syncDebounce = null;
+let _pollTimer    = null;
+let _lastVersion  = null;
+let _isSyncing    = false;
+
+// ── Low-level fetch ─────────────────────────────────────────────
+async function gasGet(action='all') {
+  if (!GAS_URL || GAS_URL === 'https://script.google.com/macros/s/AKfycbw5iJwVIutwUru7PHshvRnE_EMmBBP5q9lHjKzH7AHva07ZPJ_z5wwxPW-HZ89u3ccP/exec') return null;
+  try {
+    const res = await fetch(GAS_URL + '?action=' + action, {cache:'no-store'});
+    return await res.json();
+  } catch(e) { setSyncStatus('error'); return null; }
+}
+
+async function gasPost(body) {
+  if (!GAS_URL || GAS_URL === 'https://script.google.com/macros/s/AKfycbw5iJwVIutwUru7PHshvRnE_EMmBBP5q9lHjKzH7AHva07ZPJ_z5wwxPW-HZ89u3ccP/exec') return;
+  try {
+    // mode:'no-cors' required when hosted on GitHub Pages (cross-origin POST to GAS)
+    await fetch(GAS_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: {'Content-Type': 'text/plain'},
+      body: JSON.stringify(body)
+    });
+  } catch(e) { console.warn('POST failed:', e); setSyncStatus('error'); }
+}
+
+// ── Sync indicator ───────────────────────────────────────────────
+function setSyncStatus(status) {
+  const dot  = document.getElementById('syncDot');
+  const lbl  = document.getElementById('syncLabel');
+  const wrap = document.getElementById('syncWrap');
+  if (!dot || !lbl) return;
+  dot.className = 'sync-dot ' + status;
+  const map = {live:'LIVE', syncing:'SYNCING...', error:'RETRY', offline:'OFFLINE'};
+  const col = {live:'#3ef0b0', syncing:'#f5c842', error:'#f87171', offline:'var(--muted)'};
+  lbl.textContent = map[status] || status.toUpperCase();
+  lbl.style.color = col[status] || 'var(--muted)';
+  if (wrap) wrap.style.display = (!currentUser || status === 'offline') ? 'none' : 'flex';
+}
+
+// ── Serialize helpers ────────────────────────────────────────────
+function doneStateToObj() {
+  const obj = {};
+  Object.entries(doneState).forEach(([u, set]) => { obj[u] = Array.from(set); });
+  return obj;
+}
+
+function applyRemoteData(data) {
+  if (!data) return false;
+  let changed = false;
+  if (data.tasks && data.tasks.length > 0) {
+    const n = JSON.stringify(data.tasks), c = JSON.stringify(tasks);
+    if (n !== c) { tasks = data.tasks; changed = true; }
+  }
+  if (data.nextSl && data.nextSl > nextSl) nextSl = data.nextSl;
+  if (data.doneState) {
+    const n = JSON.stringify(data.doneState), c = JSON.stringify(doneStateToObj());
+    if (n !== c) {
+      Object.entries(data.doneState).forEach(([u, sls]) => {
+        doneState[u] = new Set(Array.isArray(sls) ? sls : []);
+      });
+      changed = true;
+    }
+  }
+  if (data.users && data.users.length > 0) {
+    userRegistry = data.users;
+    data.users.forEach(u => { CREDS[u.name] = u.password; });
+  }
+  if (data.moduleAccess) {
+    moduleAccess = data.moduleAccess;
+  }
+  return changed;
+}
+
+// ── Outbound sync (local → Sheets) ──────────────────────────────
+function syncToSheets() {
+  clearTimeout(_syncDebounce);
+  _syncDebounce = setTimeout(async () => {
+    setSyncStatus('syncing');
+    await gasPost({action:'saveAll', tasks, nextSl, doneState:doneStateToObj()});
+    const v = await gasGet('version');
+    if (v && v.version) _lastVersion = v.version;
+    setSyncStatus('live');
+  }, 800);
+}
+
+function syncUsers() {
+  // Ensure admin password is in userRegistry
+  const adminInReg = userRegistry.find(u => u.name === 'admin');
+  if (!adminInReg && CREDS['admin']) {
+    userRegistry.push({name: 'admin', password: CREDS['admin'], color: '#f59e0b'});
+  } else if (adminInReg) {
+    adminInReg.password = CREDS['admin'];
+  }
+  gasPost({action:'saveUsers', users:userRegistry});
+}
+
+function syncModuleAccess() {
+  gasPost({action:'saveModuleAccess', moduleAccess});
+}
+
+// ── Inbound sync (Sheets → local) via polling ───────────────────
+async function pollSheets() {
+  if (!currentUser || _isSyncing) return;
+  _isSyncing = true;
+  try {
+    const v = await gasGet('version');
+    if (!v) { setSyncStatus('error'); return; }
+    if (v.version && v.version !== _lastVersion) {
+      if (_lastVersion !== null) {
+        setSyncStatus('syncing');
+        const data = await gasGet('all');
+        const changed = applyRemoteData(data);
+        if (changed) { renderContent(); toast('\u21bb Updated by another user', 'info'); }
+      }
+      _lastVersion = v.version;
+    }
+    setSyncStatus('live');
+  } catch(e) {
+    setSyncStatus('error');
+  } finally {
+    _isSyncing = false;
+  }
+}
+
+function startPolling() {
+  stopPolling();
+  if (!GAS_URL || GAS_URL === 'https://script.google.com/macros/s/AKfycbw5iJwVIutwUru7PHshvRnE_EMmBBP5q9lHjKzH7AHva07ZPJ_z5wwxPW-HZ89u3ccP/exec') return;
+  setSyncStatus('syncing');
+  pollSheets();
+  _pollTimer = setInterval(pollSheets, POLL_INTERVAL_MS);
+}
+
+function stopPolling() {
+  clearInterval(_pollTimer);
+  _pollTimer = null;
+}
+
+// ── Initial load on login ────────────────────────────────────────
+async function initFromSheets() {
+  const loginBtn = document.getElementById('loginBtn');
+  if (loginBtn) { loginBtn.textContent = 'Loading...'; loginBtn.disabled = true; }
+  
+  // Add timeout to prevent infinite loading
+  const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(null), 5000));
+  const dataPromise = gasGet('all');
+  const data = await Promise.race([dataPromise, timeoutPromise]);
+  if (data) {
+    applyRemoteData(data);
+    if (data.moduleAccess) moduleAccess = data.moduleAccess;
+    if (data.users && data.users.length > 0) {
+      PERSONS = data.users.filter(u => u.name !== 'admin').map(u => u.name);
+      const sel = document.getElementById('loginUser');
+      if (sel) {
+        const uOpts = data.users
+          .filter(u => u.name !== 'admin')
+          .map(u => '<option value="'+u.name+'">'+u.name+'</option>').join('');
+        sel.innerHTML = '<option value="">-- Select your name --</option>'
+          + uOpts
+          + '<option value="admin">Admin (All Access)</option>';
+      }
+    }
+    const v = await gasGet('version');
+    if (v && v.version) _lastVersion = v.version;
+  }
+  if (loginBtn) { loginBtn.textContent = 'LOGIN \u2192'; loginBtn.disabled = false; }
+}
+
+// ─── STATE ───
+let currentUser=null,taskFilter='all',searchQ='',adminTab='overview',userView='list';
+let moduleAccess = {}; // user → [module IDs]
+let kpiFrom='',kpiTo='',kpiMonth='';
+let calYear=new Date().getFullYear(),calMonth=new Date().getMonth(),calSelectedDate='';
+let ovCalYear=new Date().getFullYear(),ovCalMonth=new Date().getMonth(),ovCalSelected='';
+const doneState={};
+
+// ──────────────────────────────────────────────────────────────────
+// Helper functions for task locking and date formatting
+// ──────────────────────────────────────────────────────────────────
+
+// Check if task is locked (has actual time saved AND is marked done)
+function isTaskLocked(task, user) {
+  if (!task.actualTime) return false;
+  const done = doneState[user];
+  return done && done.has(task.sl);
+}
+
+// Check if user has access to a specific module
+function hasModuleAccess(user, moduleId) {
+  if (user === 'admin') return true; // admin has access to everything
+  if (!moduleAccess[user]) return false;
+  return moduleAccess[user].includes(moduleId);
+}
+
+// Hide/show navigation items based on module access
+function applyModuleAccess() {
+  if (!currentUser || currentUser === 'admin') return; // admin sees everything
+  
+  const modules = [
+    {id: 'kpi', selector: '.nav-btn[onclick*="adminTab=\'kpi\'"]'},
+    {id: 'overview', selector: '.nav-btn[onclick*="adminTab=\'overview\'"]'},
+    {id: 'all', selector: '.nav-btn[onclick*="adminTab=\'all\'"]'},
+    {id: 'plantime', selector: '.nav-btn[onclick*="adminTab=\'plantime\'"]'},
+  ];
+  
+  modules.forEach(mod => {
+    const btn = document.querySelector(mod.selector);
+    if (btn) {
+      if (hasModuleAccess(currentUser, mod.id)) {
+        btn.style.display = '';
+        btn.style.pointerEvents = '';
+      } else {
+        btn.style.display = 'none';
+      }
+    }
+  });
+}
+
+
+// Check if current user has access to a specific module
+function hasModuleAccess(moduleId) {
+  if (currentUser === 'admin') return true; // admin has all access
+  if (!moduleAccess[currentUser]) return false;
+  return moduleAccess[currentUser].includes(moduleId);
+}
+
+
+// Format date for display: YYYY-MM-DD → DD/MM/YYYY
+
+// Check if current user has access to a module
+function hasModuleAccess(moduleId) {
+  if (currentUser === 'admin') return true; // admin has all access
+  if (!moduleAccess[currentUser]) return false;
+  return moduleAccess[currentUser].includes(moduleId);
+}
+
+
+// Apply module access restrictions to UI
+function enforceModuleAccess() {
+  if (currentUser === 'admin') return; // admin sees everything
+  
+  const access = moduleAccess[currentUser] || [];
+  
+  // Map button text to module IDs
+  const moduleMap = {
+    'OVERVIEW': 'overview',
+    'KPI': 'kpi',
+    'ALL TASKS': 'all',
+    'PLAN TIME': 'plantime'
+  };
+  
+  // Hide topbar buttons without access
+  document.querySelectorAll('.topbar button').forEach(btn => {
+    const text = btn.textContent.trim();
+    const moduleId = moduleMap[text];
+    if (moduleId && !access.includes(moduleId)) {
+      btn.classList.add('module-restricted');
+    }
+  });
+  
+  // If current view is restricted, redirect to first available or default
+  const currentView = taskFilter;
+  const viewModuleMap = {
+    'all': 'all',
+    'kpi': 'kpi',
+    'plantime': 'plantime'
+  };
+  
+  const currentModule = viewModuleMap[currentView];
+  if (currentModule && !access.includes(currentModule) && !access.includes('overview')) {
+    // Find first accessible view
+    if (access.includes('overview')) taskFilter = 'all';
+    else if (access.includes('kpi')) taskFilter = 'kpi';
+    else if (access.includes('all')) taskFilter = 'all';
+    else if (access.includes('plantime')) taskFilter = 'plantime';
+  }
+}
+
+function formatDateDisplay(dateStr) {
+  if (!dateStr || dateStr.length !== 10 || !dateStr.includes('-')) return dateStr;
+  const [y, m, d] = dateStr.split('-');
+  return d + '/' + m + '/' + y;
+}
+
+// Format date for storage: DD/MM/YYYY → YYYY-MM-DD
+function formatDateStorage(dateStr) {
+  if (!dateStr) return '';
+  if (dateStr.includes('-')) return dateStr; // already in storage format
+  if (!dateStr.includes('/')) return dateStr;
+  const parts = dateStr.split('/');
+  if (parts.length !== 3) return dateStr;
+  const [d, m, y] = parts;
+  return y + '-' + m.padStart(2,'0') + '-' + d.padStart(2,'0');
+}
+
+function getDone(u){if(!doneState[u])doneState[u]=new Set();return doneState[u];}
+
+// ─── HELPERS ───
+function formatDisplayDate(isoDate) {
+  if (!isoDate) return '';
+  const [y,m,d] = isoDate.split('-');
+  return `${d}/${m}/${y}`;
+}
+function timeCmp(pd,pt,ad,at){
+  if(!pt||!at)return'';
+  const pMs=new Date((pd||'2000-01-01')+'T'+pt).getTime();
+  const aMs=new Date((ad||'2000-01-01')+'T'+at).getTime();
+  if(aMs===pMs)return'ontime'; return aMs<pMs?'early':'late';
+}
+function timeDiff(pd,pt,ad,at){
+  if(!pt||!at)return'';
+  const pMs=new Date((pd||'2000-01-01')+'T'+pt).getTime();
+  const aMs=new Date((ad||'2000-01-01')+'T'+at).getTime();
+  const diff=aMs-pMs;const abs=Math.abs(diff);
+  const h=Math.floor(abs/3600000),m=Math.floor((abs%3600000)/60000);
+  const str=(h?h+'h ':'')+m+'m';
+  if(diff===0)return'On Time'; return diff>0?'+'+str+' late':'-'+str+' early';
+}
+function inRange(date,from,to){if(!date)return(!from&&!to);if(from&&date<from)return false;if(to&&date>to)return false;return true;}
+function fmtDate(d){if(!d)return'';const p=d.split('-');return p[2]+'/'+p[1]+'/'+p[0];}
+function calIco(){return '<svg width="9" height="9" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>';}
+
+function clockIcon(){return`<svg width="9" height="9" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;}
+function checkIcon(){return`<svg width="9" height="9" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="20 6 9 11 4 6"/><path d="M4 6v12l9 5 9-5V6"/></svg>`;}
+
+// plan time badge (read-only for user, editable for admin in plan tab)
+function planBadge(k){
+  if(!k.planTime)return`<span class="time-badge unset">${clockIcon()} No plan time</span>`;
+  return`<span class="time-badge plan">${clockIcon()} Plan: ${k.planTime}</span>`;
+}
+// actual time badge
+function actualBadge(k){
+  if(!k.actualTime)return`<span class="time-badge unset">${checkIcon()} Not completed</span>`;
+  const cmp=timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime);
+  const cls=cmp==='late'?'overdue':cmp==='early'?'actual':'actual';
+  const diff=timeDiff(k.planDate,k.planTime,k.actualDate,k.actualTime);
+  return`<span class="time-badge ${cls}">${checkIcon()} Done: ${k.actualTime}${diff?` <span style="opacity:0.7;font-size:0.6rem">(${diff})</span>`:''}</span>`;
+}
 
 // ─── LOGIN ───
-document.getElementById('loginBtn').onclick=async()=>{await initFromSheets();doLogin();};
+document.getElementById('loginBtn').onclick=async()=>{
+  const btn = document.getElementById('loginBtn');
+  const originalText = btn.textContent;
+  btn.textContent = 'LOGGING IN...';
+  btn.disabled = true;
+  
+  // Only init if we don't have data yet
+  if (tasks.length === 0 && userRegistry.length === 0) {
+    await initFromSheets();
+  }
+  
+  const success = doLogin();
+  
+  if (!success) {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+};
 
 // ── Page load: populate dropdown from Sheets immediately ──
 // ── Populate login dropdown (with retry) ──────────────────────
 async function populateLoginDropdown() {
   const sel = document.getElementById('loginUser');
-  if (!GAS_URL || GAS_URL === 'https://script.google.com/macros/s/AKfycbwpFsWL1zF687pCFjZCuSRalNhTOrqrURSP4a9ts1ZcHDoG9KDeR0HUEELPHUt78_R6/exec') {
+  if (!GAS_URL || GAS_URL === 'https://script.google.com/macros/s/AKfycbw5iJwVIutwUru7PHshvRnE_EMmBBP5q9lHjKzH7AHva07ZPJ_z5wwxPW-HZ89u3ccP/exec') {
     if (sel) sel.innerHTML = '<option value="">-- Choose your name --</option>'
       + '<option value="admin">Admin (All Access)</option>';
     return;
   }
 
   let attempts = 0;
-  const maxAttempts = 5;
+  const maxAttempts = 3;
 
   async function tryFetch() {
     attempts++;
@@ -283,7 +862,7 @@ async function populateLoginDropdown() {
     } catch(e) {
       if (attempts < maxAttempts) {
         // Retry after delay (2s, 4s, 6s...)
-        setTimeout(tryFetch, attempts * 2000);
+        setTimeout(tryFetch, 1000);
       } else {
         // Final fallback — show admin only
         if (sel) sel.innerHTML = '<option value="">-- Select your name --</option>'
@@ -303,11 +882,11 @@ function doLogin(){
   const u=document.getElementById('loginUser').value;
   const p=document.getElementById('loginPass').value.trim();
   const err=document.getElementById('loginErr');
-  if(!u){err.textContent='⚠ Please select your name from the list.';err.style.display='block';return;}
-  if(CREDS[u]!==p){err.textContent='⚠ Incorrect password.';err.style.display='block';document.getElementById('loginPass').value='';return;}
-  err.style.display='none';currentUser=u;openApp();
+  if(!u){err.textContent='⚠ Please select your name from the list.';err.style.display='block';return false;}
+  if(CREDS[u]!==p){err.textContent='⚠ Incorrect password.';err.style.display='block';document.getElementById('loginPass').value='';return false;}
+  err.style.display='none';currentUser=u;openApp();return true;
 }
-function openApp(){startPolling();
+function openApp(){startPolling();enforceModuleAccess();
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('appScreen').style.display='block';
   document.getElementById('loginPass').value='';
@@ -1910,7 +2489,16 @@ function renderSettingsUsers(body){
     const cp=document.getElementById('admin-confirmpass').value;
     if(!np){toast('Enter new password','error');return;}
     if(np!==cp){toast('Passwords do not match','error');return;}
-    CREDS['admin']=np;syncUsers();toast('Admin password updated','success');
+    CREDS['admin']=np;
+    // Ensure admin exists in userRegistry
+    let adminEntry = userRegistry.find(u => u.name === 'admin');
+    if (!adminEntry) {
+      adminEntry = {name: 'admin', password: np, color: '#facc15'};
+      userRegistry.push(adminEntry);
+    } else {
+      adminEntry.password = np;
+    }
+    syncUsers();toast('Admin password updated','success');
     document.getElementById('admin-newpass').value='';document.getElementById('admin-confirmpass').value='';
   };
 }
@@ -2388,7 +2976,16 @@ function renderSettingsUsers(body){
     const cp=document.getElementById('admin-confirmpass').value;
     if(!np){toast('Enter new password','error');return;}
     if(np!==cp){toast('Passwords do not match','error');return;}
-    CREDS['admin']=np;syncUsers();toast('Admin password updated','success');
+    CREDS['admin']=np;
+    // Ensure admin exists in userRegistry
+    let adminEntry = userRegistry.find(u => u.name === 'admin');
+    if (!adminEntry) {
+      adminEntry = {name: 'admin', password: np, color: '#facc15'};
+      userRegistry.push(adminEntry);
+    } else {
+      adminEntry.password = np;
+    }
+    syncUsers();toast('Admin password updated','success');
     document.getElementById('admin-newpass').value='';document.getElementById('admin-confirmpass').value='';
   };
 }
@@ -2672,5 +3269,3 @@ function renderSettingsLeadTime(body){
 
 
 </script>
-</body>
-</html>
