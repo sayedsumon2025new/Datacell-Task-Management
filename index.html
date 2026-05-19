@@ -197,6 +197,22 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .ovcal-legend-item{display:flex;align-items:center;gap:5px;font-family:'DM Mono',monospace;font-size:.64rem;color:var(--muted);}
 .ovcal-legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
 .ovcal-detail-task{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 14px;display:flex;align-items:flex-start;gap:12px;}
+</style>
+<script>
+// Safe defaults inserted: demo credentials and placeholder GAS_URL
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbwpFsWL1zF687pCFjZCuSRalNhTOrqrURSP4a9ts1ZcHDoG9KDeR0HUEELPHUt78_R6/exec'
+const CREDS = { 'admin': 'admin', 'demo': 'demo123' };
+let tasks = [];
+let userRegistry = [{name: 'admin', password: CREDS['admin']}, {name: 'demo', password: CREDS['demo']}];
+let PERSONS = userRegistry.filter(u=>u.name!=='admin').map(u=>u.name);
+let TH = {};
+const COLOR_PALETTE = ['#34d399','#60a5fa','#f5c842','#f87171','#a78bfa','#fb7185'];
+let settingsTab='users', adminTab='overview', userView='list';
+let taskFilter='all', searchQ='';
+let currentUser = null;
+let nextSl = 1;
+function syncToSheets(){console.info('syncToSheets called — GAS_URL=',GAS_URL);} // noop until GAS_URL set
+
   const diff=timeDiff(k.planDate,k.planTime,k.actualDate,k.actualTime);
   return`<span class="time-badge ${cls}">${checkIcon()} Done: ${k.actualTime}${diff?` <span style="opacity:0.7;font-size:0.6rem">(${diff})</span>`:''}</span>`;
 }
@@ -208,7 +224,7 @@ document.getElementById('loginBtn').onclick=async()=>{await initFromSheets();doL
 // ── Populate login dropdown (with retry) ──────────────────────
 async function populateLoginDropdown() {
   const sel = document.getElementById('loginUser');
-  if (!GAS_URL || GAS_URL === 'YOUR_GAS_URL_HERE') {
+  if (!GAS_URL || GAS_URL === 'https://script.google.com/macros/s/AKfycbwpFsWL1zF687pCFjZCuSRalNhTOrqrURSP4a9ts1ZcHDoG9KDeR0HUEELPHUt78_R6/exec') {
     if (sel) sel.innerHTML = '<option value="">-- Choose your name --</option>'
       + '<option value="admin">Admin (All Access)</option>';
     return;
