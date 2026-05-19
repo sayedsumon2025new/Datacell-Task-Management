@@ -200,7 +200,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 </style>
 <script>
 // Safe defaults inserted: demo credentials and placeholder GAS_URL
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbwpFsWL1zF687pCFjZCuSRalNhTOrqrURSP4a9ts1ZcHDoG9KDeR0HUEELPHUt78_R6/exec'
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbwpFsWL1zF687pCFjZCuSRalNhTOrqrURSP4a9ts1ZcHDoG9KDeR0HUEELPHUt78_R6/exec'; // replace to enable Google Apps Script sync
 const CREDS = { 'admin': 'admin', 'demo': 'demo123' };
 let tasks = [];
 let userRegistry = [{name: 'admin', password: CREDS['admin']}, {name: 'demo', password: CREDS['demo']}];
@@ -213,9 +213,35 @@ let currentUser = null;
 let nextSl = 1;
 function syncToSheets(){console.info('syncToSheets called — GAS_URL=',GAS_URL);} // noop until GAS_URL set
 
-  const diff=timeDiff(k.planDate,k.planTime,k.actualDate,k.actualTime);
-  return`<span class="time-badge ${cls}">${checkIcon()} Done: ${k.actualTime}${diff?` <span style="opacity:0.7;font-size:0.6rem">(${diff})</span>`:''}</span>`;
+// Helpers added to restore missing utilities
+let doneState = {};
+function getDone(user){ if(!doneState[user]) doneState[user]=new Set(); return doneState[user]; }
+function ini(name){ if(!name) return ''; return name.split(' ').map(s=>s[0]||'').join('').slice(0,2).toUpperCase(); }
+function th(name){ if(!name) return {bg:'#111',color:'#fff',accent:'#f5c842'}; if(TH[name]) return TH[name]; const h = name.split('').reduce((s,c)=>s+c.charCodeAt(0),0); const color = COLOR_PALETTE[h % COLOR_PALETTE.length]; const rgb = hexToRgbSafe(color); const obj = {bg:`rgba(${rgb},0.12)`,color:color,accent:color}; TH[name]=obj; return obj; }
+function checkIcon(){ return '<svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align:middle"><polyline points="20 6 9 17 4 12"/></svg>'; }
+function clockIcon(){ return '<svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="vertical-align:middle"><circle cx="12" cy="12" r="10"/><path d="M12 7v6l4 2"/></svg>'; }
+function timeDiff(planDate,planTime,actualDate,actualTime){ try{ if(!planTime||!actualTime) return ''; const p = planTime.split(':'); const a = actualTime.split(':'); const pd = new Date(); pd.setHours(+p[0],+p[1],0,0); const ad = new Date(); ad.setHours(+a[0],+a[1],0,0); const mins = Math.round((ad - pd)/60000); if(mins===0) return 'On time'; if(mins>0) return '+'+mins+'m late'; return mins+'m early'; }catch(e){return '';}}
+function timeCmp(planDate,planTime,actualDate,actualTime){ if(!actualTime) return 'pending'; const diff = (function(){const p=planTime?planTime.split(':'):[0,0];const a=actualTime.split(':');return (a[0]-p[0])*60 + (a[1]-p[1]);})(); if(diff>0) return 'late'; if(diff<0) return 'early'; return 'ontime'; }
+function planBadge(k){ if(!k) return '<span class="time-badge unset">—</span>'; if(k.planTime) return `<span class="time-badge plan">${clockIcon()} ${k.planTime}</span>`; return `<span class="time-badge unset">—</span>`; }
+function actualBadge(k){ if(!k) return '<span class="time-badge unset">—</span>'; if(k.actualTime){ const cls = timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='late'?'overdue':'actual'; const diff = timeDiff(k.planDate,k.planTime,k.actualDate,k.actualTime); return `<span class="time-badge ${cls}">${checkIcon()} Done: ${k.actualTime}${diff?` <span style="opacity:0.7;font-size:0.6rem">(${diff})</span>`:''}</span>`; } return `<span class="time-badge unset">—</span>`; }
+function isTaskLocked(task){ return !!(task && task.actualTime); }
+
+async function initFromSheets(){
+  // Try to load from GAS, else keep local demo data
+  if(GAS_URL && GAS_URL!=='https://script.google.com/macros/s/AKfycbwpFsWL1zF687pCFjZCuSRalNhTOrqrURSP4a9ts1ZcHDoG9KDeR0HUEELPHUt78_R6/exec'){
+    try{ const res = await fetch(GAS_URL+'?action=all',{cache:'no-store'}); const j = await res.json(); if(j.tasks) tasks = j.tasks; if(j.users) userRegistry = j.users; PERSONS = userRegistry.filter(u=>u.name!=='admin').map(u=>u.name); nextSl = tasks.reduce((m,t)=>Math.max(m,t.sl),0)+1; return; }catch(e){console.warn('initFromSheets fetch failed',e);} }
+  // fallback demo data
+  if(!tasks.length){ tasks = [{sl:1,task:'Demo task A',person:PERSONS[0]||'demo',priority:false,planTime:'09:30',actualTime:''}]; nextSl = 2; }
 }
+
+let pollTimer = null;
+function startPolling(){ if(pollTimer) return; pollTimer = setInterval(()=>{ if(GAS_URL && GAS_URL!=='https://script.google.com/macros/s/AKfycbwpFsWL1zF687pCFjZCuSRalNhTOrqrURSP4a9ts1ZcHDoG9KDeR0HUEELPHUt78_R6/exec'){ fetch(GAS_URL+'?action=all',{cache:'no-store'}).then(r=>r.json()).then(d=>{ if(d.tasks) tasks=d.tasks; }).catch(e=>{}); } },8000); }
+function stopPolling(){ if(pollTimer) clearInterval(pollTimer); pollTimer=null; }
+function gasGet(action){ if(!GAS_URL||GAS_URL==='https://script.google.com/macros/s/AKfycbwpFsWL1zF687pCFjZCuSRalNhTOrqrURSP4a9ts1ZcHDoG9KDeR0HUEELPHUt78_R6/exec') return Promise.resolve(null); return fetch(GAS_URL+'?action='+action,{cache:'no-store'}).then(r=>r.json()).catch(()=>null); }
+function gasPost(action,payload){ if(!GAS_URL||GAS_URL==='https://script.google.com/macros/s/AKfycbwpFsWL1zF687pCFjZCuSRalNhTOrqrURSP4a9ts1ZcHDoG9KDeR0HUEELPHUt78_R6/exec') return Promise.resolve(null); return fetch(GAS_URL+'?action='+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(r=>r.json()).catch(()=>null); }
+function syncUsers(){ if(GAS_URL && GAS_URL!=='https://script.google.com/macros/s/AKfycbwpFsWL1zF687pCFjZCuSRalNhTOrqrURSP4a9ts1ZcHDoG9KDeR0HUEELPHUt78_R6/exec'){ gasPost('users', {users:userRegistry}); } }
+function inRange(d,from,to){ if(!d) return false; const dt=new Date(d); if(from){ const f = new Date(from.split('/').reverse().join('-')); if(dt<f) return false;} if(to){ const t = new Date(to.split('/').reverse().join('-')); if(dt>t) return false;} return true; }
+function fmtDate(d){ if(!d) return ''; const dt=new Date(d); return dt.toLocaleDateString(); }
 
 // ─── LOGIN ───
 document.getElementById('loginBtn').onclick=async()=>{await initFromSheets();doLogin();};
