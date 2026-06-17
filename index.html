@@ -12,7 +12,7 @@
 body{background:var(--bg);color:var(--text);font-family:'Outfit',sans-serif;min-height:100vh;}
 body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(255,255,255,0.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.018) 1px,transparent 1px);background-size:44px 44px;pointer-events:none;z-index:0;}
 
-/* ═══ LOGIN ═══ */
+/* LOGIN === */
 #loginScreen{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:20px;}
 .login-box{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--border);border-radius:22px;overflow:hidden;animation:popIn 0.4s cubic-bezier(0.34,1.56,0.64,1) both;}
 @keyframes popIn{from{opacity:0;transform:scale(0.9) translateY(20px);}to{opacity:1;transform:scale(1) translateY(0);}}
@@ -36,7 +36,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .login-err{margin-top:12px;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.25);border-radius:8px;padding:10px 14px;font-size:0.8rem;color:#f87171;font-family:'DM Mono',monospace;display:none;text-align:center;}
 .login-footer{padding:14px 32px 20px;text-align:center;font-size:0.68rem;font-family:'DM Mono',monospace;color:var(--muted);letter-spacing:0.07em;}
 
-/* ═══ TOPBAR ═══ */
+/* TOPBAR === */
 #appScreen{display:none;position:relative;z-index:1;min-height:100vh;}
 .topbar{position:sticky;top:0;z-index:50;background:rgba(11,13,18,0.92);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;padding:0 24px;height:58px;}
 .topbar-logo{font-family:'Syne',sans-serif;font-size:1rem;font-weight:800;letter-spacing:-0.02em;}
@@ -51,7 +51,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .logout-btn:hover{color:#f87171;border-color:rgba(248,113,113,0.3);background:rgba(248,113,113,0.06);}
 .content{max-width:1040px;margin:0 auto;padding:28px 24px 60px;}
 
-/* ═══ SHARED ═══ */
+/* SHARED === */
 .section-title{font-family:'DM Mono',monospace;font-size:0.7rem;letter-spacing:0.1em;color:var(--muted);text-transform:uppercase;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid var(--border);}
 .filter-row{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center;}
 .search-wrap{position:relative;flex:1;min-width:180px;}
@@ -66,7 +66,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .field-select option{background:#12151d;}
 .empty-msg{padding:48px;text-align:center;font-family:'DM Mono',monospace;font-size:0.8rem;color:var(--muted);letter-spacing:0.06em;}
 
-/* ═══ PERSONAL ═══ */
+/* PERSONAL === */
 .ph-box{display:flex;align-items:center;gap:20px;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:22px 26px;margin-bottom:22px;}
 .ph-av{width:56px;height:56px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-size:1.2rem;font-weight:800;flex-shrink:0;}
 .ph-info{flex:1;}
@@ -82,7 +82,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .prog-track{height:8px;background:var(--border);border-radius:10px;overflow:hidden;}
 .prog-fill{height:100%;border-radius:10px;transition:width 0.5s ease;}
 
-/* ═══ TASK TABLE ═══ */
+/* TASK TABLE === */
 .task-list{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;}
 .tlh{display:grid;padding:10px 16px;background:var(--surface2);border-bottom:1px solid var(--border);font-family:'DM Mono',monospace;font-size:0.64rem;letter-spacing:0.1em;color:var(--muted);text-transform:uppercase;gap:8px;}
 .trow{display:grid;align-items:center;padding:11px 16px;border-bottom:1px solid var(--border);transition:background 0.15s;animation:rowIn 0.22s ease both;gap:8px;}
@@ -135,7 +135,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .person-sel:focus{border-color:#f5c842;}
 .person-sel option{background:#12151d;}
 
-/* ═══ ADMIN TABS ═══ */
+/* ADMIN TABS === */
 .admin-tabs{display:flex;gap:4px;margin-bottom:24px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:5px;}
 .atab{flex:1;text-align:center;padding:10px 4px;border-radius:8px;cursor:pointer;font-family:'DM Mono',monospace;font-size:0.66rem;letter-spacing:0.07em;color:var(--muted);border:none;background:transparent;transition:all 0.2s;display:flex;align-items:center;justify-content:center;gap:5px;}
 .atab:hover{color:var(--text);background:var(--surface2);}
@@ -172,7 +172,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .add-btn{background:#f5c842;color:#0b0d12;border:none;border-radius:10px;font-family:'Syne',sans-serif;font-size:0.88rem;font-weight:700;padding:10px 18px;cursor:pointer;white-space:nowrap;transition:all 0.2s;display:flex;align-items:center;gap:6px;height:41px;}
 .add-btn:hover{background:#f9d84a;transform:translateY(-1px);box-shadow:0 4px 16px rgba(245,200,66,0.25);}
 
-/* ═══ CONFIRM / TOAST ═══ */
+/* CONFIRM / TOAST === */
 .co{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);padding:20px;}
 .cb{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px 30px;max-width:360px;width:100%;animation:popIn 0.25s ease both;}
 .cb h4{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;margin-bottom:8px;}
@@ -192,7 +192,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .ot-ok{color:#3ef0b0;}
 .ot-late{color:#f87171;}
 .ot-early{color:#a3e635;}
-/* ─ ADMIN OV CALENDAR ─ */
+/* - ADMIN OV CALENDAR - */
 .ovcal-legend{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;}
 .ovcal-legend-item{display:flex;align-items:center;gap:5px;font-family:'DM Mono',monospace;font-size:.64rem;color:var(--muted);}
 .ovcal-legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
@@ -202,7 +202,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .ovcal-detail-task.has-both{border-left:3px solid #a855f7;}
 .ovcal-person-chip{display:inline-flex;align-items:center;gap:5px;font-size:.7rem;}
 .ovcal-section-hdr{font-family:'DM Mono',monospace;font-size:.64rem;letter-spacing:.08em;color:var(--muted);padding:6px 0 4px;border-bottom:1px solid var(--border);margin-bottom:8px;}
-/* ─ CALENDAR ─ */
+/* - CALENDAR - */
 .view-toggle{display:flex;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:4px;}
 .vt-btn{flex:1;padding:7px 14px;border-radius:7px;cursor:pointer;font-family:'DM Mono',monospace;font-size:.68rem;letter-spacing:.08em;color:var(--muted);border:none;background:transparent;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:6px;}
 .vt-btn:hover{color:var(--text);background:var(--surface2);}
@@ -235,7 +235,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .day-readonly-badge{font-family:'DM Mono',monospace;font-size:.6rem;letter-spacing:.08em;background:rgba(80,88,112,.2);color:var(--muted);border:1px solid var(--border);border-radius:20px;padding:2px 9px;}
 .day-today-badge{font-family:'DM Mono',monospace;font-size:.6rem;letter-spacing:.08em;background:rgba(245,200,66,.1);color:#f5c842;border:1px solid rgba(245,200,66,.25);border-radius:20px;padding:2px 9px;}
 
-/* ─ SETTINGS PANEL ─ */
+/* - SETTINGS PANEL - */
 .settings-layout{display:grid;grid-template-columns:200px 1fr;gap:20px;min-height:400px;}
 @media(max-width:650px){.settings-layout{grid-template-columns:1fr;}}
 .settings-nav{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:8px;height:fit-content;}
@@ -290,7 +290,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .lead-save:hover{background:rgba(245,200,66,.28);}
 .lead-badge{display:inline-flex;align-items:center;gap:3px;font-family:'DM Mono',monospace;font-size:.63rem;padding:2px 7px;border-radius:20px;background:rgba(163,230,53,.1);color:#a3e635;border:1px solid rgba(163,230,53,.2);}
 
-/* ─ DATE RANGE BAR ─ */
+/* - DATE RANGE BAR - */
 .dr-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface);border:1px solid rgba(96,165,250,.2);border-radius:12px;padding:12px 16px;margin-bottom:18px;}
 .dr-bar label{font-family:'DM Mono',monospace;font-size:.68rem;letter-spacing:.08em;color:#60a5fa;display:flex;align-items:center;gap:5px;}
 .date-inp{background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Mono',monospace;font-size:.78rem;padding:7px 10px;outline:none;cursor:pointer;transition:border-color .18s;color-scheme:dark;}
@@ -318,7 +318,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .pct-table tr:last-child td{border-bottom:none;}
 .pct-table tr:hover td{background:var(--surface2);}
 
-/* ═══ LIVE SYNC INDICATOR ═══ */
+/* LIVE SYNC INDICATOR === */
 .sync-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;transition:background .4s;}
 .sync-dot.live{background:#3ef0b0;box-shadow:0 0 0 2px rgba(62,240,176,.25);animation:syncPulse 2s infinite;}
 .sync-dot.syncing{background:#f5c842;box-shadow:0 0 0 2px rgba(245,200,66,.25);animation:syncPulse 0.6s infinite;}
@@ -358,7 +358,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 </head>
 <body>
 
-<!-- ═══ LOGIN ═══ -->
+<!-- === LOGIN === -->
 <div id="loginScreen">
   <div class="login-box">
     <div class="login-top">
@@ -387,11 +387,11 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
       <div class="login-err" id="loginErr">⚠ Incorrect password.</div>
       <button class="login-btn" id="loginBtn">LOGIN →</button>
     </div>
-    <div class="login-footer">Login with your assigned credentials &nbsp;·&nbsp; Admin: admin@1234</div>
+    <div class="login-footer">Login with your assigned credentials &nbsp;-&nbsp; Admin: admin@1234</div>
   </div>
 </div>
 
-<!-- ═══ APP ═══ -->
+<!-- === APP === -->
 <div id="appScreen">
   <div class="topbar">
     <div class="topbar-logo">Factory <span>Task</span></div>
@@ -411,7 +411,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
   <div class="content" id="mainContent"></div>
 </div>
 
-<!-- ═══ CONFIRM ═══ -->
+<!-- === CONFIRM === -->
 <div class="co" id="confirmOverlay" style="display:none">
   <div class="cb">
     <h4 id="confirmTitle">Delete Task?</h4>
@@ -424,17 +424,48 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 </div>
 
 <script>
-// ─── CREDENTIALS ───
+
+// Validate GAS_URL is set
+if (!GAS_URL || GAS_URL.includes('YOUR_GAS_URL')) {
+  console.warn('⚠️ WARNING: GAS_URL is not configured. Replace with your Apps Script URL.');
+  document.body.innerHTML = '<div style="padding:20px; color:red; font-family:Arial;"><h2>❌ Configuration Required</h2><p>Please set the GAS_URL in the HTML file before use.</p></div>';
+}
+
+function safeGet(id) {
+  try {
+    return document.getElementById(id);
+  } catch (err) {
+    console.error(`Element not found: ${id}`);
+    return null;
+  }
+
+
+// ════════════ DEFENSIVE GUARDS ════════════
+function validateTask(task) {
+  if (!task) return false;
+  if (!task.sl || !task.task) return false;
+  return true;
+}
+
+function validateUser(user) {
+  if (!user) return false;
+  if (!user.name) return false;
+  return true;
+}
+}
+
+
+// CREDENTIALS ---
 let CREDS={admin:'admin@1234'}; // users loaded from Google Sheets
 let PERSONS=[]; // loaded from Google Sheets
-// ─ USER REGISTRY (dynamic, admin-managed) ─
+// - USER REGISTRY (dynamic, admin-managed) -
 let userRegistry=[]; // loaded from Google Sheets
-// ─ PALETTE for user color picker ─
+// - PALETTE for user color picker -
 const COLOR_PALETTE=['#3b82f6','#a855f7','#10b981','#f97316','#ef4444','#06b6d4','#eab308','#d946ef','#14b8a6','#f43f5e','#84cc16','#22c55e','#f5c842','#e879f9','#fb7185','#38bdf8','#4ade80','#fbbf24','#f472b6','#a78bfa'];
-// ─ SETTINGS active sub-tab ─
+// - SETTINGS active sub-tab -
 let settingsTab='users';
 
-// ─── THEMES ───
+// THEMES ---
 const TH={
   Onzana:{bg:'#0f2040',color:'#60a5fa',accent:'#3b82f6'},
   Samima:{bg:'#200f35',color:'#c084fc',accent:'#a855f7'},
@@ -454,25 +485,26 @@ const TH={
 function th(p){return TH[p]||{bg:'#1e2536',color:'#94a3b8',accent:'#64748b'};}
 function ini(n){return n.split('/')[0].trim().substring(0,2).toUpperCase();}
 
-// ─── TASK DATA ─── (loaded from Google Sheets)
+// TASK DATA --- (loaded from Google Sheets)
 let tasks=[];
 let nextSl=1;
 
-// ═══════════════════════════════════════════════════════════════
+//
 //  GOOGLE SHEETS SYNC LAYER — REAL-TIME POLLING
 //  Replace GAS_URL below with your deployed Apps Script URL
-// ═══════════════════════════════════════════════════════════════
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbw5iJwVIutwUru7PHshvRnE_EMmBBP5q9lHjKzH7AHva07ZPJ_z5wwxPW-HZ89u3ccP/exec'; // ← TODO: paste your Web App URL here
+//
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbzP75Lxn_L6726zEGxtU4Hzjg2C1Qr4fWhi_gq_Tjy7pyNiKfbxE2EEQiH-mG3ZOe8f/exec'; https://script.google.com/macros/s/AKfycbzP75Lxn_L6726zEGxtU4Hzjg2C1Qr4fWhi_gq_Tjy7pyNiKfbxE2EEQiH-mG3ZOe8f/exec
 const POLL_INTERVAL_MS = 8000; // poll every 8 seconds
+let pollInterval=null;
 
 let _syncDebounce = null;
 let _pollTimer    = null;
 let _lastVersion  = null;
 let _isSyncing    = false;
 
-// ── Low-level fetch ─────────────────────────────────────────────
+// -- Low-level fetch ---------------------------------------------
 async function gasGet(action='all') {
-  if (!GAS_URL || GAS_URL === 'https://script.google.com/macros/s/AKfycbw5iJwVIutwUru7PHshvRnE_EMmBBP5q9lHjKzH7AHva07ZPJ_z5wwxPW-HZ89u3ccP/exec') return null;
+  if (!GAS_URL || GAS_URL === 'https://script.google.com/macros/s/AKfycbzP75Lxn_L6726zEGxtU4Hzjg2C1Qr4fWhi_gq_Tjy7pyNiKfbxE2EEQiH-mG3ZOe8f/exec') return null;
   try {
     const res = await fetch(GAS_URL + '?action=' + action, {cache:'no-store'});
     return await res.json();
@@ -480,7 +512,7 @@ async function gasGet(action='all') {
 }
 
 async function gasPost(body) {
-  if (!GAS_URL || GAS_URL === 'https://script.google.com/macros/s/AKfycbw5iJwVIutwUru7PHshvRnE_EMmBBP5q9lHjKzH7AHva07ZPJ_z5wwxPW-HZ89u3ccP/exec') return;
+  if (!GAS_URL || GAS_URL === 'YOUR_GAS_URL_HERE') return;
   try {
     // mode:'no-cors' required when hosted on GitHub Pages (cross-origin POST to GAS)
     await fetch(GAS_URL, {
@@ -492,7 +524,7 @@ async function gasPost(body) {
   } catch(e) { console.warn('POST failed:', e); setSyncStatus('error'); }
 }
 
-// ── Sync indicator ───────────────────────────────────────────────
+// -- Sync indicator -----------------------------------------------
 function setSyncStatus(status) {
   const dot  = document.getElementById('syncDot');
   const lbl  = document.getElementById('syncLabel');
@@ -506,7 +538,7 @@ function setSyncStatus(status) {
   if (wrap) wrap.style.display = (!currentUser || status === 'offline') ? 'none' : 'flex';
 }
 
-// ── Serialize helpers ────────────────────────────────────────────
+// -- Serialize helpers --------------------------------------------
 function doneStateToObj() {
   const obj = {};
   Object.entries(doneState).forEach(([u, set]) => { obj[u] = Array.from(set); });
@@ -540,7 +572,7 @@ function applyRemoteData(data) {
   return changed;
 }
 
-// ── Outbound sync (local → Sheets) ──────────────────────────────
+// -- Outbound sync (local → Sheets) ------------------------------
 function syncToSheets() {
   clearTimeout(_syncDebounce);
   _syncDebounce = setTimeout(async () => {
@@ -567,7 +599,7 @@ function syncModuleAccess() {
   gasPost({action:'saveModuleAccess', moduleAccess});
 }
 
-// ── Inbound sync (Sheets → local) via polling ───────────────────
+// -- Inbound sync (Sheets → local) via polling -------------------
 async function pollSheets() {
   if (!currentUser || _isSyncing) return;
   _isSyncing = true;
@@ -593,7 +625,7 @@ async function pollSheets() {
 
 function startPolling() {
   stopPolling();
-  if (!GAS_URL || GAS_URL === 'https://script.google.com/macros/s/AKfycbw5iJwVIutwUru7PHshvRnE_EMmBBP5q9lHjKzH7AHva07ZPJ_z5wwxPW-HZ89u3ccP/exec') return;
+  if (!GAS_URL || GAS_URL === 'YOUR_GAS_URL_HERE') return;
   setSyncStatus('syncing');
   pollSheets();
   _pollTimer = setInterval(pollSheets, POLL_INTERVAL_MS);
@@ -604,7 +636,7 @@ function stopPolling() {
   _pollTimer = null;
 }
 
-// ── Initial load on login ────────────────────────────────────────
+// -- Initial load on login ----------------------------------------
 async function initFromSheets() {
   const loginBtn = document.getElementById('loginBtn');
   if (loginBtn) { loginBtn.textContent = 'Loading...'; loginBtn.disabled = true; }
@@ -634,7 +666,7 @@ async function initFromSheets() {
   if (loginBtn) { loginBtn.textContent = 'LOGIN \u2192'; loginBtn.disabled = false; }
 }
 
-// ─── STATE ───
+// STATE ---
 let currentUser=null,taskFilter='all',searchQ='',adminTab='overview',userView='list';
 let moduleAccess = {}; // user → [module IDs]
 let kpiFrom='',kpiTo='',kpiMonth='';
@@ -642,9 +674,9 @@ let calYear=new Date().getFullYear(),calMonth=new Date().getMonth(),calSelectedD
 let ovCalYear=new Date().getFullYear(),ovCalMonth=new Date().getMonth(),ovCalSelected='';
 const doneState={};
 
-// ──────────────────────────────────────────────────────────────────
+//
 // Helper functions for task locking and date formatting
-// ──────────────────────────────────────────────────────────────────
+//
 
 // Check if task is locked (has actual time saved AND is marked done)
 function isTaskLocked(task, user) {
@@ -744,6 +776,18 @@ function enforceModuleAccess() {
   }
 }
 
+function formatDateVal(dateObj) {
+  if (!dateObj) return '';
+  if (typeof dateObj === 'string') return dateObj;
+  if (dateObj instanceof Date) {
+    const y = dateObj.getFullYear();
+    const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const d = String(dateObj.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return '';
+}
+
 function formatDateDisplay(dateStr) {
   if (!dateStr || dateStr.length !== 10 || !dateStr.includes('-')) return dateStr;
   const [y, m, d] = dateStr.split('-');
@@ -760,29 +804,50 @@ function formatDateStorage(dateStr) {
   const [d, m, y] = parts;
   return y + '-' + m.padStart(2,'0') + '-' + d.padStart(2,'0');
 }
+// ════════════ UTILITY FUNCTIONS ════════════
+function gradient(colors) {
+  if (!colors || colors.length === 0) return '#ffffff';
+  return colors[0];
+}
+
+function destroy(element) {
+  if (element && element.parentNode) {
+    element.parentNode.removeChild(element);
+  }
+}
+
+function dots(str, len) {
+  if (!str) return '';
+  if (str.length <= len) return str;
+  return str.substring(0, len - 3) + '...';
+}
+
 
 function getDone(u){if(!doneState[u])doneState[u]=new Set();return doneState[u];}
 
-// ─── HELPERS ───
+// HELPERS ---
 function formatDisplayDate(isoDate) {
   if (!isoDate) return '';
   const [y,m,d] = isoDate.split('-');
   return `${d}/${m}/${y}`;
 }
-function timeCmp(pd,pt,ad,at){
+function timeCmp(pt,ad,at){
   if(!pt||!at)return'';
-  const pMs=new Date((pd||'2000-01-01')+'T'+pt).getTime();
-  const aMs=new Date((ad||'2000-01-01')+'T'+at).getTime();
-  if(aMs===pMs)return'ontime'; return aMs<pMs?'early':'late';
+  const today=new Date().toISOString().slice(0,10);
+  const pMs=new Date(today+'T'+pt).getTime();
+  const aMs=new Date((ad||today)+'T'+at).getTime();
+  const diff=(aMs-pMs)/60000;
+  if(diff<-15)return'early';
+  if(diff<=15)return'ontime';
+  return'late';
 }
-function timeDiff(pd,pt,ad,at){
+function timeDiff(pt,ad,at){
   if(!pt||!at)return'';
-  const pMs=new Date((pd||'2000-01-01')+'T'+pt).getTime();
-  const aMs=new Date((ad||'2000-01-01')+'T'+at).getTime();
-  const diff=aMs-pMs;const abs=Math.abs(diff);
-  const h=Math.floor(abs/3600000),m=Math.floor((abs%3600000)/60000);
-  const str=(h?h+'h ':'')+m+'m';
-  if(diff===0)return'On Time'; return diff>0?'+'+str+' late':'-'+str+' early';
+  const today=new Date().toISOString().slice(0,10);
+  const pMs=new Date(today+'T'+pt).getTime();
+  const aMs=new Date((ad||today)+'T'+at).getTime();
+  const diff=Math.round((aMs-pMs)/60000);
+  return diff>0?'+'+diff+'m':diff+'m';
 }
 function inRange(date,from,to){if(!date)return(!from&&!to);if(from&&date<from)return false;if(to&&date>to)return false;return true;}
 function fmtDate(d){if(!d)return'';const p=d.split('-');return p[2]+'/'+p[1]+'/'+p[0];}
@@ -799,13 +864,13 @@ function planBadge(k){
 // actual time badge
 function actualBadge(k){
   if(!k.actualTime)return`<span class="time-badge unset">${checkIcon()} Not completed</span>`;
-  const cmp=timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime);
+  const cmp=timeCmp(k.planTime,formatDateDisplay(k.actualDate),k.actualTime);
   const cls=cmp==='late'?'overdue':cmp==='early'?'actual':'actual';
-  const diff=timeDiff(k.planDate,k.planTime,k.actualDate,k.actualTime);
+  const diff=timeDiff(k.planTime,formatDateDisplay(k.actualDate),k.actualTime);
   return`<span class="time-badge ${cls}">${checkIcon()} Done: ${k.actualTime}${diff?` <span style="opacity:0.7;font-size:0.6rem">(${diff})</span>`:''}</span>`;
 }
 
-// ─── LOGIN ───
+// LOGIN ---
 document.getElementById('loginBtn').onclick=async()=>{
   const btn = document.getElementById('loginBtn');
   const originalText = btn.textContent;
@@ -825,11 +890,11 @@ document.getElementById('loginBtn').onclick=async()=>{
   }
 };
 
-// ── Page load: populate dropdown from Sheets immediately ──
-// ── Populate login dropdown (with retry) ──────────────────────
+// -- Page load: populate dropdown from Sheets immediately --
+// -- Populate login dropdown (with retry) ----------------------
 async function populateLoginDropdown() {
   const sel = document.getElementById('loginUser');
-  if (!GAS_URL || GAS_URL === 'https://script.google.com/macros/s/AKfycbw5iJwVIutwUru7PHshvRnE_EMmBBP5q9lHjKzH7AHva07ZPJ_z5wwxPW-HZ89u3ccP/exec') {
+  if (!GAS_URL || GAS_URL === 'YOUR_GAS_URL_HERE') {
     if (sel) sel.innerHTML = '<option value="">-- Choose your name --</option>'
       + '<option value="admin">Admin (All Access)</option>';
     return;
@@ -902,6 +967,8 @@ function openApp(){startPolling();enforceModuleAccess();
   renderContent();
 }
 document.getElementById('logoutBtn').onclick=()=>{
+  // Cleanup
+  if (pollInterval) clearInterval(pollInterval);
   stopPolling();currentUser=null;
   document.getElementById('appScreen').style.display='none';
   document.getElementById('loginScreen').style.display='flex';
@@ -910,7 +977,7 @@ document.getElementById('logoutBtn').onclick=()=>{
   document.getElementById('loginErr').style.display='none';
 };
 
-// ─── TOAST ───
+// TOAST ---
 function toast(msg,type='info'){
   document.querySelectorAll('.toast').forEach(t=>t.remove());
   const el=document.createElement('div');el.className='toast '+type;
@@ -919,7 +986,7 @@ function toast(msg,type='info'){
   setTimeout(()=>{el.style.transition='all 0.3s';el.style.opacity='0';el.style.transform='translateY(12px)';setTimeout(()=>el.remove(),300);},2800);
 }
 
-// ─── CONFIRM ───
+// CONFIRM ---
 function confirm2(title,msg,onOk){
   document.getElementById('confirmTitle').textContent=title;
   document.getElementById('confirmMsg').textContent=msg;
@@ -929,15 +996,15 @@ function confirm2(title,msg,onOk){
   document.getElementById('confirmCancel').onclick=close;
 }
 
-// ─── MAIN RENDER ───
+// MAIN RENDER ---
 function renderContent(){
   document.getElementById('mainContent').innerHTML='';
   currentUser==='admin'?renderAdmin():renderPersonal();
 }
 
-// ═══════════════════════════════════════════
+//
 //  PERSONAL VIEW
-// ═══════════════════════════════════════════
+//
 function renderPersonal(){
   const c=document.getElementById('mainContent');
   const t=th(currentUser);
@@ -1001,7 +1068,7 @@ function renderPersonal(){
     else renderCalendarView();
   }
 
-  // ── LIST VIEW ────────────────────────────────────
+  // -- LIST VIEW ------------------------------------
   function renderListView(){
     // filters
     const fr=document.createElement('div');fr.className='filter-row';
@@ -1061,7 +1128,7 @@ function renderPersonal(){
     });
   }
 
-  // ── CALENDAR VIEW ────────────────────────────────
+  // -- CALENDAR VIEW --------------------------------
   function renderCalendarView(){
     const calBox=document.createElement('div');calBox.className='cal-wrap';
     viewWrap.appendChild(calBox);
@@ -1094,8 +1161,8 @@ function renderPersonal(){
       // Build date→tasks map from myTasks actualDate
       const dateMap={};
       myTasks.forEach(k=>{
-        if(k.actualDate){
-          if(!dateMap[k.actualDate])dateMap[k.actualDate]=[];
+        if(formatDateDisplay(k.actualDate)){
+          if(!dateMap[formatDateDisplay(k.actualDate)])dateMap[formatDateDisplay(k.actualDate)]=[];
           dateMap[k.actualDate].push(k);
         }
       });
@@ -1204,7 +1271,7 @@ function renderPersonal(){
         if(pendingNotToday.length){
           const sep=document.createElement('div');
           sep.style.cssText='font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted);letter-spacing:.08em;padding-top:4px;';
-          sep.textContent='── COMPLETED TODAY ──';
+          sep.textContent='-- COMPLETED TODAY --';
           if(dayTasks.length)taskList.appendChild(sep);
 
           // Updated today section
@@ -1213,7 +1280,7 @@ function renderPersonal(){
           if(dayTasks.length){const sep2=document.createElement('div');sep2.style.cssText='height:1px;background:var(--border);margin:4px 0';taskList.appendChild(sep2);}
           const sep3=document.createElement('div');
           sep3.style.cssText='font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted);letter-spacing:.08em;padding-top:2px;';
-          sep3.textContent='── UPDATE TODAY ──';
+          sep3.textContent='-- UPDATE TODAY --';
           taskList.appendChild(sep3);
           pendingNotToday.forEach(k=>renderDayTask(k,taskList,isToday,isPast,dateStr));
         } else {
@@ -1351,9 +1418,9 @@ function renderUserRows(myTasks,t,cols){
   });
 }
 
-// ═══════════════════════════════════════════
+//
 //  ADMIN VIEW
-// ═══════════════════════════════════════════
+//
 function renderAdmin(){
   const c=document.getElementById('mainContent');
   const tabDefs=[
@@ -1385,13 +1452,13 @@ function renderAdmin(){
   else buildAllTasks(c);
 }
 
-// ── OVERVIEW ──
+// -- OVERVIEW --
 function buildOverview(c){
   const allP=[...new Set(tasks.map(t=>t.person))];
   const totalDone=allP.reduce((s,p)=>s+tasks.filter(t=>t.person===p&&getDone(p).has(t.sl)).length,0);
   const pct=tasks.length?Math.round((totalDone/tasks.length)*100):0;
   const withActual=tasks.filter(t=>t.actualDate||t.actualTime).length;
-  const lateCount=tasks.filter(t=>timeCmp(t.planDate,t.planTime,t.actualDate,t.actualTime)==='late').length;
+  const lateCount=tasks.filter(t=>timeCmp(t.planTime,t.actualDate,t.actualTime)==='late').length;
 
   c.insertAdjacentHTML('beforeend',`<div style="font-family:'Syne',sans-serif;font-size:1.5rem;font-weight:800;letter-spacing:-.02em;margin-bottom:16px">Admin <span style="color:#f5c842">Overview</span></div>`);
 
@@ -1409,7 +1476,7 @@ function buildOverview(c){
 
   // Overall progress bar
   const prog=document.createElement('div');prog.className='prog-sect';prog.style.marginBottom='18px';
-  prog.innerHTML='<div class="prog-info"><span>OVERALL · '+totalDone+'/'+tasks.length+' DONE</span><strong style="color:#f5c842">'+pct+'%</strong></div><div class="prog-track"><div class="prog-fill" style="width:'+pct+'%;background:linear-gradient(90deg,#3ef0b0,#f5c842)"></div></div>';
+  prog.innerHTML='<div class="prog-info"><span>OVERALL - '+totalDone+'/'+tasks.length+' DONE</span><strong style="color:#f5c842">'+pct+'%</strong></div><div class="prog-track"><div class="prog-fill" style="width:'+pct+'%;background:linear-gradient(90deg,#3ef0b0,#f5c842)"></div></div>';
   c.appendChild(prog);
 
   // Team cards
@@ -1418,8 +1485,8 @@ function buildOverview(c){
   allP.forEach(p=>{
     const t2=th(p),mt=tasks.filter(k=>k.person===p),dn=mt.filter(k=>getDone(p).has(k.sl)).length;
     const pp=mt.length?Math.round((dn/mt.length)*100):0;
-    const late=mt.filter(k=>timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='late').length;
-    const early=mt.filter(k=>['early','ontime'].includes(timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime))).length;
+    const late=mt.filter(k=>timeCmp(k.planTime,k.actualDate,k.actualTime)==='late').length;
+    const early=mt.filter(k=>['early','ontime'].includes(timeCmp(k.planTime,k.actualDate,k.actualTime))).length;
     const card=document.createElement('div');card.className='apc';card.style.borderColor=t2.accent+'22';
     card.innerHTML='<div style="position:absolute;top:0;left:0;right:0;height:2px;background:'+t2.accent+'"></div>'
       +'<div class="apc-hd"><div class="apc-av" style="background:'+t2.bg+';color:'+t2.color+'">'+ini(p)+'</div>'
@@ -1431,7 +1498,7 @@ function buildOverview(c){
   });
   c.appendChild(grid);
 
-  // ── CALENDAR ──
+  // -- CALENDAR --
   const calLbl=document.createElement('div');calLbl.className='section-title';calLbl.style.marginTop='24px';calLbl.textContent='TASK CALENDAR';c.appendChild(calLbl);
 
   // Legend
@@ -1457,7 +1524,7 @@ function buildOverview(c){
     // actualMap: date → tasks with that actualDate
     const planMap={},actualMap={};
     tasks.forEach(k=>{
-      if(k.planDate){if(!planMap[k.planDate])planMap[k.planDate]=[];planMap[k.planDate].push(k);}
+      // planDate removed
       if(k.actualDate){if(!actualMap[k.actualDate])actualMap[k.actualDate]=[];actualMap[k.actualDate].push(k);}
     });
 
@@ -1504,7 +1571,7 @@ function buildOverview(c){
         html+='<div class="cal-dot-row">';
         // Plan dots (blue)
         planTasks.slice(0,3).forEach(k=>{
-          const overdue=k.planDate<today&&!k.actualDate;
+          const overdue=false; // planDate removed
           html+='<div class="cal-dot" style="background:'+(overdue?'#f87171':'#3b82f6')+'" title="Plan: '+k.task+'"></div>';
         });
         if(planTasks.length>3)html+='<span style="font-size:.48rem;font-family:DM Mono,monospace;color:#60a5fa">+'+( planTasks.length-3)+'</span>';
@@ -1620,14 +1687,14 @@ function buildOverview(c){
     }
 
     // Actual completion tasks (deduplicate from plan list)
-    const actualOnly=actualTasks.filter(k=>k.planDate!==dateStr);
+    const actualOnly=actualTasks;
     if(actualOnly.length){
       const sh2=document.createElement('div');sh2.className='ovcal-section-hdr';sh2.style.marginTop='10px';
       sh2.innerHTML='<span style="color:#3ef0b0">✓ COMPLETED — '+actualOnly.length+' task'+(actualOnly.length>1?'s':'')+'</span>';
       body.appendChild(sh2);
       actualOnly.forEach(k=>{
         const t2=th(k.person);
-        const cmp=timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime);
+        const cmp=timeCmp(k.planTime,k.actualDate,k.actualTime);
         const card=document.createElement('div');card.className='ovcal-detail-task has-actual';
         card.innerHTML='<div style="flex:1;min-width:0">'
           +'<div style="font-size:.83rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px">'
@@ -1650,7 +1717,7 @@ function buildOverview(c){
   buildOvCal();
 }
 
-// ── ADD TASK ──
+// -- ADD TASK --
 function buildAdd(c){
   const pOpts=PERSONS.map(p=>`<option value="${p}">${p}</option>`).join('');
   const panel=document.createElement('div');panel.className='add-panel';
@@ -1710,7 +1777,7 @@ function buildRecentList(wrap){
   wrap.appendChild(list);
 }
 
-// ── DELETE ──
+// -- DELETE --
 function buildDelete(c){
   c.insertAdjacentHTML('beforeend',`<div style="font-family:'Syne',sans-serif;font-size:1.1rem;font-weight:700;margin-bottom:4px">Delete <span style="color:#f87171">Tasks</span></div>
     <div style="font-size:0.72rem;font-family:'DM Mono',monospace;color:var(--muted);margin-bottom:18px">// PERMANENTLY REMOVE TASKS</div>`);
@@ -1754,7 +1821,7 @@ function buildDelete(c){
   document.getElementById('dPF').onchange=draw;
 }
 
-// ── ASSIGN ──
+// -- ASSIGN --
 function buildAssign(c){
   c.insertAdjacentHTML('beforeend',`<div style="font-family:'Syne',sans-serif;font-size:1.1rem;font-weight:700;margin-bottom:4px">Task <span style="color:#f5c842">Assignment</span></div>
     <div style="font-size:0.72rem;font-family:'DM Mono',monospace;color:var(--muted);margin-bottom:18px">// REASSIGN TASKS & TOGGLE PRIORITY</div>`);
@@ -1797,13 +1864,13 @@ function buildAssign(c){
   document.getElementById('asPF').onchange=draw;
 }
 
-// ── PLAN TIME (Admin only) ──
+// -- PLAN TIME (Admin only) --
 function buildPlanTime(c){
   c.insertAdjacentHTML('beforeend',`<div style="font-family:'Syne',sans-serif;font-size:1.1rem;font-weight:700;margin-bottom:4px">
     <span style="color:#60a5fa">Plan Time</span> Manager
     <span style="font-size:0.68rem;font-family:'DM Mono',monospace;background:rgba(245,200,66,0.1);color:#f5c842;border:1px solid rgba(245,200,66,0.25);border-radius:20px;padding:2px 10px;margin-left:10px;vertical-align:middle">ADMIN ONLY</span>
   </div>
-  <div style="font-size:0.72rem;font-family:'DM Mono',monospace;color:var(--muted);margin-bottom:18px">// SET DEADLINE TIMES FOR EACH TASK · USERS CAN ONLY VIEW THESE</div>`);
+  <div style="font-size:0.72rem;font-family:'DM Mono',monospace;color:var(--muted);margin-bottom:18px">// SET DEADLINE TIMES FOR EACH TASK - USERS CAN ONLY VIEW THESE</div>`);
 
   const pOpts='<option value="">All Persons</option>'+PERSONS.map(p=>`<option value="${p}">${p}</option>`).join('');
   const fr=document.createElement('div');fr.className='filter-row';
@@ -1867,14 +1934,14 @@ function buildPlanTime(c){
     if(!fil.length){list.innerHTML+='<div class="empty-msg">NO TASKS FOUND</div>';wrap.appendChild(list);return;}
     fil.forEach((k,i)=>{
       const t2=th(k.person);
-      const cmp=timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime);
+      const cmp=timeCmp(k.planTime,k.actualDate,k.actualTime);
       const statusHtml=!k.planTime&&!k.actualTime
         ?`<span style="font-family:'DM Mono',monospace;font-size:0.65rem;color:var(--muted)">—</span>`
         :!k.actualTime
         ?`<span style="font-family:'DM Mono',monospace;font-size:0.65rem;color:var(--muted)">Pending</span>`
         :cmp==='late'
-        ?`<span style="font-family:'DM Mono',monospace;font-size:0.65rem;color:#f87171">✕ ${timeDiff(k.planDate,k.planTime,k.actualDate,k.actualTime)}</span>`
-        :`<span style="font-family:'DM Mono',monospace;font-size:0.65rem;color:#3ef0b0">✓ ${timeDiff(k.planDate,k.planTime,k.actualDate,k.actualTime)||'On Time'}</span>`;
+        ?`<span style="font-family:'DM Mono',monospace;font-size:0.65rem;color:#f87171">✕ ${formatDateDisplay(timeDiff(k.planTime,k.actualDate,k.actualTime))}</span>`
+        :`<span style="font-family:'DM Mono',monospace;font-size:0.65rem;color:#3ef0b0">✓ ${formatDateDisplay(timeDiff(k.planTime,k.actualDate,k.actualTime)||'On Time')}</span>`;
 
       const row=document.createElement('div');
       row.className='trow'+(k.priority?' priority':'');
@@ -1918,9 +1985,9 @@ function buildPlanTime(c){
 }
 
 
-// ── KPI DASHBOARD ──
+// -- KPI DASHBOARD --
 function buildKPI(c){
-  c.insertAdjacentHTML('beforeend','<div style="font-family:Syne,sans-serif;font-size:1.5rem;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">KPI <span style="color:#f5c842">Dashboard</span></div><div style="font-size:.72rem;font-family:DM Mono,monospace;color:var(--muted);margin-bottom:16px">// ANALYTICS · FILTER BY DATE RANGE OR MONTH</div>');
+  c.insertAdjacentHTML('beforeend','<div style="font-family:Syne,sans-serif;font-size:1.5rem;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">KPI <span style="color:#f5c842">Dashboard</span></div><div style="font-size:.72rem;font-family:DM Mono,monospace;color:var(--muted);margin-bottom:16px">// ANALYTICS - FILTER BY DATE RANGE OR MONTH</div>');
   const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
   const fb=document.createElement('div');fb.className='dr-bar';fb.style.flexWrap='wrap';
   fb.innerHTML=calIco()+' <label>DATE RANGE</label>'
@@ -1942,7 +2009,7 @@ function buildKPI(c){
 
 function getKPITasks(){
   return tasks.filter(k=>{
-    const d=k.actualDate||k.planDate;
+    const d=k.actualDate;
     if(kpiMonth!==''){if(!d)return true;return new Date(d).getMonth()===+kpiMonth;}
     if(kpiFrom||kpiTo){return inRange(d,kpiFrom,kpiTo);}
     return true;
@@ -1956,10 +2023,10 @@ function buildKPICharts(){
   const filtered=getKPITasks();
   const total=filtered.length;
   const completed=filtered.filter(k=>k.actualDate||k.actualTime).length;
-  const withPlan=filtered.filter(k=>k.planDate||k.planTime).length;
-  const lateN=filtered.filter(k=>timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='late').length;
-  const earlyN=filtered.filter(k=>timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='early').length;
-  const ontimeN=filtered.filter(k=>timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='ontime').length;
+  const withPlan=filtered.filter(k=>k.planTime).length;
+  const lateN=filtered.filter(k=>timeCmp(k.planTime,k.actualDate,k.actualTime)==='late').length;
+  const earlyN=filtered.filter(k=>timeCmp(k.planTime,k.actualDate,k.actualTime)==='early').length;
+  const ontimeN=filtered.filter(k=>timeCmp(k.planTime,k.actualDate,k.actualTime)==='ontime').length;
   const prios=filtered.filter(k=>k.priority);
   const prioDone=prios.filter(k=>k.actualDate||k.actualTime).length;
   const onTimeRate=completed>0?Math.round(((earlyN+ontimeN)/completed)*100):0;
@@ -1969,7 +2036,7 @@ function buildKPICharts(){
   const kpiGrid=document.createElement('div');kpiGrid.className='kpi-grid';
   [{label:'TOTAL TASKS',val:total,sub:withPlan+' with plan time',color:'#f5c842'},
    {label:'COMPLETED',val:completed,sub:compRate+'% completion rate',color:'#3ef0b0'},
-   {label:'ON-TIME RATE',val:onTimeRate+'%',sub:(earlyN+ontimeN)+' on-time · '+lateN+' late',color:'#60a5fa'},
+   {label:'ON-TIME RATE',val:onTimeRate+'%',sub:(earlyN+ontimeN)+' on-time - '+lateN+' late',color:'#60a5fa'},
    {label:'PRIORITY DONE',val:prioDone+'/'+prios.length,sub:(prios.length?Math.round(prioDone/prios.length*100):0)+'% of priority tasks',color:'#e879f9'}
   ].forEach(k=>{
     const card=document.createElement('div');card.className='kpi-card';card.style.borderColor=k.color+'33';
@@ -1995,7 +2062,7 @@ function buildKPICharts(){
     +'<table class="pct-table"><thead><tr><th>PERSON</th><th>TASKS</th><th>DONE</th><th>PENDING</th><th>ON-TIME</th><th>LATE</th><th>RATE</th></tr></thead><tbody id="kpiTableBody"></tbody></table>';
   wrap.appendChild(tableBox);
 
-  // ── LEAD TIME CHARTS ──
+  // -- LEAD TIME CHARTS --
   const ltSection=document.createElement('div');
   ltSection.style.cssText='margin-top:6px';
   ltSection.insertAdjacentHTML('beforeend',
@@ -2015,13 +2082,13 @@ function buildKPICharts(){
   ltChartGrid.appendChild(ltCb1);
 
   const ltCb2=document.createElement('div');ltCb2.className='chart-box';
-  ltCb2.innerHTML='<h4>Lead Time by Task <span>top 20 by minutes · sorted desc</span></h4><canvas id="chartLtTask" style="max-height:240px"></canvas>';
+  ltCb2.innerHTML='<h4>Lead Time by Task <span>top 20 by minutes - sorted desc</span></h4><canvas id="chartLtTask" style="max-height:240px"></canvas>';
   ltChartGrid.appendChild(ltCb2);
   ltSection.appendChild(ltChartGrid);
 
   // Lead time balancing table
   const ltTableBox=document.createElement('div');ltTableBox.className='chart-full';
-  ltTableBox.innerHTML='<h4 style="font-family:Syne,sans-serif;font-size:.9rem;font-weight:700;margin-bottom:12px">⏱ Workload Balancing Table <span style="font-family:DM Mono,monospace;font-size:.62rem;font-weight:400;color:var(--muted)">· lead time per person vs team average</span></h4>'
+  ltTableBox.innerHTML='<h4 style="font-family:Syne,sans-serif;font-size:.9rem;font-weight:700;margin-bottom:12px">⏱ Workload Balancing Table <span style="font-family:DM Mono,monospace;font-size:.62rem;font-weight:400;color:var(--muted)">- lead time per person vs team average</span></h4>'
     +'<table class="pct-table"><thead><tr>'
     +'<th>PERSON</th><th>TASKS W/ LEAD</th><th>TOTAL HRS</th><th>AVG PER TASK</th><th>COMPLETED HRS</th><th>REMAINING HRS</th><th>VS AVERAGE</th>'
     +'</tr></thead><tbody id="ltTableBody"></tbody></table>';
@@ -2044,8 +2111,8 @@ function buildKPICharts(){
     if(prCtx)new Chart(prCtx,{type:'bar',data:{labels:['Priority ★','Normal'],datasets:[{label:'Done',data:[prioDone,nDone],backgroundColor:['rgba(232,121,249,.7)','rgba(62,240,176,.6)'],borderRadius:6},{label:'Pending',data:[prios.length-prioDone,nPrios.length-nDone],backgroundColor:['rgba(232,121,249,.2)','rgba(62,240,176,.15)'],borderRadius:6}]},options:{...cd,scales:{x:{grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#dde1ec'}},y:{grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#505870'}}}}});
     // Timeline
     const tlCtx=document.getElementById('chartTimeline')?.getContext('2d');
-    const withDates=filtered.filter(k=>k.planDate);
-    const dateMap={};withDates.forEach(k=>{if(!dateMap[k.planDate])dateMap[k.planDate]={on:0,late:0,pend:0};const cmp=timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime);if(cmp==='late')dateMap[k.planDate].late++;else if(k.actualDate)dateMap[k.planDate].on++;else dateMap[k.planDate].pend++;});
+    const withDates=filtered.filter(k=>k.actualDate);
+    const dateMap={};withDates.forEach(k=>{if(!dateMap[k.planDate])dateMap[k.planDate]={on:0,late:0,pend:0};const cmp=timeCmp(k.planTime,k.actualDate,k.actualTime);if(cmp==='late')dateMap[k.planDate].late++;else if(k.actualDate)dateMap[k.planDate].on++;else dateMap[k.planDate].pend++;});
     const sortedD=Object.keys(dateMap).sort();
     if(tlCtx){
       if(sortedD.length)new Chart(tlCtx,{type:'bar',data:{labels:sortedD.map(d=>fmtDate(d)),datasets:[{label:'On-Time',data:sortedD.map(d=>dateMap[d].on),backgroundColor:'rgba(62,240,176,.65)',borderRadius:4},{label:'Late',data:sortedD.map(d=>dateMap[d].late),backgroundColor:'rgba(248,113,113,.65)',borderRadius:4},{label:'Pending',data:sortedD.map(d=>dateMap[d].pend),backgroundColor:'rgba(245,200,66,.35)',borderRadius:4}]},options:{...cd,scales:{x:{stacked:true,grid:{display:false},ticks:{color:'#505870',maxRotation:35}},y:{stacked:true,grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#505870'}}}}});
@@ -2057,8 +2124,8 @@ function buildKPICharts(){
       PERSONS.forEach(p=>{
         const mt=filtered.filter(k=>k.person===p);if(!mt.length)return;
         const t2=th(p);const dn=mt.filter(k=>k.actualDate||k.actualTime).length;
-        const ot=mt.filter(k=>['early','ontime'].includes(timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime))).length;
-        const lt=mt.filter(k=>timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='late').length;
+        const ot=mt.filter(k=>['early','ontime'].includes(timeCmp(k.planTime,k.actualDate,k.actualTime))).length;
+        const lt=mt.filter(k=>timeCmp(k.planTime,k.actualDate,k.actualTime)==='late').length;
         const rate=Math.round(dn/mt.length*100);
         const tr=document.createElement('tr');
         tr.innerHTML='<td><span style="display:inline-flex;align-items:center;gap:7px"><span style="width:22px;height:22px;border-radius:6px;background:'+t2.bg+';color:'+t2.color+';display:inline-flex;align-items:center;justify-content:center;font-size:.55rem;font-weight:700;font-family:Syne,sans-serif">'+ini(p)+'</span><span style="color:'+t2.color+'">'+p+'</span></span></td>'
@@ -2073,7 +2140,7 @@ function buildKPICharts(){
       if(!tbody.children.length)tbody.innerHTML='<tr><td colspan="7" style="text-align:center;padding:30px;font-family:DM Mono,monospace;font-size:.8rem;color:var(--muted)">No data in selected range</td></tr>';
     }
 
-    // ── LEAD TIME CHART 1: BY PERSON ──
+    // -- LEAD TIME CHART 1: BY PERSON --
     const parseLT=h=>h?parseFloat(h.replace('h','')):0;
 
     // Per-person lead time aggregation
@@ -2095,7 +2162,7 @@ function buildKPICharts(){
     const ltStrip=document.getElementById('lt-summary-strip');
     if(ltStrip){
       [{l:'Total Minutes Allocated',v:totalLeadHrs.toFixed(0)+'m',c:'#a3e635'},
-       {l:'Avg Per Person',v:avgHrs+'h',c:'#60a5fa'},
+       {l:'Avg Per Person',v:avgHrs+'min',c:'#60a5fa'},
        {l:'Heaviest Load',v:maxPerson.name.split('/')[0]+' ('+maxPerson.total+'h)',c:'#f87171'},
        {l:'Tasks w/ Lead Time',v:tasksWithLead+'/'+filtered.length,c:'#f5c842'},
       ].forEach(x=>{
@@ -2134,12 +2201,12 @@ function buildKPICharts(){
                   label:ctx=>{
                     const d=ltPersonData[ctx.dataIndex];
                     if(ctx.datasetIndex===0)return' Done: '+d.done+'h ('+d.count+' tasks)';
-                    return' Remaining: '+d.pend+'h';
+                    return' Remaining: '+d.pend+'min';
                   },
                   afterBody:items=>{
                     const d=ltPersonData[items[0].dataIndex];
                     const vs=d.total-avgHrs;
-                    return['Total: '+d.total+'h','vs Avg: '+(vs>=0?'+':'')+vs.toFixed(1)+'h '+(vs>0?'⬆ Overloaded':'⬇ Under avg')];
+                    return['Total: '+d.total+'min','vs Avg: '+(vs>=0?'+':'')+vs.toFixed(1)+'h '+(vs>0?'⬆ Overloaded':'⬇ Under avg')];
                   }
                 }
               },
@@ -2157,7 +2224,7 @@ function buildKPICharts(){
           ctx2.strokeStyle='rgba(245,200,66,.6)';ctx2.lineWidth=1.5;ctx2.setLineDash([5,4]);
           ctx2.moveTo(xPx,yScale.top);ctx2.lineTo(xPx,yScale.bottom);ctx2.stroke();
           ctx2.fillStyle='#f5c842';ctx2.font='9px DM Mono,monospace';
-          ctx2.fillText('avg '+avgHrs+'h',xPx+4,yScale.top+10);
+          ctx2.fillText('avg '+avgHrs+'min',xPx+4,yScale.top+10);
           ctx2.restore();
         }};
         Chart.register(avgLinePlugin);
@@ -2166,7 +2233,7 @@ function buildKPICharts(){
       }
     }
 
-    // ── LEAD TIME CHART 2: BY TASK (top 20) ──
+    // -- LEAD TIME CHART 2: BY TASK (top 20) --
     const ltTaskData=filtered.filter(k=>k.leadTime)
       .map(k=>({task:k.task.length>28?k.task.slice(0,28)+'…':k.task,hrs:parseLT(k.leadTime),person:k.person,done:!!(k.actualDate||k.actualTime),priority:k.priority}))
       .sort((a,b)=>b.hrs-a.hrs)
@@ -2204,7 +2271,7 @@ function buildKPICharts(){
                 callbacks:{
                   label:ctx=>{
                     const d=ltTaskData[ctx.dataIndex];
-                    return[' '+d.hrs+'h · '+d.person,' Status: '+(d.done?'✓ Done':'Pending')+(d.priority?' ★':'')];
+                    return[' '+d.hrs+'h - '+d.person,' Status: '+(d.done?'✓ Done':'Pending')+(d.priority?' ★':'')];
                   }
                 }
               }
@@ -2216,7 +2283,7 @@ function buildKPICharts(){
       }
     }
 
-    // ── LEAD TIME BALANCING TABLE ──
+    // -- LEAD TIME BALANCING TABLE --
     const ltTbody=document.getElementById('ltTableBody');
     if(ltTbody){
       if(ltPersonData.length){
@@ -2232,7 +2299,7 @@ function buildKPICharts(){
             +'<span style="color:'+t2.color+'">'+x.name+'</span></span></td>'
             +'<td style="font-family:DM Mono,monospace;font-size:.8rem">'+x.count+'</td>'
             +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:#a3e635;font-weight:600">'+x.total+'h</td>'
-            +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:var(--muted)">'+(x.count?+(x.total/x.count).toFixed(1)+'h':'—')+'</td>'
+            +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:var(--muted)">'+(x.count?+(x.total/x.count).toFixed(1)+'min':'—')+'</td>'
             +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:#3ef0b0">'+x.done+'h</td>'
             +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:#f87171">'+x.pend+'h</td>'
             +'<td><div style="display:flex;align-items:center;gap:8px">'
@@ -2247,7 +2314,7 @@ function buildKPICharts(){
         avgTr.innerHTML='<td style="font-family:DM Mono,monospace;font-size:.72rem;color:#f5c842;letter-spacing:.06em" colspan="2">TEAM AVERAGE</td>'
           +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:#f5c842;font-weight:600">'+totalLeadHrs.toFixed(1)+'h total</td>'
           +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:#f5c842">'+avgHrs+'h / person</td>'
-          +'<td colspan="3" style="font-family:DM Mono,monospace;font-size:.7rem;color:var(--muted)">'+tasksWithLead+' tasks with lead time · '+tasksNoLead+' without</td>';
+          +'<td colspan="3" style="font-family:DM Mono,monospace;font-size:.7rem;color:var(--muted)">'+tasksWithLead+' tasks with lead time - '+tasksNoLead+' without</td>';
         ltTbody.appendChild(avgTr);
       } else {
         ltTbody.innerHTML='<tr><td colspan="7" style="text-align:center;padding:28px;font-family:DM Mono,monospace;font-size:.8rem;color:var(--muted)">No lead times set. Go to Settings → Lead Time to add workload minutes.</td></tr>';
@@ -2256,7 +2323,7 @@ function buildKPICharts(){
   });
 }
 
-// ── ALL TASKS ──
+// -- ALL TASKS --
 function buildAllTasks(c){
   const sl=document.createElement('div');sl.className='section-title';sl.textContent=`ALL TASKS — ${tasks.length} TOTAL`;c.appendChild(sl);
   const list=document.createElement('div');list.className='task-list';
@@ -2270,7 +2337,7 @@ function buildAllTasks(c){
   const rows=document.createElement('div');
   tasks.forEach((k,i)=>{
     const t2=th(k.person);const isDone=getDone(k.person).has(k.sl);
-    const cmp=timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime);
+    const cmp=timeCmp(k.planTime,k.actualDate,k.actualTime);
     const row=document.createElement('div');
     row.style.cssText=`display:grid;grid-template-columns:${cols};align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);gap:8px;font-size:0.84rem;transition:background 0.15s;animation:rowIn 0.2s ease ${i*0.005}s both;${k.priority?'border-left:3px solid '+t2.accent+';':''}${isDone?'opacity:0.42;':''}`;
     row.innerHTML=`<span style="font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--muted)">${k.sl}</span>
@@ -2294,17 +2361,17 @@ function buildAllTasks(c){
   list.appendChild(rows);c.appendChild(list);
 }
 
-// ═══════════════════════════════════════
+//
 //  SETTINGS PANEL
-// ═══════════════════════════════════════
+//
 function buildSettings(c){
   c.insertAdjacentHTML('beforeend',
     '<div style="font-family:Syne,sans-serif;font-size:1.5rem;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">System <span style="color:#f5c842">Settings</span></div>'
-    +'<div style="font-size:.72rem;font-family:DM Mono,monospace;color:var(--muted);margin-bottom:18px">// USER MANAGEMENT · ACCESS CONTROL · LEAD TIME · TASK SETUP</div>'
+    +'<div style="font-size:.72rem;font-family:DM Mono,monospace;color:var(--muted);margin-bottom:18px">// USER MANAGEMENT - ACCESS CONTROL - LEAD TIME - TASK SETUP</div>'
   );
   const layout=document.createElement('div');layout.className='settings-layout';
 
-  // ── Left Nav ──
+  // -- Left Nav --
   const nav=document.createElement('div');nav.className='settings-nav';
   const navItems=[
     {id:'users',icon:'👤',label:'USER MANAGEMENT'},
@@ -2321,7 +2388,7 @@ function buildSettings(c){
     nav.appendChild(btn);
   });
 
-  // ── Right Body ──
+  // -- Right Body --
   const body=document.createElement('div');body.className='settings-body';
   layout.appendChild(nav);layout.appendChild(body);
   c.appendChild(layout);
@@ -2343,11 +2410,11 @@ function renderSettingsBody(body){
   else if(settingsTab==='leadtime')renderSettingsLeadTime(body);
 }
 
-// ── SECTION 1: USER MANAGEMENT ──────────────────
+// -- SECTION 1: USER MANAGEMENT ------------------
 function renderSettingsUsers(body){
   body.insertAdjacentHTML('beforeend',
     '<div class="s-section-title">👤 User Management</div>'
-    +'<div class="s-section-sub">// ADD NEW USERS · CHANGE PASSWORDS · REMOVE USERS</div>'
+    +'<div class="s-section-sub">// ADD NEW USERS - CHANGE PASSWORDS - REMOVE USERS</div>'
   );
 
   // Add user form
@@ -2508,11 +2575,11 @@ function hexToRgb(hex){
   return r+','+g+','+b;
 }
 
-// ── SECTION 2: MODULE ACCESS ─────────────────────
+// -- SECTION 2: MODULE ACCESS ---------------------
 function renderSettingsAccess(body){
   body.insertAdjacentHTML('beforeend',
     '<div class="s-section-title">🔐 Module Access</div>'
-    +'<div class="s-section-sub">// GRANT USERS ACCESS TO ADMIN MODULES · TOGGLE ON = VISIBLE TO USER</div>'
+    +'<div class="s-section-sub">// GRANT USERS ACCESS TO ADMIN MODULES - TOGGLE ON = VISIBLE TO USER</div>'
   );
 
   const modules=[
@@ -2571,7 +2638,7 @@ function renderSettingsAccess(body){
   );
 }
 
-// ── SECTION 3: TASK SETUP ────────────────────────
+// -- SECTION 3: TASK SETUP ------------------------
 function renderSettingsTaskSetup(body){
   body.insertAdjacentHTML('beforeend',
     '<div class="s-section-title">📋 Task Setup</div>'
@@ -2597,12 +2664,11 @@ function renderSettingsTaskSetup(body){
     const person=document.getElementById('sts-person').value;
     const leadRaw=document.getElementById('sts-lead').value;
     const planTime=document.getElementById('sts-plantime').value;
-    const planDate=''; // removed — only planTime used
     const priority=document.getElementById('sts-prio').checked;
     if(!name){toast('Task name required','error');return;}
     if(!person){toast('Please assign to a person','error');return;}
     const leadTime=leadRaw?parseFloat(leadRaw)+'min':'';
-    tasks.push({sl:nextSl++,task:name,person,priority,planDate,planTime,actualDate:'',actualTime:'',leadTime});
+    tasks.push({sl:nextSl++,task:name,person,priority,planTime,actualDate:'',actualTime:'',leadTime});
     toast('Task #'+(nextSl-1)+' added → '+person,'success');
     document.getElementById('sts-name').value='';document.getElementById('sts-person').value='';
     document.getElementById('sts-lead').value='';document.getElementById('sts-plandate').value='';
@@ -2629,7 +2695,7 @@ function renderRecentSetup(body){
     row.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.7rem;color:var(--muted)">'+k.sl+'</span>'
       +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+k.task+(k.priority?' <span style="color:'+t2.accent+'">★</span>':'')+'</span>'
       +'<span style="display:flex;align-items:center;gap:5px"><span style="width:18px;height:18px;border-radius:4px;background:'+t2.bg+';color:'+t2.color+';display:inline-flex;align-items:center;justify-content:center;font-size:.5rem;font-weight:700;font-family:Syne,sans-serif">'+ini(k.person)+'</span><span style="color:'+t2.color+';font-size:.76rem">'+k.person.split('/')[0]+'</span></span>'
-      +'<span style="font-family:DM Mono,monospace;font-size:.7rem;color:#60a5fa">'+(k.planDate?fmtDate(k.planDate):'—')+'</span>'
+      +'<span style="font-family:DM Mono,monospace;font-size:.7rem;color:#60a5fa">'+(false?"":'—')+'</span>'
       +'<span style="font-family:DM Mono,monospace;font-size:.7rem;color:#60a5fa">'+(k.planTime||'—')+'</span>'
       +'<span>'+(k.leadTime?'<span class="lead-badge">'+k.leadTime+'</span>':'<span style="font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted)">—</span>')+'</span>';
     list.appendChild(row);
@@ -2637,11 +2703,11 @@ function renderRecentSetup(body){
   wrap.appendChild(list);body.appendChild(wrap);
 }
 
-// ── SECTION 4: PLAN TIME (Settings version) ──────
+// -- SECTION 4: PLAN TIME (Settings version) ------
 function renderSettingsPlanTime(body){
   body.insertAdjacentHTML('beforeend',
     '<div class="s-section-title">📅 Plan Time</div>'
-    +'<div class="s-section-sub">// SET PLAN DATE & DEADLINE FOR EACH TASK · QUICK ACCESS</div>'
+    +'<div class="s-section-sub">// SET PLAN DATE & DEADLINE FOR EACH TASK - QUICK ACCESS</div>'
   );
   // Compact filter
   const pOpts='<option value="">All Persons</option>'+PERSONS.map(p=>`<option value="${p}">${p}</option>`).join('');
@@ -2677,9 +2743,9 @@ function renderSettingsPlanTime(body){
     wrap.querySelectorAll('.spt-save').forEach(btn=>{
       btn.onclick=()=>{
         const sl=+btn.dataset.sl;const k=tasks.find(t=>t.sl===sl);if(!k)return;
-        k.planDate=document.getElementById('sptd-'+sl)?.value||'';
+        k.actualDate=formatDateStorage(document.getElementById('sptd-'+sl)?.value||'');
         k.planTime=document.getElementById('sptt-'+sl)?.value||'';
-        toast('Plan set for #'+sl+(k.planDate?' · '+fmtDate(k.planDate):'')+(k.planTime?' '+k.planTime:''),'success');
+        toast('Actual date set for #'+sl+( - '+fmtDate(k.planDate):'')+(k.planTime?' '+k.planTime:''),'success');
       };
     });
   };
@@ -2688,11 +2754,11 @@ function renderSettingsPlanTime(body){
   document.getElementById('spt-pf').onchange=drawSPT;
 }
 
-// ── SECTION 5: LEAD TIME ─────────────────────────
+// -- SECTION 5: LEAD TIME -------------------------
 function renderSettingsLeadTime(body){
   body.insertAdjacentHTML('beforeend',
     '<div class="s-section-title">⏱ Lead Time</div>'
-    +'<div class="s-section-sub">// SET ESTIMATED HOURS ALLOCATED PER TASK · SHOWN AS TIME BUDGET</div>'
+    +'<div class="s-section-sub">// SET ESTIMATED HOURS ALLOCATED PER TASK - SHOWN AS TIME BUDGET</div>'
   );
   // Summary strip
   const withLead=tasks.filter(t=>t.leadTime).length;
@@ -2781,17 +2847,17 @@ function renderSettingsLeadTime(body){
 }
 
 
-// ═══════════════════════════════════════
+//
 //  SETTINGS PANEL
-// ═══════════════════════════════════════
+//
 function buildSettings(c){
   c.insertAdjacentHTML('beforeend',
     '<div style="font-family:Syne,sans-serif;font-size:1.5rem;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">System <span style="color:#f5c842">Settings</span></div>'
-    +'<div style="font-size:.72rem;font-family:DM Mono,monospace;color:var(--muted);margin-bottom:18px">// USER MANAGEMENT · ACCESS CONTROL · LEAD TIME · TASK SETUP</div>'
+    +'<div style="font-size:.72rem;font-family:DM Mono,monospace;color:var(--muted);margin-bottom:18px">// USER MANAGEMENT - ACCESS CONTROL - LEAD TIME - TASK SETUP</div>'
   );
   const layout=document.createElement('div');layout.className='settings-layout';
 
-  // ── Left Nav ──
+  // -- Left Nav --
   const nav=document.createElement('div');nav.className='settings-nav';
   const navItems=[
     {id:'users',icon:'👤',label:'USER MANAGEMENT'},
@@ -2808,7 +2874,7 @@ function buildSettings(c){
     nav.appendChild(btn);
   });
 
-  // ── Right Body ──
+  // -- Right Body --
   const body=document.createElement('div');body.className='settings-body';
   layout.appendChild(nav);layout.appendChild(body);
   c.appendChild(layout);
@@ -2830,11 +2896,11 @@ function renderSettingsBody(body){
   else if(settingsTab==='leadtime')renderSettingsLeadTime(body);
 }
 
-// ── SECTION 1: USER MANAGEMENT ──────────────────
+// -- SECTION 1: USER MANAGEMENT ------------------
 function renderSettingsUsers(body){
   body.insertAdjacentHTML('beforeend',
     '<div class="s-section-title">👤 User Management</div>'
-    +'<div class="s-section-sub">// ADD NEW USERS · CHANGE PASSWORDS · REMOVE USERS</div>'
+    +'<div class="s-section-sub">// ADD NEW USERS - CHANGE PASSWORDS - REMOVE USERS</div>'
   );
 
   // Add user form
@@ -2995,11 +3061,11 @@ function hexToRgb(hex){
   return r+','+g+','+b;
 }
 
-// ── SECTION 2: MODULE ACCESS ─────────────────────
+// -- SECTION 2: MODULE ACCESS ---------------------
 function renderSettingsAccess(body){
   body.insertAdjacentHTML('beforeend',
     '<div class="s-section-title">🔐 Module Access</div>'
-    +'<div class="s-section-sub">// GRANT USERS ACCESS TO ADMIN MODULES · TOGGLE ON = VISIBLE TO USER</div>'
+    +'<div class="s-section-sub">// GRANT USERS ACCESS TO ADMIN MODULES - TOGGLE ON = VISIBLE TO USER</div>'
   );
 
   const modules=[
@@ -3058,7 +3124,7 @@ function renderSettingsAccess(body){
   );
 }
 
-// ── SECTION 3: TASK SETUP ────────────────────────
+// -- SECTION 3: TASK SETUP ------------------------
 function renderSettingsTaskSetup(body){
   body.insertAdjacentHTML('beforeend',
     '<div class="s-section-title">📋 Task Setup</div>'
@@ -3084,12 +3150,11 @@ function renderSettingsTaskSetup(body){
     const person=document.getElementById('sts-person').value;
     const leadRaw=document.getElementById('sts-lead').value;
     const planTime=document.getElementById('sts-plantime').value;
-    const planDate=''; // removed — only planTime used
     const priority=document.getElementById('sts-prio').checked;
     if(!name){toast('Task name required','error');return;}
     if(!person){toast('Please assign to a person','error');return;}
     const leadTime=leadRaw?parseFloat(leadRaw)+'min':'';
-    tasks.push({sl:nextSl++,task:name,person,priority,planDate,planTime,actualDate:'',actualTime:'',leadTime});
+    tasks.push({sl:nextSl++,task:name,person,priority,planTime,actualDate:'',actualTime:'',leadTime});
     toast('Task #'+(nextSl-1)+' added → '+person,'success');
     document.getElementById('sts-name').value='';document.getElementById('sts-person').value='';
     document.getElementById('sts-lead').value='';document.getElementById('sts-plandate').value='';
@@ -3116,7 +3181,7 @@ function renderRecentSetup(body){
     row.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.7rem;color:var(--muted)">'+k.sl+'</span>'
       +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+k.task+(k.priority?' <span style="color:'+t2.accent+'">★</span>':'')+'</span>'
       +'<span style="display:flex;align-items:center;gap:5px"><span style="width:18px;height:18px;border-radius:4px;background:'+t2.bg+';color:'+t2.color+';display:inline-flex;align-items:center;justify-content:center;font-size:.5rem;font-weight:700;font-family:Syne,sans-serif">'+ini(k.person)+'</span><span style="color:'+t2.color+';font-size:.76rem">'+k.person.split('/')[0]+'</span></span>'
-      +'<span style="font-family:DM Mono,monospace;font-size:.7rem;color:#60a5fa">'+(k.planDate?fmtDate(k.planDate):'—')+'</span>'
+      +'<span style="font-family:DM Mono,monospace;font-size:.7rem;color:#60a5fa">'+(false?"":'—')+'</span>'
       +'<span style="font-family:DM Mono,monospace;font-size:.7rem;color:#60a5fa">'+(k.planTime||'—')+'</span>'
       +'<span>'+(k.leadTime?'<span class="lead-badge">'+k.leadTime+'</span>':'<span style="font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted)">—</span>')+'</span>';
     list.appendChild(row);
@@ -3124,11 +3189,11 @@ function renderRecentSetup(body){
   wrap.appendChild(list);body.appendChild(wrap);
 }
 
-// ── SECTION 4: PLAN TIME (Settings version) ──────
+// -- SECTION 4: PLAN TIME (Settings version) ------
 function renderSettingsPlanTime(body){
   body.insertAdjacentHTML('beforeend',
     '<div class="s-section-title">📅 Plan Time</div>'
-    +'<div class="s-section-sub">// SET PLAN DATE & DEADLINE FOR EACH TASK · QUICK ACCESS</div>'
+    +'<div class="s-section-sub">// SET PLAN DATE & DEADLINE FOR EACH TASK - QUICK ACCESS</div>'
   );
   // Compact filter
   const pOpts='<option value="">All Persons</option>'+PERSONS.map(p=>`<option value="${p}">${p}</option>`).join('');
@@ -3164,9 +3229,9 @@ function renderSettingsPlanTime(body){
     wrap.querySelectorAll('.spt-save').forEach(btn=>{
       btn.onclick=()=>{
         const sl=+btn.dataset.sl;const k=tasks.find(t=>t.sl===sl);if(!k)return;
-        k.planDate=document.getElementById('sptd-'+sl)?.value||'';
+        k.actualDate=formatDateStorage(document.getElementById('sptd-'+sl)?.value||'');
         k.planTime=document.getElementById('sptt-'+sl)?.value||'';
-        toast('Plan set for #'+sl+(k.planDate?' · '+fmtDate(k.planDate):'')+(k.planTime?' '+k.planTime:''),'success');
+        toast('Actual date set for #'+sl+( - '+fmtDate(k.planDate):'')+(k.planTime?' '+k.planTime:''),'success');
       };
     });
   };
@@ -3175,11 +3240,11 @@ function renderSettingsPlanTime(body){
   document.getElementById('spt-pf').onchange=drawSPT;
 }
 
-// ── SECTION 5: LEAD TIME ─────────────────────────
+// -- SECTION 5: LEAD TIME -------------------------
 function renderSettingsLeadTime(body){
   body.insertAdjacentHTML('beforeend',
     '<div class="s-section-title">⏱ Lead Time</div>'
-    +'<div class="s-section-sub">// SET ESTIMATED HOURS ALLOCATED PER TASK · SHOWN AS TIME BUDGET</div>'
+    +'<div class="s-section-sub">// SET ESTIMATED HOURS ALLOCATED PER TASK - SHOWN AS TIME BUDGET</div>'
   );
   // Summary strip
   const withLead=tasks.filter(t=>t.leadTime).length;
