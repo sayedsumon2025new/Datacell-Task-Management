@@ -426,8 +426,8 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 <script>
 
 // Validate GAS_URL is set
-if (!GAS_URL || GAS_URL.includes('YOUR_GAS_URL')) {
-  console.warn('⚠️ WARNING: GAS_URL is not configured. Replace with your Apps Script URL.');
+if (!GAS_URL || GAS_URL.includes('https://script.google.com/macros/s/AKfycbzG5s854YF0dtZjxo5WhleorTb7c8LD3wATZVUipqNps-Nt3j5A8rVFxxpx7U__8o4/exec')) {
+  console.warn('⚠️ WARNING: GAS_URL is not configured. Replace YOUR_GAS_URL_HERE with your Apps Script URL.');
   document.body.innerHTML = '<div style="padding:20px; color:red; font-family:Arial;"><h2>❌ Configuration Required</h2><p>Please set the GAS_URL in the HTML file before use.</p></div>';
 }
 
@@ -493,7 +493,7 @@ let nextSl=1;
 //  GOOGLE SHEETS SYNC LAYER — REAL-TIME POLLING
 //  Replace GAS_URL below with your deployed Apps Script URL
 //
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbzP75Lxn_L6726zEGxtU4Hzjg2C1Qr4fWhi_gq_Tjy7pyNiKfbxE2EEQiH-mG3ZOe8f/exec'; https://script.google.com/macros/s/AKfycbzP75Lxn_L6726zEGxtU4Hzjg2C1Qr4fWhi_gq_Tjy7pyNiKfbxE2EEQiH-mG3ZOe8f/exec
+const GAS_URL = 'YOUR_GAS_URL_HERE'; // ← TODO: paste your Web App URL here
 const POLL_INTERVAL_MS = 8000; // poll every 8 seconds
 let pollInterval=null;
 
@@ -504,7 +504,7 @@ let _isSyncing    = false;
 
 // -- Low-level fetch ---------------------------------------------
 async function gasGet(action='all') {
-  if (!GAS_URL || GAS_URL === 'https://script.google.com/macros/s/AKfycbzP75Lxn_L6726zEGxtU4Hzjg2C1Qr4fWhi_gq_Tjy7pyNiKfbxE2EEQiH-mG3ZOe8f/exec') return null;
+  if (!GAS_URL || GAS_URL === 'YOUR_GAS_URL_HERE') return null;
   try {
     const res = await fetch(GAS_URL + '?action=' + action, {cache:'no-store'});
     return await res.json();
