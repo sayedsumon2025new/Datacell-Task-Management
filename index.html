@@ -447,67 +447,122 @@ const SB_URL  = 'https://hqolwnbugaehpxrqtzc.supabase.co';
 const SB_KEY  = 'sb_publishable_CyiA3Ls1wbctt1VCc3DOAA_NeOfPCfx';
 const POLL_INTERVAL_MS = 8000;
 
-let _pollTimer   = null;
-let _isSyncing   = false;
+let _pollTimer = null;
+let _isSyncing = false;
 let _syncDebounce = null;
 let _lastVersion = null;
 
 // ── Low-level REST helpers ───────────────────────────────────────
+// Supabase publishable keys are API keys, not JWTs.
+// For REST/Data API calls the key is sent in `apikey` only.
+
+function sbConfigured() {
+  return !!SB_URL && SB_URL.startsWith('https://') && !!SB_KEY && SB_KEY.startsWith('sb_publishable_');
+}
+
+function sbHeaders(extra = {}) {
+  return { 'apikey': SB_KEY, ...extra };
+}
 
 async function sbGet(table, select = '*') {
-  if (!SB_URL || !SB_KEY) return null;
+  if (!sbConfigured()) return null;
   try {
     const res = await fetch(`${SB_URL}/rest/v1/${table}?select=${encodeURIComponent(select)}`, {
-      headers: {'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY}
+      method: 'GET', headers: sbHeaders()
     });
-    if (!res.ok) { console.error(`Supabase GET ${table} failed:`, res.status, await res.text()); setSyncStatus('error'); return null; }
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error(`Supabase GET ${table} failed [${res.status}]:`, txt);
+      setSyncStatus('error');
+      return null;
+    }
     return await res.json();
-  } catch(e) { console.error(`Supabase GET ${table} failed:`, e); setSyncStatus('error'); return null; }
+  } catch (e) {
+    console.error(`Supabase GET ${table} error:`, e);
+    setSyncStatus('error');
+    return null;
+  }
 }
 
 async function sbUpsert(table, rows) {
-  if (!SB_URL || !SB_KEY || !rows || !rows.length) return true;
+  if (!sbConfigured()) return false;
+  if (!Array.isArray(rows) || rows.length === 0) return true;
   try {
     const res = await fetch(`${SB_URL}/rest/v1/${table}`, {
       method: 'POST',
-      headers: {'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates,return=minimal'},
+      headers: sbHeaders({
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
+      }),
       body: JSON.stringify(rows)
     });
-    if (!res.ok) { console.error(`Supabase UPSERT ${table} failed:`, res.status, await res.text()); setSyncStatus('error'); return false; }
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error(`Supabase UPSERT ${table} failed [${res.status}]:`, txt);
+      setSyncStatus('error');
+      return false;
+    }
     return true;
-  } catch(e) { console.error(`Supabase UPSERT ${table} failed:`, e); setSyncStatus('error'); return false; }
+  } catch (e) {
+    console.error(`Supabase UPSERT ${table} error:`, e);
+    setSyncStatus('error');
+    return false;
+  }
 }
 
 async function sbDelete(table, column, value) {
-  if (!SB_URL || !SB_KEY) return false;
+  if (!sbConfigured()) return false;
   try {
     const res = await fetch(`${SB_URL}/rest/v1/${table}?${column}=eq.${encodeURIComponent(value)}`, {
-      method: 'DELETE', headers: {'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Prefer': 'return=minimal'}
+      method: 'DELETE', headers: sbHeaders({'Prefer': 'return=minimal'})
     });
-    if (!res.ok) { console.error(`Supabase DELETE ${table} failed:`, res.status, await res.text()); setSyncStatus('error'); return false; }
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error(`Supabase DELETE ${table}.${column} failed [${res.status}]:`, txt);
+      setSyncStatus('error');
+      return false;
+    }
     return true;
-  } catch(e) { console.error(`Supabase DELETE ${table} failed:`, e); setSyncStatus('error'); return false; }
+  } catch (e) {
+    console.error(`Supabase DELETE ${table} error:`, e);
+    setSyncStatus('error');
+    return false;
+  }
 }
 
 async function sbDeleteAll(table) {
-  if (!SB_URL || !SB_KEY) return false;
-  const filters = {tasks:'sl=gte.0', done_state:'username=not.is.null', users:'name=not.is.null', module_access:'username=not.is.null', meta:'key=not.is.null'};
+  if (!sbConfigured()) return false;
+  const filters = {
+    tasks: 'sl=gte.0',
+    users: 'id=gte.0',
+    done_state: 'username=not.is.null',
+    module_access: 'username=not.is.null',
+    meta: 'key=not.is.null'
+  };
   const filter = filters[table];
-  if (!filter) { console.error('No delete filter configured for table:', table); setSyncStatus('error'); return false; }
+  if (!filter) return false;
   try {
     const res = await fetch(`${SB_URL}/rest/v1/${table}?${filter}`, {
-      method: 'DELETE', headers: {'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, 'Prefer': 'return=minimal'}
+      method: 'DELETE', headers: sbHeaders({'Prefer': 'return=minimal'})
     });
-    if (!res.ok) { console.error(`Supabase DELETE ALL ${table} failed:`, res.status, await res.text()); setSyncStatus('error'); return false; }
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error(`Supabase DELETE ALL ${table} failed [${res.status}]:`, txt);
+      setSyncStatus('error');
+      return false;
+    }
     return true;
-  } catch(e) { console.error(`Supabase DELETE ALL ${table} failed:`, e); setSyncStatus('error'); return false; }
+  } catch (e) {
+    console.error(`Supabase DELETE ALL ${table} error:`, e);
+    setSyncStatus('error');
+    return false;
+  }
 }
 
 // ── Sync status indicator ────────────────────────────────────────
-
 function setSyncStatus(status) {
-  const dot  = document.getElementById('syncDot');
-  const lbl  = document.getElementById('syncLabel');
+  const dot = document.getElementById('syncDot');
+  const lbl = document.getElementById('syncLabel');
   const wrap = document.getElementById('syncWrap');
   if (!dot || !lbl) return;
   dot.className = 'sync-dot ' + status;
@@ -518,8 +573,6 @@ function setSyncStatus(status) {
   if (wrap) wrap.style.display = (!currentUser || status === 'offline') ? 'none' : 'flex';
 }
 
-// ── Serialize / deserialize ──────────────────────────────────────
-
 function doneStateToObj() {
   const obj = {};
   Object.entries(doneState).forEach(([u, set]) => { obj[u] = Array.from(set); });
@@ -527,214 +580,198 @@ function doneStateToObj() {
 }
 
 // ── Apply data from Supabase into local state ────────────────────
-
 function applyRemoteData(data) {
   if (!data) return false;
   let changed = false;
 
+  // Empty remote arrays are valid and must clear stale local/demo data.
   if (Array.isArray(data.tasks)) {
     const n = JSON.stringify(data.tasks), c = JSON.stringify(tasks);
     if (n !== c) { tasks = data.tasks; changed = true; }
   }
-  if (data.nextSl && data.nextSl > nextSl) nextSl = data.nextSl;
+
+  if (Number.isFinite(Number(data.nextSl)) && Number(data.nextSl) >= 1 && Number(data.nextSl) !== nextSl) {
+    nextSl = Number(data.nextSl); changed = true;
+  }
 
   if (data.doneState) {
     const n = JSON.stringify(data.doneState), c = JSON.stringify(doneStateToObj());
     if (n !== c) {
+      Object.keys(doneState).forEach(u => delete doneState[u]);
       Object.entries(data.doneState).forEach(([u, sls]) => {
         doneState[u] = new Set(Array.isArray(sls) ? sls : []);
       });
       changed = true;
     }
   }
-  if (data.users && data.users.length > 0) {
-    userRegistry = data.users;
+
+  if (Array.isArray(data.users) && data.users.length > 0) {
+    const n = JSON.stringify(data.users), c = JSON.stringify(userRegistry);
+    if (n !== c) { userRegistry = data.users; changed = true; }
     data.users.forEach(u => { CREDS[u.name] = u.password; });
   }
   if (data.moduleAccess) moduleAccess = data.moduleAccess;
-
   return changed;
 }
 
 // ── READ: fetch all data from Supabase ──────────────────────────
-
 async function sbFetchAll() {
-  if (!SB_URL || SB_URL === 'YOUR_SUPABASE_URL') return null;
-
-  const [taskRows, doneRows, userRows, accessRows, metaRows] = await Promise.all([
-    sbGet('tasks'),
-    sbGet('done_state'),
-    sbGet('users'),
-    sbGet('module_access'),
-    sbGet('meta'),
+  if (!sbConfigured()) return null;
+  const results = await Promise.all([
+    sbGet('tasks'), sbGet('done_state'), sbGet('users'), sbGet('module_access'), sbGet('meta')
   ]);
+  // A failed request is not the same as an empty table.
+  if (results.some(x => x === null)) return null;
 
-  // tasks
+  const [taskRows, doneRows, userRows, accessRows, metaRows] = results;
   const fetchedTasks = (taskRows || []).map(r => ({
-    sl        : r.sl,
-    task      : r.task || '',
-    person    : r.person || '',
-    priority  : !!r.priority,
-    planDate  : r.plan_date  || '',
-    planTime  : r.plan_time  || '',
-    actualDate: r.actual_date || '',
-    actualTime: r.actual_time || '',
-    leadTime  : r.lead_time  || '',
+    sl: Number(r.sl), task: r.task || '', person: r.person || '', priority: !!r.priority,
+    planDate: r.plan_date || '', planTime: r.plan_time || '',
+    actualDate: r.actual_date || '', actualTime: r.actual_time || '', leadTime: r.lead_time || ''
   })).sort((a,b) => a.sl - b.sl);
 
-  // doneState
   const fetchedDone = {};
   (doneRows || []).forEach(r => {
     fetchedDone[r.username] = r.done_sls ? r.done_sls.split(',').map(Number).filter(n => !isNaN(n)) : [];
   });
 
-  // users
   const fetchedUsers = (userRows || []).map(r => ({
-    name    : r.name,
-    password: r.password || '',
-    color   : r.color    || '#60a5fa',
+    name: r.name, password: r.password || '', color: r.color || '#60a5fa'
   }));
 
-  // moduleAccess
   const fetchedAccess = {};
   (accessRows || []).forEach(r => {
-    fetchedAccess[r.username] = r.modules ? r.modules.split(',').map(s=>s.trim()).filter(Boolean) : [];
+    fetchedAccess[r.username] = r.modules ? r.modules.split(',').map(s => s.trim()).filter(Boolean) : [];
   });
 
-  // nextSl from meta
   const metaNext = (metaRows || []).find(r => r.key === 'nextSl');
+  const metaVer = (metaRows || []).find(r => r.key === 'version');
   const fetchedNextSl = metaNext ? Number(metaNext.value) : 1;
 
-  // version from meta
-  const metaVer = (metaRows || []).find(r => r.key === 'version');
-  const fetchedVersion = metaVer ? String(metaVer.value) : '0';
-
   return {
-    tasks       : fetchedTasks,
-    doneState   : fetchedDone,
-    users       : fetchedUsers,
-    moduleAccess: fetchedAccess,
-    nextSl      : fetchedNextSl,
-    version     : fetchedVersion,
+    tasks: fetchedTasks, doneState: fetchedDone, users: fetchedUsers, moduleAccess: fetchedAccess,
+    nextSl: Number.isFinite(fetchedNextSl) && fetchedNextSl >= 1 ? fetchedNextSl : 1,
+    version: metaVer ? String(metaVer.value) : '0'
   };
 }
 
-// ── WRITE: tasks + doneState + nextSl ───────────────────────────
-
+// ── WRITE ────────────────────────────────────────────────────────
 function syncToSheets() {
   clearTimeout(_syncDebounce);
   _syncDebounce = setTimeout(async () => {
     setSyncStatus('syncing');
-    await sbSaveAll();
-    await sbBumpVersion();
-    setSyncStatus('live');
-  }, 800);
+    const ok = await sbSaveAll();
+    if (ok && await sbBumpVersion()) setSyncStatus('live');
+    else {
+      setSyncStatus('error');
+      toast('Database sync failed — check browser Console', 'error');
+    }
+  }, 300);
+}
+
+// Safe task sync: upsert current rows and delete only removed SLs.
+// This avoids clearing the whole table before a potentially failed insert.
+async function sbSyncTasks(taskRows) {
+  const remote = await sbGet('tasks');
+  if (remote === null) return false;
+  const localSls = new Set(taskRows.map(r => Number(r.sl)));
+  for (const row of remote) {
+    if (!localSls.has(Number(row.sl)) && !await sbDelete('tasks', 'sl', row.sl)) return false;
+  }
+  return taskRows.length ? await sbUpsert('tasks', taskRows) : true;
+}
+
+async function sbSyncDoneState(doneRows) {
+  const remote = await sbGet('done_state');
+  if (remote === null) return false;
+  const localUsers = new Set(doneRows.map(r => String(r.username)));
+  for (const row of remote) {
+    if (!localUsers.has(String(row.username)) && !await sbDelete('done_state', 'username', row.username)) return false;
+  }
+  return doneRows.length ? await sbUpsert('done_state', doneRows) : true;
 }
 
 async function sbSaveAll() {
-  // tasks
   const taskRows = tasks.map(t => ({
-    sl         : t.sl,
-    task       : t.task       || '',
-    person     : t.person     || '',
-    priority   : !!t.priority,
-    plan_date  : t.planDate   || '',
-    plan_time  : t.planTime   || '',
-    actual_date: t.actualDate || '',
-    actual_time: t.actualTime || '',
-    lead_time  : t.leadTime   || '',
+    sl: Number(t.sl), task: t.task || '', person: t.person || '', priority: !!t.priority,
+    plan_date: t.planDate || '', plan_time: t.planTime || '',
+    actual_date: t.actualDate || '', actual_time: t.actualTime || '', lead_time: t.leadTime || ''
   }));
-  // Clear and re-insert tasks
-  await sbDeleteAll('tasks');
-  if (taskRows.length > 0) await sbUpsert('tasks', taskRows);
+  if (!await sbSyncTasks(taskRows)) return false;
 
-  // doneState
   const doneRows = Object.entries(doneStateToObj()).map(([user, sls]) => ({
-    username: user,
-    done_sls: sls.join(','),
+    username: user, done_sls: sls.join(',')
   }));
-  await sbDeleteAll('done_state');
-  if (doneRows.length > 0) await sbUpsert('done_state', doneRows);
-
-  // nextSl in meta
-  await sbUpsert('meta', [{ key: 'nextSl', value: String(nextSl) }]);
+  if (!await sbSyncDoneState(doneRows)) return false;
+  return await sbUpsert('meta', [{ key: 'nextSl', value: String(nextSl) }]);
 }
 
 // ── WRITE: users ────────────────────────────────────────────────
-
 async function syncUsers() {
-  if (!SB_URL || SB_URL === 'YOUR_SUPABASE_URL') return;
-  const rows = userRegistry.map(u => ({
-    name    : u.name,
-    password: u.password || '',
-    color   : u.color    || '#60a5fa',
-  }));
-  await sbDeleteAll('users');
-  if (rows.length > 0) await sbUpsert('users', rows);
+  if (!sbConfigured()) return false;
+  const rows = userRegistry.map(u => ({ name: u.name, password: u.password || '', color: u.color || '#60a5fa' }));
+  if (!await sbDeleteAll('users')) return false;
+  if (rows.length && !await sbUpsert('users', rows)) return false;
   await sbBumpVersion();
   refreshLoginDropdown();
+  return true;
 }
 
 // ── WRITE: module access ─────────────────────────────────────────
-
 async function syncModuleAccess() {
-  if (!SB_URL || SB_URL === 'YOUR_SUPABASE_URL') return;
+  if (!sbConfigured()) return false;
   const rows = Object.entries(moduleAccess).map(([user, mods]) => ({
-    username: user,
-    modules : Array.isArray(mods) ? mods.join(',') : '',
+    username: user, modules: Array.isArray(mods) ? mods.join(',') : ''
   }));
-  await sbDeleteAll('module_access');
-  if (rows.length > 0) await sbUpsert('module_access', rows);
+  if (!await sbDeleteAll('module_access')) return false;
+  if (rows.length && !await sbUpsert('module_access', rows)) return false;
+  await sbBumpVersion();
+  return true;
 }
 
-// ── Version management ───────────────────────────────────────────
-
+// ── Version management ──────────────────────────────────────────
 async function sbBumpVersion() {
-  const cur = _lastVersion ? Number(_lastVersion) : 0;
-  const next = String(cur + 1);
-  await sbUpsert('meta', [{ key: 'version', value: next }]);
-  _lastVersion = next;
+  if (!sbConfigured()) return false;
+  const cur = Number(_lastVersion || 0);
+  const next = String((Number.isFinite(cur) ? cur : 0) + 1);
+  const ok = await sbUpsert('meta', [{ key: 'version', value: next }]);
+  if (ok) _lastVersion = next;
+  return ok;
 }
 
 // ── Polling ──────────────────────────────────────────────────────
-
 async function pollSheets() {
-  if (!currentUser || _isSyncing) return;
-  if (!SB_URL || SB_URL === 'YOUR_SUPABASE_URL') return;
+  if (!currentUser || _isSyncing || !sbConfigured()) return;
   _isSyncing = true;
   try {
     const metaRows = await sbGet('meta');
-    const verRow = (metaRows || []).find(r => r.key === 'version');
-    const remoteVer = verRow ? String(verRow.value) : null;
-    if (remoteVer && remoteVer !== _lastVersion) {
+    if (metaRows === null) return;
+    const verRow = metaRows.find(r => r.key === 'version');
+    const remoteVer = verRow ? String(verRow.value) : '0';
+    if (remoteVer !== _lastVersion) {
       if (_lastVersion !== null) {
         setSyncStatus('syncing');
         const data = await sbFetchAll();
-        const changed = applyRemoteData(data);
-        if (changed) { renderContent(); toast('↻ Updated by another user', 'info'); }
+        if (data) {
+          const changed = applyRemoteData(data);
+          if (changed) { renderContent(); toast('↻ Updated by another user', 'info'); }
+        }
       }
       _lastVersion = remoteVer;
     }
     setSyncStatus('live');
   } catch(e) {
-    setSyncStatus('error');
-  } finally {
-    _isSyncing = false;
-  }
+    console.error('Polling error:', e); setSyncStatus('error');
+  } finally { _isSyncing = false; }
 }
 
 function startPolling() {
   stopPolling();
-  if (!SB_URL || SB_URL === 'YOUR_SUPABASE_URL') return;
-  setSyncStatus('syncing');
-  pollSheets();
+  if (!sbConfigured()) return;
+  setSyncStatus('syncing'); pollSheets();
   _pollTimer = setInterval(pollSheets, POLL_INTERVAL_MS);
 }
-
-function stopPolling() {
-  clearInterval(_pollTimer);
-  _pollTimer = null;
-}
+function stopPolling() { clearInterval(_pollTimer); _pollTimer = null; }
 
 // ── Initial load on login ────────────────────────────────────────
 async function initFromSheets() {
@@ -742,20 +779,19 @@ async function initFromSheets() {
   if (loginBtn) { loginBtn.textContent = 'Connecting...'; loginBtn.disabled = true; }
   const data = await sbFetchAll();
   if (data) {
-    applyRemoteData(data);
-    _lastVersion = data.version || null;
+    applyRemoteData(data); _lastVersion = data.version || '0';
     if (data.users && data.users.length > 0) {
       PERSONS = data.users.filter(u => u.name !== 'admin').map(u => u.name);
       const sel = document.getElementById('loginUser');
       if (sel) {
-        const uOpts = data.users
-          .filter(u => u.name !== 'admin')
+        const uOpts = data.users.filter(u => u.name !== 'admin')
           .map(u => '<option value="'+u.name+'">'+u.name+'</option>').join('');
-        sel.innerHTML = '<option value="">-- Select your name --</option>'
-          + uOpts
-          + '<option value="admin">Admin (All Access)</option>';
+        sel.innerHTML = '<option value="">-- Select your name --</option>' + uOpts + '<option value="admin">Admin (All Access)</option>';
       }
     }
+  } else {
+    setSyncStatus('error');
+    console.error('Could not load Supabase data. Local state was not overwritten.');
   }
   if (loginBtn) { loginBtn.textContent = 'LOGIN →'; loginBtn.disabled = false; }
 }
