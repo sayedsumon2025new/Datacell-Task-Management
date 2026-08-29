@@ -784,9 +784,15 @@ async function initFromSheets() {
       PERSONS = data.users.filter(u => u.name !== 'admin').map(u => u.name);
       const sel = document.getElementById('loginUser');
       if (sel) {
+        const prevValue = sel.value;
         const uOpts = data.users.filter(u => u.name !== 'admin')
           .map(u => '<option value="'+u.name+'">'+u.name+'</option>').join('');
         sel.innerHTML = '<option value="">-- Select your name --</option>' + uOpts + '<option value="admin">Admin (All Access)</option>';
+        if (prevValue && [...sel.options].some(o => o.value === prevValue)) {
+          sel.value = prevValue;
+        } else {
+          sel.value = 'admin'; // default to admin for convenience
+        }
       }
     }
   } else {
@@ -884,29 +890,29 @@ document.getElementById('loginBtn').onclick=async()=>{await initFromSheets();doL
 // ── Populate login dropdown (with retry) ──────────────────────
 async function populateLoginDropdown() {
   const sel = document.getElementById('loginUser');
+  if (!sel) return;
+  const prevValue = sel.value; // remember what user already selected
   if (!SB_URL || SB_URL === 'YOUR_SUPABASE_URL') {
-    // No Supabase URL yet — use local userRegistry
-    if (sel) {
-      const localUsers = userRegistry.filter(u => u.name !== 'admin');
-      const uOpts = localUsers.map(u => '<option value="'+u.name+'">'+u.name+'</option>').join('');
-      sel.innerHTML = '<option value="">-- Select your name --</option>'
-        + uOpts + '<option value="admin">Admin (All Access)</option>';
+    const localUsers = userRegistry.filter(u => u.name !== 'admin');
+    const uOpts = localUsers.map(u => '<option value="'+u.name+'">'+u.name+'</option>').join('');
+    sel.innerHTML = '<option value="">-- Select your name --</option>'
+      + uOpts + '<option value="admin">Admin (All Access)</option>';
+  } else {
+    const rows = await sbGet('users');
+    const users = (rows || []).map(r => ({ name: r.name, password: r.password || '', color: r.color || '#60a5fa' }));
+    if (users.length > 0) {
+      userRegistry = users;
+      users.forEach(u => { CREDS[u.name] = u.password; });
+      PERSONS = users.filter(u => u.name !== 'admin').map(u => u.name);
     }
-    return;
-  }
-  // Fetch users from Supabase
-  const rows = await sbGet('users');
-  const users = (rows || []).map(r => ({ name: r.name, password: r.password || '', color: r.color || '#60a5fa' }));
-  if (users.length > 0) {
-    userRegistry = users;
-    users.forEach(u => { CREDS[u.name] = u.password; });
-    PERSONS = users.filter(u => u.name !== 'admin').map(u => u.name);
-  }
-  if (sel) {
-    const nonAdmin = users.filter(u => u.name !== 'admin');
+    const nonAdmin = (users || []).filter(u => u.name !== 'admin');
     const uOpts = nonAdmin.map(u => '<option value="'+u.name+'">'+u.name+'</option>').join('');
     sel.innerHTML = '<option value="">-- Select your name --</option>'
       + uOpts + '<option value="admin">Admin (All Access)</option>';
+  }
+  // Restore previous selection if it still exists, otherwise leave empty
+  if (prevValue && [...sel.options].some(o => o.value === prevValue)) {
+    sel.value = prevValue;
   }
 }
 
@@ -914,12 +920,16 @@ async function populateLoginDropdown() {
 function refreshLoginDropdown() {
   const sel = document.getElementById('loginUser');
   if (!sel) return;
+  const prevValue = sel.value;
   const userOpts = userRegistry
     .filter(u => u.name !== 'admin')
     .map(u => '<option value="'+u.name+'">'+u.name+'</option>').join('');
   sel.innerHTML = '<option value="">-- Select your name --</option>'
     + userOpts
     + '<option value="admin">Admin (All Access)</option>';
+  if (prevValue && [...sel.options].some(o => o.value === prevValue)) {
+    sel.value = prevValue;
+  }
 }
 
 // Run on page load
