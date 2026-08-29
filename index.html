@@ -989,7 +989,17 @@ function confirm2(title,msg,onOk){
 // ─── MAIN RENDER ───
 function renderContent(){
   document.getElementById('mainContent').innerHTML='';
-  currentUser==='admin'?renderAdmin():renderPersonal();
+  if (currentUser === 'admin') {
+    renderAdmin();
+  } else {
+    const allowed = moduleAccess[currentUser] || [];
+    if (allowed.length > 0) {
+      // User has been granted some admin modules → show restricted admin view
+      renderAdmin(allowed);
+    } else {
+      renderPersonal();
+    }
+  }
 }
 
 // ═══════════════════════════════════════════
@@ -1411,9 +1421,10 @@ function renderUserRows(myTasks,t,cols){
 // ═══════════════════════════════════════════
 //  ADMIN VIEW
 // ═══════════════════════════════════════════
-function renderAdmin(){
+function renderAdmin(allowedModules = null){
   const c=document.getElementById('mainContent');
-  const tabDefs=[
+  // If allowedModules is provided, only show those tabs (for non-admin users with permissions)
+  const allTabDefs=[
     {id:'overview',label:'OVERVIEW',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>'},
     {id:'add',label:'ADD TASK',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>'},
     {id:'delete',label:'DELETE',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M9 6V4h6v2"/></svg>'},
@@ -1423,6 +1434,26 @@ function renderAdmin(){
     {id:'all',label:'ALL TASKS',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><polyline points="3 6 4 7 6 5"/><polyline points="3 12 4 13 6 11"/></svg>'},
     {id:'settings',label:'SETTINGS',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'},
   ];
+
+  // Filter tabs based on permissions (null = full admin access)
+  let tabDefs;
+  if (allowedModules === null) {
+    tabDefs = allTabDefs; // full admin
+  } else {
+    // Only show modules the user is allowed to see
+    // Always allow personal view to be reached by logging out
+    tabDefs = allTabDefs.filter(d => allowedModules.includes(d.id));
+    // If current adminTab is not allowed, switch to first available
+    if (tabDefs.length && !tabDefs.find(d => d.id === adminTab)) {
+      adminTab = tabDefs[0].id;
+    }
+    // If somehow no tabs, fall back to personal
+    if (!tabDefs.length) {
+      renderPersonal();
+      return;
+    }
+  }
+
   const tabs=document.createElement('div');tabs.className='admin-tabs';
   tabDefs.forEach(d=>{
     const btn=document.createElement('button');
@@ -1432,6 +1463,15 @@ function renderAdmin(){
     tabs.appendChild(btn);
   });
   c.appendChild(tabs);
+
+  // Also show a small badge if this is a restricted user
+  if (allowedModules !== null) {
+    const note = document.createElement('div');
+    note.style.cssText = 'font-family:DM Mono,monospace;font-size:0.68rem;color:var(--muted);margin-bottom:14px;letter-spacing:0.06em';
+    note.textContent = '// LIMITED ACCESS · modules granted by admin';
+    c.appendChild(note);
+  }
+
   if(adminTab==='overview')buildOverview(c);
   else if(adminTab==='add')buildAdd(c);
   else if(adminTab==='delete')buildDelete(c);
