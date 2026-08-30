@@ -2253,7 +2253,7 @@ function buildKPICharts(){
     }
 
     // ── LEAD TIME CHART 1: BY PERSON ──
-    const parseLT=h=>h?parseFloat(String(h).replace(/min|h/gi,''))||0:0;
+    const parseLT=h=>h?parseFloat(h.replace('h','')):0;
 
     // Per-person lead time aggregation
     const ltPersonData=PERSONS.map(p=>{
@@ -2908,7 +2908,7 @@ function renderSettingsPlanTime(body){
 function renderSettingsLeadTime(body){
   body.insertAdjacentHTML('beforeend',
     '<div class="s-section-title">⏱ Lead Time</div>'
-    +'<div class="s-section-sub">// SET ESTIMATED MINUTES ALLOCATED PER TASK · SHOWN AS TIME BUDGET</div>'
+    +'<div class="s-section-sub">// SET ESTIMATED HOURS ALLOCATED PER TASK · SHOWN AS TIME BUDGET</div>'
   );
   // Summary strip
   const withLead=tasks.filter(t=>t.leadTime).length;
@@ -2932,7 +2932,7 @@ function renderSettingsLeadTime(body){
   const bulk=document.createElement('div');
   bulk.style.cssText='background:rgba(163,230,53,.04);border:1px solid rgba(163,230,53,.15);border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap';
   bulk.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.68rem;color:#a3e635">BULK SET</span>'
-    +'<input type="number" class="lead-inp" id="lt-bulk-val" placeholder="Minutes" min="0" step="1" style="width:90px">'
+    +'<input type="number" class="lead-inp" id="lt-bulk-val" placeholder="Hours" min="0" step="1" style="width:90px">'
     +'<button class="lead-save" id="lt-bulk-btn">Apply to Filtered</button>'
     +'<button class="fbtn" id="lt-clear-all" style="font-size:.65rem">Clear All Lead Times</button>';
   body.appendChild(bulk);
@@ -2959,12 +2959,12 @@ function renderSettingsLeadTime(body){
     fil.forEach((k,i)=>{
       const t2=th(k.person);const row=document.createElement('div');
       row.style.cssText='display:grid;grid-template-columns:'+cols+';align-items:center;padding:9px 14px;border-bottom:1px solid var(--border);gap:8px;font-size:.82rem;animation:rowIn .18s ease '+i*0.008+'s both;'+(k.priority?'border-left:3px solid '+t2.accent+';':'');
-      const curHrs=k.leadTime?k.leadTime.replace(/min|h/gi,'').trim():'';
+      const curHrs=k.leadTime?k.leadTime.replace('h',''):'';
       row.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted)">'+k.sl+'</span>'
         +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.8rem">'+k.task+(k.priority?' <span style="color:'+t2.accent+'">★</span>':'')+'</span>'
         +'<span style="color:'+t2.color+';font-size:.74rem">'+k.person.split('/')[0]+'</span>'
         +'<div style="display:flex;align-items:center;gap:5px">'+(k.leadTime?'<span class="lead-badge">'+k.leadTime+'</span>':'<span style="font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted)">—</span>')+'</div>'
-        +'<div style="display:flex;align-items:center;gap:5px"><input type="number" class="lead-inp lt-inp" id="lt-'+k.sl+'" value="'+curHrs+'" placeholder="min" min="0" step="1"><button class="lead-save lt-save" data-sl="'+k.sl+'">SET</button></div>';
+        +'<div style="display:flex;align-items:center;gap:5px"><input type="number" class="lead-inp lt-inp" id="lt-'+k.sl+'" value="'+curHrs+'" placeholder="hrs" min="0" step="1"><button class="lead-save lt-save" data-sl="'+k.sl+'">SET</button></div>';
       list.appendChild(row);
     });
     wrap2.appendChild(list);
@@ -2982,7 +2982,7 @@ function renderSettingsLeadTime(body){
       const val=document.getElementById('lt-bulk-val')?.value;
       if(!val){toast('Enter minutes first','error');return;}
       fil.forEach(k=>{k.leadTime=parseFloat(val)+'min';});
-      toast('Lead time set to '+val+' min for '+fil.length+' tasks','success');syncToSheets();
+      toast('Lead time set to '+val+'h for '+fil.length+' tasks','success');syncToSheets();
       drawLT();
     };
     document.getElementById('lt-clear-all').onclick=()=>{
