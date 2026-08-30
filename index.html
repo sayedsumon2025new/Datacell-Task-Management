@@ -841,14 +841,6 @@ function formatDateStorage(dateStr) {
 
 function getDone(u){if(!doneState[u])doneState[u]=new Set();return doneState[u];}
 
-// A task is considered DONE if it was toggled done OR has actual time/date set
-function isTaskDone(task, person) {
-  if (!task) return false;
-  if (task.actualTime || task.actualDate) return true;
-  const d = getDone(person || task.person);
-  return d && d.has(task.sl);
-}
-
 // ─── HELPERS ───
 function formatDisplayDate(isoDate) {
   if (!isoDate) return '';
@@ -1134,31 +1126,24 @@ function renderPersonal(){
 
     document.getElementById('taskRows').addEventListener('click',e=>{
       const tog=e.target.closest('.tog');
-      if(!tog) return;
-      const sl = +tog.dataset.sl;
-      const k = tasks.find(x => x.sl === sl);
-      if (!k) return;
-      const d = getDone(currentUser);
-
-      if (d.has(sl)) {
-        // Turn OFF → clear done + actual time
-        d.delete(sl);
-        k.actualTime = '';
-        k.actualDate = '';
-        toast('Marked as Pending', 'info');
-      } else {
-        // Turn ON → auto set current real time as Actual Time
-        const now = new Date();
-        const hh = String(now.getHours()).padStart(2, '0');
-        const mm = String(now.getMinutes()).padStart(2, '0');
-        k.actualTime = hh + ':' + mm;
-        k.actualDate = now.toISOString().slice(0, 10);
-        d.add(sl);
-        toast('Done · Saved at ' + k.actualTime, 'success');
+      if(tog){const sl=+tog.dataset.sl,d=getDone(currentUser);// Check if task is locked
+      const lockedTask = tasks.find(t => t.sl === sl);
+      if (lockedTask && isTaskLocked(lockedTask, t)) {
+        toast('⚠ Task is locked (saved + done)', 'error');
+        return;
       }
-      syncToSheets();
-      updatePersonalStats(myTasks, t);
-      renderUserRows(myTasks, t, cols);
+      d.has(sl)?d.delete(sl):d.add(sl);syncToSheets();updatePersonalStats(myTasks,t);renderUserRows(myTasks,t,cols);return;}
+      const saveBtn=e.target.closest('.save-actual');
+      if(saveBtn){
+        const sl=+saveBtn.dataset.sl;
+        const timeEl=document.getElementById('at-inp-'+sl);
+        const k=tasks.find(x=>x.sl===sl);
+        if(k){k.actualTime=timeEl?timeEl.value:'';
+          if(!k.actualTime){toast('Enter completion time first','error');return;}
+          k.actualDate=new Date().toISOString().slice(0,10);
+          toast('Completion time saved ✓','success');}
+        renderUserRows(myTasks,t,cols);
+      }
     });
   }
 
@@ -1424,10 +1409,16 @@ function renderUserRows(myTasks,t,cols){
     row.style.animationDelay=i*0.016+'s';
     if(k.priority)row.style.borderLeftColor=t.accent;
 
-    // actual time — auto-filled when user marks Done (no manual edit)
+    // actual time — locked if already saved, editable if not yet set
     const actualInputHtml=`
       <div class="time-cell">
         ${actualBadge(k)}
+        ${!k.actualTime?`
+        <div class="time-input-wrap" style="margin-top:4px">
+          <input type="time" class="time-inp" id="at-inp-${k.sl}" value="" style="font-size:.66rem;padding:3px 5px;width:85px;" title="Completion Time">
+          <button class="time-save-btn actual-save save-actual" data-sl="${k.sl}">SAVE</button>
+        </div>`
+        :`<span style="font-family:'DM Mono',monospace;font-size:.6rem;color:var(--muted);margin-top:3px;display:block">🔒 Locked</span>`}
       </div>`;
 
     row.innerHTML=`
@@ -1513,7 +1504,7 @@ function renderAdmin(allowedModules = null){
 // ── OVERVIEW ──
 function buildOverview(c){
   const allP=[...new Set(tasks.map(t=>t.person))];
-  const totalDone=tasks.filter(t=>isTaskDone(t)).length;
+  const totalDone=allP.reduce((s,p)=>s+tasks.filter(t=>t.person===p&&getDone(p).has(t.sl)).length,0);
   const pct=tasks.length?Math.round((totalDone/tasks.length)*100):0;
   const withActual=tasks.filter(t=>t.actualDate||t.actualTime).length;
   const lateCount=tasks.filter(t=>timeCmp(t.planDate,t.planTime,t.actualDate,t.actualTime)==='late').length;
@@ -1541,7 +1532,7 @@ function buildOverview(c){
   const teamLbl=document.createElement('div');teamLbl.className='section-title';teamLbl.textContent='TEAM BREAKDOWN';c.appendChild(teamLbl);
   const grid=document.createElement('div');grid.className='admin-grid';
   allP.forEach(p=>{
-    const t2=th(p),mt=tasks.filter(k=>k.person===p),dn=mt.filter(k=>isTaskDone(k,p)).length;
+    const t2=th(p),mt=tasks.filter(k=>k.person===p),dn=mt.filter(k=>getDone(p).has(k.sl)).length;
     const pp=mt.length?Math.round((dn/mt.length)*100):0;
     const late=mt.filter(k=>timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='late').length;
     const early=mt.filter(k=>['early','ontime'].includes(timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime))).length;
@@ -2049,65 +2040,27 @@ function buildKPI(c){
   const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
   const fb=document.createElement('div');fb.className='dr-bar';fb.style.flexWrap='wrap';
   fb.innerHTML=calIco()+' <label>DATE RANGE</label>'
-    +'<input type="date" class="date-inp" id="kpiFrom" value="'+kpiFrom+'" style="color-scheme:dark">'
+    +'<input type="text" pattern="\d{2}/\d{2}/\d{4}" class="date-inp" id="kpiFrom" value="'+kpiFrom+'">'
     +'<span class="dr-sep">to</span>'
-    +'<input type="date" class="date-inp" id="kpiTo" value="'+kpiTo+'" style="color-scheme:dark">'
+    +'<input type="text" pattern="\d{2}/\d{2}/\d{4}" class="date-inp" id="kpiTo" value="'+kpiTo+'">'
     +'<label style="margin-left:8px">OR MONTH</label>'
     +'<select class="field-select" id="kpiMonth" style="padding:6px 26px 6px 10px;font-size:.78rem"><option value="">All Months</option>'
     +months.map((m,i)=>'<option value="'+i+'" '+(kpiMonth===String(i)?'selected':'')+'>'+m+'</option>').join('')
     +'</select><button class="dr-clear" id="kpiClear">Clear</button>';
   c.appendChild(fb);
   const wrap=document.createElement('div');wrap.id='kpi-wrap';c.appendChild(wrap);
-  const applyDateFilter = () => {
-    kpiFrom = document.getElementById('kpiFrom').value || '';
-    kpiTo   = document.getElementById('kpiTo').value || '';
-    kpiMonth = '';
-    const mSel = document.getElementById('kpiMonth');
-    if (mSel) mSel.value = '';
-    buildKPICharts();
-  };
-  document.getElementById('kpiFrom').addEventListener('change', applyDateFilter);
-  document.getElementById('kpiFrom').addEventListener('input', applyDateFilter);
-  document.getElementById('kpiTo').addEventListener('change', applyDateFilter);
-  document.getElementById('kpiTo').addEventListener('input', applyDateFilter);
-  document.getElementById('kpiMonth').onchange = e => {
-    kpiMonth = e.target.value;
-    kpiFrom = ''; kpiTo = '';
-    document.getElementById('kpiFrom').value = '';
-    document.getElementById('kpiTo').value = '';
-    buildKPICharts();
-  };
-  document.getElementById('kpiClear').onclick = () => {
-    kpiFrom = ''; kpiTo = ''; kpiMonth = '';
-    ['kpiFrom','kpiTo','kpiMonth'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-    buildKPICharts();
-  };
+  document.getElementById('kpiFrom').onchange=e=>{kpiFrom=e.target.value;kpiMonth='';document.getElementById('kpiMonth').value='';buildKPICharts();};
+  document.getElementById('kpiTo').onchange=e=>{kpiTo=e.target.value;kpiMonth='';document.getElementById('kpiMonth').value='';buildKPICharts();};
+  document.getElementById('kpiMonth').onchange=e=>{kpiMonth=e.target.value;kpiFrom='';kpiTo='';document.getElementById('kpiFrom').value='';document.getElementById('kpiTo').value='';buildKPICharts();};
+  document.getElementById('kpiClear').onclick=()=>{kpiFrom='';kpiTo='';kpiMonth='';['kpiFrom','kpiTo','kpiMonth'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});buildKPICharts();};
   buildKPICharts();
 }
 
 function getKPITasks(){
   return tasks.filter(k=>{
-    // Only use ACTUAL completion date (when the task was marked done)
-    // Plan date is ignored for filtering
-    const d = k.actualDate || '';
-
-    // Month filter – only completed tasks in that month
-    if (kpiMonth !== '') {
-      if (!d) return false;
-      try {
-        return new Date(d + 'T00:00:00').getMonth() === +kpiMonth;
-      } catch(e) { return false; }
-    }
-
-    // Date range filter – only tasks completed within the selected dates
-    if (kpiFrom || kpiTo) {
-      if (!d) return false;
-      if (kpiFrom && d < kpiFrom) return false;
-      if (kpiTo && d > kpiTo) return false;
-      return true;
-    }
-
-    // No filter → show ALL tasks (including not-yet-completed)
+    const d=k.actualDate||k.planDate;
+    if(kpiMonth!==''){if(!d)return true;return new Date(d).getMonth()===+kpiMonth;}
+    if(kpiFrom||kpiTo){return inRange(d,kpiFrom,kpiTo);}
     return true;
   });
 }
@@ -2127,22 +2080,6 @@ function buildKPICharts(){
   const prioDone=prios.filter(k=>k.actualDate||k.actualTime).length;
   const onTimeRate=completed>0?Math.round(((earlyN+ontimeN)/completed)*100):0;
   const compRate=total>0?Math.round((completed/total)*100):0;
-
-  // Active filter summary
-  const filterInfo = document.createElement('div');
-  filterInfo.style.cssText = 'font-family:DM Mono,monospace;font-size:0.68rem;color:var(--muted);margin-bottom:12px;letter-spacing:0.04em';
-  if (kpiFrom || kpiTo || kpiMonth !== '') {
-    let label = 'Completed tasks: ' + filtered.length;
-    if (kpiFrom || kpiTo) label += ' · Completed between ' + (kpiFrom || '...') + ' → ' + (kpiTo || '...');
-    if (kpiMonth !== '') {
-      const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-      label += ' · Month: ' + (months[+kpiMonth] || kpiMonth);
-    }
-    filterInfo.innerHTML = '<span style="color:#60a5fa">' + label + '</span> <span style="color:var(--muted)">(only tasks with Actual Date)</span>';
-  } else {
-    filterInfo.textContent = 'Showing all ' + tasks.length + ' tasks (no date filter)';
-  }
-  wrap.appendChild(filterInfo);
 
   // KPI cards
   const kpiGrid=document.createElement('div');kpiGrid.className='kpi-grid';
@@ -2750,9 +2687,10 @@ function renderSettingsTaskSetup(body){
   const pOpts=PERSONS.map(p=>`<option value="${p}">${p}</option>`).join('');
   const panel=document.createElement('div');panel.style.cssText='background:rgba(245,200,66,.03);border:1px solid rgba(245,200,66,.12);border-radius:12px;padding:18px 20px;margin-bottom:20px';
   panel.innerHTML='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">'
-    +'<div class="fg" style="grid-column:1/-1"><label>TASK NAME *</label><input type="text" class="fi" id="sts-name" list="sts-name-list" placeholder="Type or select existing task..." style="padding:9px 12px;font-size:.85rem" autocomplete="off"><datalist id="sts-name-list"></datalist></div>'
+    +'<div class="fg" style="grid-column:1/-1"><label>TASK NAME *</label><input type="text" class="fi" id="sts-name" placeholder="Enter task name..." style="padding:9px 12px;font-size:.85rem"></div>'
     +'<div class="fg"><label>ASSIGN TO *</label><select class="fi-sel" id="sts-person" style="padding:9px 12px;font-size:.85rem"><option value="">-- Select Person --</option>'+pOpts+'</select></div>'
     +'<div class="fg"><label>LEAD TIME (minutes)</label><input type="number" class="fi" id="sts-lead" placeholder="e.g. 30" min="0" step="1" style="padding:9px 12px;font-size:.85rem"></div>'
+    +'<div class="fg"><label>PLAN DATE</label><input type="text" pattern="\d{2}/\d{2}/\d{4}" class="fi" id="sts-plandate" style="padding:9px 12px;font-size:.85rem;color-scheme:dark"></div>'
     +'<div class="fg"><label>PLAN TIME (deadline)</label><input type="time" class="fi" id="sts-plantime" style="padding:9px 12px;font-size:.85rem;color-scheme:dark"></div>'
     +'</div>'
     +'<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">'
@@ -2760,14 +2698,6 @@ function renderSettingsTaskSetup(body){
     +'<button class="add-btn" id="sts-add" style="margin-left:auto">+ ADD TASK</button>'
     +'</div>';
   body.appendChild(panel);
-
-  // Populate task name filter (datalist) with unique existing task names
-  (function fillTaskNameList(){
-    const dl = document.getElementById('sts-name-list');
-    if (!dl) return;
-    const names = [...new Set(tasks.map(t => t.task).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
-    dl.innerHTML = names.map(n => '<option value="'+n.replace(/"/g,'&quot;')+'">').join('');
-  })();
 
   document.getElementById('sts-add').onclick=()=>{
     const name=document.getElementById('sts-name').value.trim();
@@ -2783,83 +2713,45 @@ function renderSettingsTaskSetup(body){
     syncToSheets();
     toast('Task #'+(nextSl-1)+' added → '+person,'success');
     document.getElementById('sts-name').value='';document.getElementById('sts-person').value='';
-    document.getElementById('sts-lead').value='';
+    document.getElementById('sts-lead').value='';document.getElementById('sts-plandate').value='';
     document.getElementById('sts-plantime').value='';document.getElementById('sts-prio').checked=false;
-    // Refresh name suggestions
-    const dl = document.getElementById('sts-name-list');
-    if (dl) {
-      const names = [...new Set(tasks.map(t => t.task).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
-      dl.innerHTML = names.map(n => '<option value="'+n.replace(/"/g,'&quot;')+'">').join('');
-    }
     renderRecentSetup(body);
   };
   renderRecentSetup(body);
 }
 
 function renderRecentSetup(body){
-  let oldEl=document.getElementById('sts-recent');if(oldEl)oldEl.remove();
+  let old=document.getElementById('sts-recent');if(old)old.remove();
   const wrap=document.createElement('div');wrap.id='sts-recent';
-
-  const lbl=document.createElement('div');lbl.className='section-title';lbl.textContent='ALL TASKS';wrap.appendChild(lbl);
-
-  // Filter row
-  const pOpts='<option value="">All Persons</option>'+PERSONS.map(p=>`<option value="${p}">${p}</option>`).join('');
-  const fr=document.createElement('div');fr.className='filter-row';
-  fr.innerHTML='<div class="search-wrap"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><input type="text" id="sts-q" placeholder="Search tasks..."></div>'
-    +'<select class="field-select" id="sts-pf">'+pOpts+'</select>';
-  wrap.appendChild(fr);
-
-  const listWrap=document.createElement('div');listWrap.id='sts-list-wrap';wrap.appendChild(listWrap);
-
-  const drawList=()=>{
-    const q=(document.getElementById('sts-q')?.value||'').toLowerCase();
-    const pf=document.getElementById('sts-pf')?.value||'';
-    let fil=tasks.filter(k=>{
-      if(q&&!k.task.toLowerCase().includes(q)&&!String(k.sl).includes(q)&&!k.person.toLowerCase().includes(q))return false;
-      if(pf&&k.person!==pf)return false;
-      return true;
-    }).slice().reverse(); // newest first
-
-    listWrap.innerHTML='';
-    if(!fil.length){listWrap.innerHTML='<div class="empty-msg">No tasks found</div>';return;}
-
-    const list=document.createElement('div');list.className='task-list';
-    const cols='32px 1fr 110px 90px 70px';
-    const hdr=document.createElement('div');hdr.className='tlh';hdr.style.gridTemplateColumns=cols;
-    hdr.innerHTML='<span>#</span><span>Task</span><span>Person</span><span>Plan Time</span><span>Lead</span>';
-    list.appendChild(hdr);
-
-    fil.slice(0,50).forEach((k,i)=>{
-      const t2=th(k.person);const row=document.createElement('div');
-      row.style.cssText='display:grid;grid-template-columns:'+cols+';align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);gap:8px;font-size:.82rem;animation:rowIn .2s ease '+i*0.02+'s both';
-      row.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.7rem;color:var(--muted)">'+k.sl+'</span>'
-        +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+k.task+(k.priority?' <span style="color:'+t2.accent+'">★</span>':'')+'</span>'
-        +'<span style="display:flex;align-items:center;gap:5px"><span style="width:18px;height:18px;border-radius:4px;background:'+t2.bg+';color:'+t2.color+';display:inline-flex;align-items:center;justify-content:center;font-size:.5rem;font-weight:700;font-family:Syne,sans-serif">'+ini(k.person)+'</span><span style="color:'+t2.color+';font-size:.76rem">'+k.person.split('/')[0]+'</span></span>'
-        +'<span style="font-family:DM Mono,monospace;font-size:.7rem;color:#60a5fa">'+(k.planTime||'—')+'</span>'
-        +'<span>'+(k.leadTime?'<span class="lead-badge">'+k.leadTime+'</span>':'<span style="font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted)">—</span>')+'</span>';
-      list.appendChild(row);
-    });
-    if(fil.length>50){
-      const more=document.createElement('div');
-      more.style.cssText='padding:10px;text-align:center;font-family:DM Mono,monospace;font-size:.68rem;color:var(--muted)';
-      more.textContent='Showing 50 of '+fil.length+'. Use search to narrow.';
-      list.appendChild(more);
-    }
-    listWrap.appendChild(list);
-  };
-
-  body.appendChild(wrap);
-  drawList();
-  document.getElementById('sts-q').oninput=drawList;
-  document.getElementById('sts-pf').onchange=drawList;
+  const lbl=document.createElement('div');lbl.className='section-title';lbl.textContent='RECENTLY ADDED (last 6)';wrap.appendChild(lbl);
+  const recent=tasks.slice(-6).reverse();
+  if(!recent.length){wrap.innerHTML+='<div class="empty-msg">No tasks yet</div>';body.appendChild(wrap);return;}
+  const list=document.createElement('div');list.className='task-list';
+  const cols='32px 1fr 110px 100px 80px 70px';
+  const hdr=document.createElement('div');hdr.className='tlh';hdr.style.gridTemplateColumns=cols;
+  hdr.innerHTML='<span>#</span><span>Task</span><span>Person</span><span>Plan Date</span><span>Plan Time</span><span>Lead</span>';
+  list.appendChild(hdr);
+  recent.forEach((k,i)=>{
+    const t2=th(k.person);const row=document.createElement('div');
+    row.style.cssText='display:grid;grid-template-columns:'+cols+';align-items:center;padding:10px 14px;border-bottom:1px solid var(--border);gap:8px;font-size:.82rem;animation:rowIn .2s ease '+i*0.04+'s both';
+    row.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.7rem;color:var(--muted)">'+k.sl+'</span>'
+      +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+k.task+(k.priority?' <span style="color:'+t2.accent+'">★</span>':'')+'</span>'
+      +'<span style="display:flex;align-items:center;gap:5px"><span style="width:18px;height:18px;border-radius:4px;background:'+t2.bg+';color:'+t2.color+';display:inline-flex;align-items:center;justify-content:center;font-size:.5rem;font-weight:700;font-family:Syne,sans-serif">'+ini(k.person)+'</span><span style="color:'+t2.color+';font-size:.76rem">'+k.person.split('/')[0]+'</span></span>'
+      +'<span style="font-family:DM Mono,monospace;font-size:.7rem;color:#60a5fa">'+(k.planDate?fmtDate(k.planDate):'—')+'</span>'
+      +'<span style="font-family:DM Mono,monospace;font-size:.7rem;color:#60a5fa">'+(k.planTime||'—')+'</span>'
+      +'<span>'+(k.leadTime?'<span class="lead-badge">'+k.leadTime+'</span>':'<span style="font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted)">—</span>')+'</span>';
+    list.appendChild(row);
+  });
+  wrap.appendChild(list);body.appendChild(wrap);
 }
 
 // ── SECTION 4: PLAN TIME (Settings version) ──────
 function renderSettingsPlanTime(body){
   body.insertAdjacentHTML('beforeend',
     '<div class="s-section-title">📅 Plan Time</div>'
-    +'<div class="s-section-sub">// SET PLAN TIME (DEADLINE) FOR EACH TASK · QUICK ACCESS</div>'
+    +'<div class="s-section-sub">// SET PLAN DATE & DEADLINE FOR EACH TASK · QUICK ACCESS</div>'
   );
+  // Compact filter
   const pOpts='<option value="">All Persons</option>'+PERSONS.map(p=>`<option value="${p}">${p}</option>`).join('');
   const fr=document.createElement('div');fr.className='filter-row';
   fr.innerHTML='<div class="search-wrap"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><input type="text" id="spt-q" placeholder="Search tasks..."></div>'
@@ -2872,30 +2764,30 @@ function renderSettingsPlanTime(body){
     const fil=tasks.filter(k=>{if(q&&!k.task.toLowerCase().includes(q)&&!k.person.toLowerCase().includes(q))return false;if(pf&&k.person!==pf)return false;return true;});
     wrap.innerHTML='';
     const list=document.createElement('div');list.className='task-list';
-    const cols='30px 1fr 110px 120px 80px';
+    const cols='30px 1fr 90px 125px 96px 80px';
     const hdr=document.createElement('div');hdr.className='tlh';hdr.style.gridTemplateColumns=cols;
-    hdr.innerHTML='<span>#</span><span>Task</span><span>Person</span><span>Plan Time</span><span></span>';
+    hdr.innerHTML='<span>#</span><span>Task</span><span>Person</span><span>Plan Date</span><span>Plan Time</span><span></span>';
     list.appendChild(hdr);
     if(!fil.length){list.innerHTML+='<div class="empty-msg">No tasks found</div>';wrap.appendChild(list);return;}
-    fil.slice(0,40).forEach((k,i)=>{
+    fil.slice(0,30).forEach((k,i)=>{
       const t2=th(k.person);const row=document.createElement('div');
       row.style.cssText='display:grid;grid-template-columns:'+cols+';align-items:center;padding:9px 14px;border-bottom:1px solid var(--border);gap:8px;font-size:.82rem;animation:rowIn .18s ease '+i*0.008+'s both;'+(k.priority?'border-left:3px solid '+t2.accent+';':'');
       row.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted)">'+k.sl+'</span>'
         +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.8rem">'+k.task+'</span>'
         +'<span style="color:'+t2.color+';font-size:.74rem">'+k.person.split('/')[0]+'</span>'
-        +'<div><input type="time" class="lead-inp" id="sptt-'+k.sl+'" value="'+(k.planTime||'')+'" style="width:100px;color-scheme:dark"></div>'
+        +'<div><input type="text" pattern="\d{2}/\d{2}/\d{4}" class="lead-inp" id="sptd-'+k.sl+'" value="'+(k.planDate||'')+'" style="width:115px;color-scheme:dark"></div>'
+        +'<div><input type="time" class="lead-inp" id="sptt-'+k.sl+'" value="'+(k.planTime||'')+'" style="width:88px;color-scheme:dark"></div>'
         +'<button class="lead-save spt-save" data-sl="'+k.sl+'">SET</button>';
       list.appendChild(row);
     });
-    if(fil.length>40)list.innerHTML+='<div style="padding:10px;text-align:center;font-family:DM Mono,monospace;font-size:.68rem;color:var(--muted)">Showing 40 of '+fil.length+'. Use search to narrow.</div>';
+    if(fil.length>30)list.innerHTML+='<div style="padding:10px;text-align:center;font-family:DM Mono,monospace;font-size:.68rem;color:var(--muted)">Showing 30 of '+fil.length+'. Use search to narrow.</div>';
     wrap.appendChild(list);
     wrap.querySelectorAll('.spt-save').forEach(btn=>{
       btn.onclick=()=>{
         const sl=+btn.dataset.sl;const k=tasks.find(t=>t.sl===sl);if(!k)return;
+        k.planDate=document.getElementById('sptd-'+sl)?.value||'';
         k.planTime=document.getElementById('sptt-'+sl)?.value||'';
-        // Do not touch planDate
-        toast('Plan time set for #'+sl+(k.planTime?' → '+k.planTime:''),'success');
-        syncToSheets();
+        toast('Plan set for #'+sl+(k.planDate?' · '+fmtDate(k.planDate):'')+(k.planTime?' '+k.planTime:''),'success');syncToSheets();
       };
     });
   };
