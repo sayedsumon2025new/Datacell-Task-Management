@@ -933,7 +933,21 @@ function refreshLoginDropdown() {
 }
 
 // Run on page load
-populateLoginDropdown();
+(async function initSession(){
+  await populateLoginDropdown();
+  // Auto-restore session if exists (stay logged in until manual logout)
+  try {
+    const saved = JSON.parse(localStorage.getItem('fts_session') || 'null');
+    if (saved && saved.user && CREDS[saved.user]) {
+      currentUser = saved.user;
+      // Make sure dropdown has the user selected
+      const sel = document.getElementById('loginUser');
+      if (sel) sel.value = saved.user;
+      openApp();
+      return;
+    }
+  } catch(e){}
+})();
 document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('loginBtn').click();});
 function doLogin(){
   const u=document.getElementById('loginUser').value;
@@ -941,7 +955,11 @@ function doLogin(){
   const err=document.getElementById('loginErr');
   if(!u){err.textContent='⚠ Please select your name from the list.';err.style.display='block';return;}
   if(CREDS[u]!==p){err.textContent='⚠ Incorrect password.';err.style.display='block';document.getElementById('loginPass').value='';return;}
-  err.style.display='none';currentUser=u;openApp();
+  err.style.display='none';
+  currentUser=u;
+  // Persist session so refresh does not log out
+  try { localStorage.setItem('fts_session', JSON.stringify({ user: u, ts: Date.now() })); } catch(e){}
+  openApp();
 }
 function openApp(){startPolling();
   document.getElementById('loginScreen').style.display='none';
@@ -960,10 +978,11 @@ function openApp(){startPolling();
 }
 document.getElementById('logoutBtn').onclick=()=>{
   stopPolling();currentUser=null;
+  try { localStorage.removeItem('fts_session'); } catch(e){}
   document.getElementById('appScreen').style.display='none';
   document.getElementById('loginScreen').style.display='flex';
   document.getElementById('loginUser').value='';
-  refreshLoginDropdown(); // refresh users on logout (uses local state, keeps new users)
+  refreshLoginDropdown();
   document.getElementById('loginErr').style.display='none';
 };
 
