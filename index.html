@@ -880,7 +880,8 @@ function actualBadge(k){
   const cmp=timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime);
   const cls=cmp==='late'?'overdue':cmp==='early'?'actual':'actual';
   const diff=timeDiff(k.planDate,k.planTime,k.actualDate,k.actualTime);
-  return`<span class="time-badge ${cls}">${checkIcon()} Done: ${k.actualTime}${diff?` <span style="opacity:0.7;font-size:0.6rem">(${diff})</span>`:''}</span>`;
+  const locked=isTaskLocked(k,k.person);
+  return`<span class="time-badge ${cls}" title="${locked?'Locked after completion':''}">${checkIcon()} Done: ${k.actualTime}${diff?` <span style="opacity:0.7;font-size:0.6rem">(${diff})</span>`:''}${locked?' 🔒':''}</span>`;
 }
 
 // ─── LOGIN ───
@@ -1126,14 +1127,47 @@ function renderPersonal(){
 
     document.getElementById('taskRows').addEventListener('click',e=>{
       const tog=e.target.closest('.tog');
-      if(tog){const sl=+tog.dataset.sl,d=getDone(currentUser);// Check if task is locked
-      const lockedTask = tasks.find(t => t.sl === sl);
-      if (lockedTask && isTaskLocked(lockedTask, t)) {
-        toast('⚠ Task is locked (saved + done)', 'error');
+      if(tog){
+        const sl=+tog.dataset.sl;
+        const d=getDone(currentUser);
+        const lockedTask=tasks.find(task=>task.sl===sl);
+        if(!lockedTask)return;
+
+        // Once actual time is saved and the task is marked DONE, it is permanently locked.
+        if(isTaskLocked(lockedTask,currentUser)){
+          toast('⚠ Task is locked (Actual Time saved + Done)','error');
+          return;
+        }
+
+        if(d.has(sl)){
+          // Normally unreachable for a locked task, but keep state consistent.
+          d.delete(sl);
+        }else{
+          // Capture the exact browser-local current date/time when DONE is clicked.
+          const now=new Date();
+          const yyyy=now.getFullYear();
+          const mm=String(now.getMonth()+1).padStart(2,'0');
+          const dd=String(now.getDate()).padStart(2,'0');
+          const hh=String(now.getHours()).padStart(2,'0');
+          const mi=String(now.getMinutes()).padStart(2,'0');
+          const ss=String(now.getSeconds()).padStart(2,'0');
+
+          lockedTask.actualDate=`${yyyy}-${mm}-${dd}`;
+          lockedTask.actualTime=`${hh}:${mi}:${ss}`;
+          d.add(sl);
+
+          syncToSheets();
+          updatePersonalStats(myTasks,t);
+          renderUserRows(myTasks,t,cols);
+          toast(`✓ Actual Time saved: ${lockedTask.actualTime} — Task locked`,'success');
+          return;
+        }
+
+        syncToSheets();
+        updatePersonalStats(myTasks,t);
+        renderUserRows(myTasks,t,cols);
         return;
       }
-      d.has(sl)?d.delete(sl):d.add(sl);syncToSheets();updatePersonalStats(myTasks,t);renderUserRows(myTasks,t,cols);return;}
-      // save-actual removed — time auto-set on DONE toggle
     });
   }
 
