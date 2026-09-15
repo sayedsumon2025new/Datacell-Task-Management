@@ -457,11 +457,11 @@ let _lastVersion = null;
 // For REST/Data API calls the key is sent in `apikey` only.
 
 function sbConfigured() {
-  return !!SB_URL && SB_URL.startsWith('https://') && !!SB_KEY && SB_KEY.startsWith('sb_publishable_');
+  return !!SB_URL && SB_URL.startsWith('https://') && !!SB_KEY && SB_KEY.length > 20;
 }
 
 function sbHeaders(extra = {}) {
-  return { 'apikey': SB_KEY, ...extra };
+  return { 'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY, ...extra };
 }
 
 async function sbGet(table, select = '*') {
@@ -534,7 +534,7 @@ async function sbDeleteAll(table) {
   if (!sbConfigured()) return false;
   const filters = {
     tasks: 'sl=gte.0',
-    users: 'id=gte.0',
+    users: 'name=not.is.null',
     done_state: 'username=not.is.null',
     module_access: 'username=not.is.null',
     meta: 'key=not.is.null'
@@ -606,9 +606,11 @@ function applyRemoteData(data) {
   }
 
   if (Array.isArray(data.users) && data.users.length > 0) {
-    const n = JSON.stringify(data.users), c = JSON.stringify(userRegistry);
-    if (n !== c) { userRegistry = data.users; changed = true; }
+    // Update CREDS for ALL users (including admin) from Supabase
     data.users.forEach(u => { CREDS[u.name] = u.password; });
+    const nonAdmin = data.users.filter(u => u.name !== 'admin');
+    const n = JSON.stringify(nonAdmin), c = JSON.stringify(userRegistry);
+    if (n !== c) { userRegistry = nonAdmin; changed = true; }
   }
   if (data.moduleAccess) moduleAccess = data.moduleAccess;
   return changed;
@@ -709,7 +711,12 @@ async function sbSaveAll() {
 // ── WRITE: users ────────────────────────────────────────────────
 async function syncUsers() {
   if (!sbConfigured()) return false;
-  const rows = userRegistry.map(u => ({ name: u.name, password: u.password || '', color: u.color || '#60a5fa' }));
+  // Always push admin + all regular users to Supabase
+  const allUsers = userRegistry.filter(u => u.name !== 'admin');
+  const adminEntry = { name: 'admin', password: CREDS['admin'] || 'admin@1234', color: '#f5c842' };
+  const rows = [adminEntry, ...allUsers].map(u => ({
+    name: u.name, password: u.password || '', color: u.color || '#60a5fa'
+  }));
   if (!await sbDeleteAll('users')) return false;
   if (rows.length && !await sbUpsert('users', rows)) return false;
   await sbBumpVersion();
@@ -898,17 +905,23 @@ async function populateLoginDropdown() {
     sel.innerHTML = '<option value="">-- Select your name --</option>'
       + uOpts + '<option value="admin">Admin (All Access)</option>';
   } else {
-    const rows = await sbGet('users');
-    const users = (rows || []).map(r => ({ name: r.name, password: r.password || '', color: r.color || '#60a5fa' }));
-    if (users.length > 0) {
-      userRegistry = users;
+    const rows = await sbGet('users'); // null = network error
+    if (rows !== null) {
+      // Supabase responded — use this data
+      const users = rows.map(r => ({ name: r.name, password: r.password || '', color: r.color || '#60a5fa' }));
       users.forEach(u => { CREDS[u.name] = u.password; });
-      PERSONS = users.filter(u => u.name !== 'admin').map(u => u.name);
+      userRegistry = users.filter(u => u.name !== 'admin');
+      PERSONS = userRegistry.map(u => u.name);
+      const uOpts = userRegistry.map(u => '<option value="'+u.name+'">'+u.name+'</option>').join('');
+      sel.innerHTML = '<option value="">-- Select your name --</option>'
+        + uOpts + '<option value="admin">Admin (All Access)</option>';
+    } else {
+      // Network error (e.g. CORS in preview) — show local state + admin so login still works
+      const uOpts = userRegistry.filter(u => u.name !== 'admin')
+        .map(u => '<option value="'+u.name+'">'+u.name+'</option>').join('');
+      sel.innerHTML = '<option value="">-- Select your name --</option>'
+        + uOpts + '<option value="admin">Admin (All Access)</option>';
     }
-    const nonAdmin = (users || []).filter(u => u.name !== 'admin');
-    const uOpts = nonAdmin.map(u => '<option value="'+u.name+'">'+u.name+'</option>').join('');
-    sel.innerHTML = '<option value="">-- Select your name --</option>'
-      + uOpts + '<option value="admin">Admin (All Access)</option>';
   }
   // Restore previous selection if it still exists, otherwise leave empty
   if (prevValue && [...sel.options].some(o => o.value === prevValue)) {
