@@ -1128,40 +1128,12 @@ function renderPersonal(){
       const tog=e.target.closest('.tog');
       if(tog){const sl=+tog.dataset.sl,d=getDone(currentUser);// Check if task is locked
       const lockedTask = tasks.find(t => t.sl === sl);
-      if (lockedTask && isTaskLocked(lockedTask, currentUser)) {
+      if (lockedTask && isTaskLocked(lockedTask, t)) {
         toast('⚠ Task is locked (saved + done)', 'error');
         return;
       }
-      if(d.has(sl)){
-        // Unmarking done — clear actual time
-        d.delete(sl);
-        const k=tasks.find(x=>x.sl===sl);
-        if(k){k.actualTime='';k.actualDate='';}
-      } else {
-        // Marking done — auto-set actual time to NOW
-        d.add(sl);
-        const k=tasks.find(x=>x.sl===sl);
-        if(k){
-          const now=new Date();
-          const hh=String(now.getHours()).padStart(2,'0');
-          const mm=String(now.getMinutes()).padStart(2,'0');
-          k.actualTime=hh+':'+mm;
-          k.actualDate=now.toISOString().slice(0,10);
-        }
-      }
-      syncToSheets();updatePersonalStats(myTasks,t);renderUserRows(myTasks,t,cols);return;}
-      const saveBtn=e.target.closest('.save-actual');
-      if(saveBtn){
-        const sl=+saveBtn.dataset.sl;
-        const timeEl=document.getElementById('at-inp-'+sl);
-        const k=tasks.find(x=>x.sl===sl);
-        if(k){k.actualTime=timeEl?timeEl.value:'';
-          if(!k.actualTime){toast('Enter completion time first','error');return;}
-          k.actualDate=new Date().toISOString().slice(0,10);
-          syncToSheets();
-          toast('Completion time saved ✓','success');}
-        renderUserRows(myTasks,t,cols);
-      }
+      d.has(sl)?d.delete(sl):d.add(sl);syncToSheets();updatePersonalStats(myTasks,t);renderUserRows(myTasks,t,cols);return;}
+      // save-actual removed — time auto-set on DONE toggle
     });
   }
 
@@ -1357,27 +1329,13 @@ function renderPersonal(){
       const actDiv=document.createElement('div');
       actDiv.style.cssText='display:flex;align-items:center;gap:6px;flex-shrink:0;';
       if(isToday){
-        // editable today
-        const timeInp=document.createElement('input');
-        timeInp.type='time';timeInp.className='time-inp';
-        timeInp.value=k.actualTime||'';
-        timeInp.style.cssText='font-size:.68rem;padding:4px 6px;width:90px;color-scheme:dark;';
-        timeInp.id='cal-inp-'+k.sl;
-        const saveBtn=document.createElement('button');
-        saveBtn.className='time-save-btn actual-save';
-        saveBtn.textContent='SAVE';
-        saveBtn.onclick=()=>{
-          if(!timeInp.value){toast('Enter time first','error');return;}
-          k.actualTime=timeInp.value;
-          k.actualDate=dateStr;
-          getDone(currentUser).add(k.sl);
-          updatePersonalStats(myTasks,t);
-          toast('Saved: '+k.task+' @ '+k.actualTime,'success');
-          // rebuild day detail and calendar
-          const dateMap={};myTasks.forEach(x=>{if(x.actualDate){if(!dateMap[x.actualDate])dateMap[x.actualDate]=[];dateMap[x.actualDate].push(x);}});
-          buildCal();buildDayDetail(dateStr,dateMap[dateStr]||[],true,false,dateMap);
-        };
-        actDiv.appendChild(timeInp);actDiv.appendChild(saveBtn);
+        // read-only — time is set automatically by toggle
+        if(k.actualTime){
+          const lbl=document.createElement('span');
+          lbl.style.cssText='font-size:.7rem;color:#3ef0b0;font-family:"DM Mono",monospace;';
+          lbl.textContent='✓ '+k.actualTime;
+          actDiv.appendChild(lbl);
+        }
       } else if(isPast){
         // read-only past
         if(k.actualTime&&isUpdatedThisDay){
@@ -1427,16 +1385,10 @@ function renderUserRows(myTasks,t,cols){
     row.style.animationDelay=i*0.016+'s';
     if(k.priority)row.style.borderLeftColor=t.accent;
 
-    // actual time — locked if already saved, editable if not yet set
+    // actual time — read only, set automatically when toggled DONE
     const actualInputHtml=`
       <div class="time-cell">
         ${actualBadge(k)}
-        ${!k.actualTime?`
-        <div class="time-input-wrap" style="margin-top:4px">
-          <input type="time" class="time-inp" id="at-inp-${k.sl}" value="" style="font-size:.66rem;padding:3px 5px;width:85px;" title="Completion Time">
-          <button class="time-save-btn actual-save save-actual" data-sl="${k.sl}">SAVE</button>
-        </div>`
-        :`<span style="font-family:'DM Mono',monospace;font-size:.6rem;color:var(--muted);margin-top:3px;display:block">🔒 Locked</span>`}
       </div>`;
 
     row.innerHTML=`
