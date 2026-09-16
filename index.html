@@ -122,6 +122,7 @@ body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(
 .tog::after{content:'';position:absolute;top:2.5px;left:2.5px;width:14px;height:14px;border-radius:50%;background:var(--muted);transition:transform 0.25s,background 0.25s;}
 .tog.on{background:rgba(62,240,176,0.2);}
 .tog.on::after{background:#3ef0b0;transform:translateX(17px);}
+.tog:disabled{cursor:not-allowed;opacity:.45;}
 .tog-lbl{font-size:0.64rem;font-family:'DM Mono',monospace;color:var(--muted);}
 .tog.on + .tog-lbl{color:#3ef0b0;}
 
@@ -443,7 +444,7 @@ let nextSl=1;
 //  3. Paste your Project URL and anon key below
 // ═══════════════════════════════════════════════════════════════
 
-const SB_URL  = 'https://hqlowjnbugaehpxrqtzc.supabase.co';
+const SB_URL  = 'https://hqolwnbugaehpxrqtzc.supabase.co';
 const SB_KEY  = 'sb_publishable_CyiA3Ls1wbctt1VCc3DOAA_NeOfPCfx';
 const POLL_INTERVAL_MS = 8000;
 
@@ -464,11 +465,18 @@ function sbHeaders(extra = {}) {
   return { 'apikey': SB_KEY, ...extra };
 }
 
+function sbFetchOptions(method='GET', extra={}) {
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),12000);
+  return {options:{method,signal:controller.signal,...extra},clear:()=>clearTimeout(timeout)};
+}
+
 async function sbGet(table, select = '*') {
   if (!sbConfigured()) return null;
+  const req=sbFetchOptions('GET',{headers:sbHeaders()});
   try {
     const res = await fetch(`${SB_URL}/rest/v1/${table}?select=${encodeURIComponent(select)}`, {
-      method: 'GET', headers: sbHeaders()
+      ...req.options
     });
     if (!res.ok) {
       const txt = await res.text();
@@ -481,6 +489,8 @@ async function sbGet(table, select = '*') {
     console.error(`Supabase GET ${table} error:`, e);
     setSyncStatus('error');
     return null;
+  } finally {
+    req.clear();
   }
 }
 
@@ -606,8 +616,9 @@ function applyRemoteData(data) {
   }
 
   if (Array.isArray(data.users) && data.users.length > 0) {
-    const n = JSON.stringify(data.users), c = JSON.stringify(userRegistry);
-    if (n !== c) { userRegistry = data.users; changed = true; }
+    const regularUsers=data.users.filter(u=>u.name!=='admin');
+    const n = JSON.stringify(regularUsers), c = JSON.stringify(userRegistry);
+    if (n !== c) { userRegistry = regularUsers; changed = true; }
     data.users.forEach(u => { CREDS[u.name] = u.password; });
   }
   if (data.moduleAccess) moduleAccess = data.moduleAccess;
@@ -669,6 +680,22 @@ function syncToSheets() {
   }, 300);
 }
 
+// Immediate persistence for settings that must survive an instant refresh or
+// logout. Unlike the normal debounced sync, this resolves only after the
+// database confirms the write.
+async function syncNow() {
+  clearTimeout(_syncDebounce);
+  setSyncStatus('syncing');
+  const ok=await sbSaveAll();
+  if(ok&&await sbBumpVersion()){
+    setSyncStatus('live');
+    return true;
+  }
+  setSyncStatus('error');
+  toast('Database save failed — value was not changed','error');
+  return false;
+}
+
 // Safe task sync: upsert current rows and delete only removed SLs.
 // This avoids clearing the whole table before a potentially failed insert.
 async function sbSyncTasks(taskRows) {
@@ -709,7 +736,10 @@ async function sbSaveAll() {
 // ── WRITE: users ────────────────────────────────────────────────
 async function syncUsers() {
   if (!sbConfigured()) return false;
-  const rows = userRegistry.map(u => ({ name: u.name, password: u.password || '', color: u.color || '#60a5fa' }));
+  const rows = [
+    {name:'admin',password:CREDS.admin||'165240',color:'#f5c842'},
+    ...userRegistry.filter(u=>u.name!=='admin').map(u => ({ name: u.name, password: u.password || '', color: u.color || '#60a5fa' }))
+  ];
   if (!await sbDeleteAll('users')) return false;
   if (rows.length && !await sbUpsert('users', rows)) return false;
   await sbBumpVersion();
@@ -803,7 +833,7 @@ async function initFromSheets() {
 }
 
 // ─── STATE ───
-let currentUser=null,taskFilter='all',searchQ='',adminTab='overview',userView='list';
+let currentUser=null,taskFilter='all',searchQ='',adminTab='overview',userView='list',personalActualDate=localISODate();
 let moduleAccess = {}; // user → [module IDs]
 let kpiDate='',kpiMonth='';
 let calYear=new Date().getFullYear(),calMonth=new Date().getMonth(),calSelectedDate='';
@@ -814,10 +844,12 @@ const doneState={};
 // Helper functions for task locking and date formatting
 // ──────────────────────────────────────────────────────────────────
 
-// Actual time is immutable once saved. This remains true even if an older
-// record is missing its done-state row.
-function isTaskLocked(task) {
-  return !!(task && task.actualTime);
+// Actual time remains editable while status is PEND. It locks only after the
+// user explicitly changes the task status to DONE.
+function isTaskLocked(task, user) {
+  if(!task||!task.actualTime)return false;
+  const done=doneState[user];
+  return !!(done&&done.has(task.sl));
 }
 
 // Format date for display: YYYY-MM-DD → DD/MM/YYYY
@@ -847,6 +879,22 @@ function localISODate(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
+// Convert stored 24-hour HH:MM/HH:MM:SS values to a clean 12-hour display.
+function formatTime12(timeStr) {
+  if(!timeStr)return'';
+  const parts=String(timeStr).split(':');
+  let hour=Number(parts[0]);
+  const minute=String(parts[1]||'00').padStart(2,'0');
+  if(!Number.isFinite(hour))return timeStr;
+  const period=hour>=12?'PM':'AM';
+  hour=hour%12||12;
+  return hour+':'+minute+' '+period;
+}
+
+function currentTime24(date = new Date()) {
+  return String(date.getHours()).padStart(2,'0')+':'+String(date.getMinutes()).padStart(2,'0');
+}
+
 function getDone(u){if(!doneState[u])doneState[u]=new Set();return doneState[u];}
 
 // ─── HELPERS ───
@@ -857,14 +905,16 @@ function formatDisplayDate(isoDate) {
 }
 function timeCmp(pd,pt,ad,at){
   if(!pt||!at)return'';
-  const pMs=new Date((pd||'2000-01-01')+'T'+pt).getTime();
-  const aMs=new Date((ad||'2000-01-01')+'T'+at).getTime();
+  const pDate=pd||ad||'2000-01-01',aDate=ad||pd||'2000-01-01';
+  const pMs=new Date(pDate+'T'+pt).getTime();
+  const aMs=new Date(aDate+'T'+at).getTime();
   if(aMs===pMs)return'ontime'; return aMs<pMs?'early':'late';
 }
 function timeDiff(pd,pt,ad,at){
   if(!pt||!at)return'';
-  const pMs=new Date((pd||'2000-01-01')+'T'+pt).getTime();
-  const aMs=new Date((ad||'2000-01-01')+'T'+at).getTime();
+  const pDate=pd||ad||'2000-01-01',aDate=ad||pd||'2000-01-01';
+  const pMs=new Date(pDate+'T'+pt).getTime();
+  const aMs=new Date(aDate+'T'+at).getTime();
   const diff=aMs-pMs;const abs=Math.abs(diff);
   const h=Math.floor(abs/3600000),m=Math.floor((abs%3600000)/60000);
   const str=(h?h+'h ':'')+m+'m';
@@ -887,12 +937,39 @@ function actualBadge(k){
   if(!k.actualTime)return`<span class="time-badge unset">${checkIcon()} Not completed</span>`;
   const cmp=timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime);
   const cls=cmp==='late'?'overdue':cmp==='early'?'actual':'actual';
-  const diff=timeDiff(k.planDate,k.planTime,k.actualDate,k.actualTime);
-  return`<span class="time-badge ${cls}">${checkIcon()} Done: ${k.actualTime}${diff?` <span style="opacity:0.7;font-size:0.6rem">(${diff})</span>`:''}</span>`;
+  return`<span class="time-badge ${cls}">${checkIcon()} Done: ${formatTime12(k.actualTime)}</span>`;
 }
 
 // ─── LOGIN ───
-document.getElementById('loginBtn').onclick=async()=>{await initFromSheets();doLogin();};
+async function refreshLoginCredentials(){
+  const rows=await sbGet('users');
+  if(rows===null)return false;
+  const users=rows.map(r=>({name:r.name,password:r.password||'',color:r.color||'#60a5fa'}));
+  if(users.length){
+    users.forEach(u=>{CREDS[u.name]=u.password;});
+    userRegistry=users.filter(u=>u.name!=='admin');
+    PERSONS=userRegistry.map(u=>u.name);
+  }
+  return true;
+}
+
+document.getElementById('loginBtn').onclick=async()=>{
+  const btn=document.getElementById('loginBtn');
+  const err=document.getElementById('loginErr');
+  const selected=document.getElementById('loginUser').value;
+  if(!selected){doLogin();return;}
+  btn.textContent='VERIFYING...';btn.disabled=true;
+  const connected=await refreshLoginCredentials();
+  btn.textContent='LOGIN →';btn.disabled=false;
+  if(!connected){
+    err.textContent='⚠ Server connection failed. Please check internet and try again.';
+    err.style.display='block';return;
+  }
+  doLogin();
+  if(currentUser){
+    initFromSheets().then(()=>{if(currentUser)renderContent();});
+  }
+};
 
 // ── Page load: populate dropdown from Sheets immediately ──
 // ── Populate login dropdown (with retry) ──────────────────────
@@ -909,9 +986,9 @@ async function populateLoginDropdown() {
     const rows = await sbGet('users');
     const users = (rows || []).map(r => ({ name: r.name, password: r.password || '', color: r.color || '#60a5fa' }));
     if (users.length > 0) {
-      userRegistry = users;
+      userRegistry = users.filter(u=>u.name!=='admin');
       users.forEach(u => { CREDS[u.name] = u.password; });
-      PERSONS = users.filter(u => u.name !== 'admin').map(u => u.name);
+      PERSONS = userRegistry.map(u => u.name);
     }
     const nonAdmin = (users || []).filter(u => u.name !== 'admin');
     const uOpts = nonAdmin.map(u => '<option value="'+u.name+'">'+u.name+'</option>').join('');
@@ -979,7 +1056,7 @@ function openApp(){startPolling();
   av.style.background=t.bg;av.style.color=t.color;
   document.getElementById('ucNm').textContent=currentUser==='admin'?'Administrator':currentUser;
   document.getElementById('adminBadge').style.display=currentUser==='admin'?'inline':'none';
-  taskFilter='all';searchQ='';adminTab='overview';userView='list';kpiDate='';kpiMonth='';
+  taskFilter='all';searchQ='';adminTab='overview';userView='list';personalActualDate=localISODate();kpiDate='';kpiMonth='';
   calYear=new Date().getFullYear();calMonth=new Date().getMonth();calSelectedDate='';
   ovCalYear=new Date().getFullYear();ovCalMonth=new Date().getMonth();ovCalSelected='';
   renderContent();
@@ -1041,7 +1118,7 @@ function renderPersonal(){
     return k.person===currentUser;
   });
   const done=getDone(currentUser);
-  const dc=myTasks.filter(k=>done.has(k.sl)).length;
+  const dc=personalActualDate?myTasks.filter(k=>done.has(k.sl)&&k.actualDate===personalActualDate).length:0;
   const pct=myTasks.length?Math.round((dc/myTasks.length)*100):0;
 
   // personal header
@@ -1064,6 +1141,14 @@ function renderPersonal(){
   prog.innerHTML=`<div class="prog-info"><span>COMPLETION PROGRESS</span><strong style="color:${t.accent}" id="pPct">${pct}%</strong></div>
     <div class="prog-track"><div class="prog-fill" id="pFill" style="width:${pct}%;background:${t.accent}"></div></div>`;
   c.appendChild(prog);
+
+  // Actual-date filter: placed directly below Completion Progress.
+  const actualDateFilter=document.createElement('div');
+  actualDateFilter.style.cssText='display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 14px;';
+  actualDateFilter.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.68rem;color:var(--muted);letter-spacing:.08em">ACTUAL DATE</span>'
+    +'<input type="date" class="date-inp" id="personalActualDate" value="'+personalActualDate+'" max="'+localISODate()+'" style="color-scheme:dark">'
+    +'<button class="fbtn" id="personalActualClear"'+(personalActualDate?'':' disabled')+'>Clear</button>';
+  c.appendChild(actualDateFilter);
 
   // view toggle row
   const toggleRow=document.createElement('div');
@@ -1094,6 +1179,11 @@ function renderPersonal(){
     if(userView==='list') renderListView();
     else renderCalendarView();
   }
+  document.getElementById('personalActualDate').onchange=e=>{
+    if(e.target.value>localISODate()){toast('Future date is not allowed','error');e.target.value=localISODate();}
+    personalActualDate=e.target.value;taskFilter='all';updatePersonalStats(myTasks,t);renderCurrentView();document.getElementById('personalActualClear').disabled=!personalActualDate;
+  };
+  document.getElementById('personalActualClear').onclick=()=>{personalActualDate='';document.getElementById('personalActualDate').value='';document.getElementById('personalActualClear').disabled=true;taskFilter='all';updatePersonalStats(myTasks,t);renderCurrentView();};
 
   // ── LIST VIEW ────────────────────────────────────
   function renderListView(){
@@ -1136,28 +1226,25 @@ function renderPersonal(){
       const tog=e.target.closest('.tog');
       if(tog){const sl=+tog.dataset.sl,d=getDone(currentUser);// Check if task is locked
       const lockedTask = tasks.find(t => t.sl === sl);
+      if(!personalActualDate){toast('Select Actual Date first','error');return;}
+      if(personalActualDate>localISODate()){toast('Future date is not allowed','error');return;}
+      if(personalActualDate!==localISODate()){toast('Past dates are view-only','info');return;}
       if (lockedTask && isTaskLocked(lockedTask, currentUser)) {
-        toast('⚠ Task is locked (saved + done)', 'error');
+        toast('⚠ Completed task is locked', 'error');
         return;
       }
-      d.has(sl)?d.delete(sl):d.add(sl);syncToSheets();updatePersonalStats(myTasks,t);renderUserRows(myTasks,t,cols);return;}
-      const saveBtn=e.target.closest('.save-actual');
-      if(saveBtn){
-        const sl=+saveBtn.dataset.sl;
-        const timeEl=document.getElementById('at-inp-'+sl);
-        const k=tasks.find(x=>x.sl===sl);
-        if(k){
-          const actualTime=timeEl?timeEl.value:'';
-          if(!actualTime){toast('Enter completion time first','error');return;}
-          k.actualTime=actualTime;
-          k.actualDate=localISODate();
-          getDone(currentUser).add(k.sl);
-          syncToSheets();
-          updatePersonalStats(myTasks,t);
-          toast('Completion time saved and locked ✓','success');
-        }
+      if(!d.has(sl)&&lockedTask){
+        const now=new Date();
+        lockedTask.actualTime=currentTime24(now);
+        lockedTask.actualDate=localISODate(now);
+        d.add(sl);
+        syncToSheets();
+        updatePersonalStats(myTasks,t);
+        toast('DONE · Actual time '+formatTime12(lockedTask.actualTime)+' saved and locked','success');
         renderUserRows(myTasks,t,cols);
+        return;
       }
+      return;}
     });
   }
 
@@ -1194,7 +1281,7 @@ function renderPersonal(){
       // Build date→tasks map from myTasks actualDate
       const dateMap={};
       myTasks.forEach(k=>{
-        if(k.actualDate){
+        if(k.actualDate&&getDone(currentUser).has(k.sl)){
           if(!dateMap[k.actualDate])dateMap[k.actualDate]=[];
           dateMap[k.actualDate].push(k);
         }
@@ -1300,7 +1387,7 @@ function renderPersonal(){
 
       // For today: also show all pending tasks that haven't been updated today
       if(isToday){
-        const pendingNotToday=myTasks.filter(k=>!k.actualDate||k.actualDate!==dateStr);
+        const pendingNotToday=myTasks.filter(k=>!getDone(currentUser).has(k.sl));
         if(pendingNotToday.length){
           const sep=document.createElement('div');
           sep.style.cssText='font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted);letter-spacing:.08em;padding-top:4px;';
@@ -1341,10 +1428,7 @@ function renderPersonal(){
         +'<span style="font-family:DM Mono,monospace;font-size:.62rem;color:var(--muted)">#'+k.sl+'</span>'
         +(k.planTime?'<span class="time-badge plan" style="font-size:.6rem;padding:2px 6px">Plan: '+k.planTime+'</span>':'')
         +(isUpdatedThisDay&&k.actualTime
-          ?'<span class="time-badge actual" style="font-size:.6rem;padding:2px 6px">Done: '+k.actualTime
-            +(k.planTime?' ('+timeDiff('',k.planTime,'',k.actualTime).replace('+','').replace(' late','').replace(' early','')+')'
-            :'')
-            +'</span>'
+          ?'<span class="time-badge actual" style="font-size:.6rem;padding:2px 6px">Done: '+formatTime12(k.actualTime)+'</span>'
           :''
         )
         +'</div>';
@@ -1353,34 +1437,29 @@ function renderPersonal(){
       const actDiv=document.createElement('div');
       actDiv.style.cssText='display:flex;align-items:center;gap:6px;flex-shrink:0;';
       if(isToday && !isTaskLocked(k,currentUser)){
-        // Today's unsaved task is editable; a saved completion is locked.
-        const timeInp=document.createElement('input');
-        timeInp.type='time';timeInp.className='time-inp';
-        timeInp.value=k.actualTime||'';
-        timeInp.style.cssText='font-size:.68rem;padding:4px 6px;width:90px;color-scheme:dark;';
-        timeInp.id='cal-inp-'+k.sl;
-        const saveBtn=document.createElement('button');
-        saveBtn.className='time-save-btn actual-save';
-        saveBtn.textContent='SAVE';
-        saveBtn.onclick=()=>{
-          if(!timeInp.value){toast('Enter time first','error');return;}
-          k.actualTime=timeInp.value;
-          k.actualDate=dateStr;
+        // No manual time entry: DONE captures the device's current time.
+        const doneBtn=document.createElement('button');
+        doneBtn.className='time-save-btn actual-save';
+        doneBtn.textContent='DONE';
+        doneBtn.onclick=()=>{
+          const now=new Date();
+          k.actualTime=currentTime24(now);
+          k.actualDate=localISODate(now);
           getDone(currentUser).add(k.sl);
           syncToSheets();
           updatePersonalStats(myTasks,t);
-          toast('Saved and locked: '+k.task+' @ '+k.actualTime,'success');
+          toast('DONE · Actual time '+formatTime12(k.actualTime)+' saved and locked','success');
           // rebuild day detail and calendar
-          const dateMap={};myTasks.forEach(x=>{if(x.actualDate){if(!dateMap[x.actualDate])dateMap[x.actualDate]=[];dateMap[x.actualDate].push(x);}});
+          const dateMap={};myTasks.forEach(x=>{if(x.actualDate&&getDone(currentUser).has(x.sl)){if(!dateMap[x.actualDate])dateMap[x.actualDate]=[];dateMap[x.actualDate].push(x);}});
           buildCal();buildDayDetail(dateStr,dateMap[dateStr]||[],true,false,dateMap);
         };
-        actDiv.appendChild(timeInp);actDiv.appendChild(saveBtn);
+        actDiv.appendChild(doneBtn);
       } else if(isTaskLocked(k,currentUser)){
-        actDiv.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.66rem;color:#3ef0b0;background:rgba(62,240,176,.08);border:1px solid rgba(62,240,176,.2);border-radius:6px;padding:3px 8px">🔒 '+k.actualTime+'</span>';
+        actDiv.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.66rem;color:#3ef0b0;background:rgba(62,240,176,.08);border:1px solid rgba(62,240,176,.2);border-radius:6px;padding:3px 8px">🔒 '+formatTime12(k.actualTime)+'</span>';
       } else if(isPast){
         // read-only past
         if(k.actualTime&&isUpdatedThisDay){
-          actDiv.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.66rem;color:#3ef0b0;background:rgba(62,240,176,.08);border:1px solid rgba(62,240,176,.2);border-radius:6px;padding:3px 8px">✓ '+k.actualTime+'</span>';
+          actDiv.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.66rem;color:#3ef0b0;background:rgba(62,240,176,.08);border:1px solid rgba(62,240,176,.2);border-radius:6px;padding:3px 8px">✓ '+formatTime12(k.actualTime)+'</span>';
         } else {
           actDiv.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted)">View only</span>';
         }
@@ -1398,7 +1477,7 @@ function renderPersonal(){
 
 function updatePersonalStats(myTasks,t){
   const d=getDone(currentUser);
-  const dc=myTasks.filter(k=>d.has(k.sl)).length;
+  const dc=personalActualDate?myTasks.filter(k=>d.has(k.sl)&&k.actualDate===personalActualDate).length:0;
   const pct=myTasks.length?Math.round((dc/myTasks.length)*100):0;
   document.getElementById('pDC').textContent=dc;
   document.getElementById('pPC').textContent=myTasks.length-dc;
@@ -1410,32 +1489,32 @@ function renderUserRows(myTasks,t,cols){
   const d=getDone(currentUser);
   const q=(document.getElementById('tSrch')?.value||searchQ).toLowerCase();
   const filtered=myTasks.filter(k=>{
+    const doneOnDate=!!(personalActualDate&&d.has(k.sl)&&k.actualDate===personalActualDate);
     if(q&&!k.task.toLowerCase().includes(q))return false;
-    if(taskFilter==='done'&&!d.has(k.sl))return false;
-    if(taskFilter==='pending'&&d.has(k.sl))return false;
+    if(taskFilter==='done'&&!doneOnDate)return false;
+    if(taskFilter==='pending'&&doneOnDate)return false;
     return true;
   });
   const wrap=document.getElementById('taskRows');wrap.innerHTML='';
   if(!filtered.length){wrap.innerHTML='<div class="empty-msg">NO TASKS FOUND</div>';return;}
 
   filtered.forEach((k,i)=>{
-    const isDone=d.has(k.sl);
+    const isDone=!!(personalActualDate&&d.has(k.sl)&&k.actualDate===personalActualDate);
+    const isGloballyLocked=isTaskLocked(k,currentUser);
+    const canComplete=!!(personalActualDate&&personalActualDate===localISODate()&&!isGloballyLocked);
+    const showActual=!!(personalActualDate&&isDone&&k.actualDate===personalActualDate&&k.actualTime);
     const row=document.createElement('div');
     row.className='trow'+(isDone?' done':'')+(k.priority?' priority':'');
     row.style.gridTemplateColumns=cols;
     row.style.animationDelay=i*0.016+'s';
     if(k.priority)row.style.borderLeftColor=t.accent;
 
-    // actual time — locked if already saved, editable if not yet set
+    // Actual time is captured automatically when status changes to DONE.
     const actualInputHtml=`
       <div class="time-cell">
-        ${actualBadge(k)}
-        ${!k.actualTime?`
-        <div class="time-input-wrap" style="margin-top:4px">
-          <input type="time" class="time-inp" id="at-inp-${k.sl}" value="" style="font-size:.66rem;padding:3px 5px;width:85px;" title="Completion Time">
-          <button class="time-save-btn actual-save save-actual" data-sl="${k.sl}">SAVE</button>
-        </div>`
-        :`<span style="font-family:'DM Mono',monospace;font-size:.6rem;color:var(--muted);margin-top:3px;display:block">🔒 Locked</span>`}
+        ${showActual?actualBadge(k):`<span class="time-badge unset">${checkIcon()} ${personalActualDate?'No completed data':'Select date'}</span>`}
+        ${showActual?`<span style="font-family:'DM Mono',monospace;font-size:.6rem;color:var(--muted);margin-top:3px;display:block">🔒 Locked</span>`
+        :!isDone?`<span style="font-family:'DM Mono',monospace;font-size:.58rem;color:var(--muted);margin-top:3px;display:block">Time saves automatically on DONE</span>`:''}
       </div>`;
 
     row.innerHTML=`
@@ -1447,7 +1526,7 @@ function renderUserRows(myTasks,t,cols){
       <div class="time-cell">${planBadge(k)}<span class="time-label">${k.planTime?'Deadline':'Admin sets this'}</span></div>
       ${actualInputHtml}
       <div class="tog-wrap" style="justify-content:flex-end">
-        <button class="tog${isDone?' on':''}" data-sl="${k.sl}"></button>
+        <button class="tog${isDone?' on':''}" data-sl="${k.sl}" ${(!canComplete||isDone)?'disabled':''} title="${!personalActualDate?'Select a date':personalActualDate!==localISODate()?'Past dates are view-only':isGloballyLocked&&!isDone?'Task already completed on another date':isDone?'Completed and locked':'Mark DONE'}"></button>
         <span class="tog-lbl">${isDone?'DONE':'PEND'}</span>
       </div>`;
     wrap.appendChild(row);
@@ -1744,7 +1823,7 @@ function buildOverview(c){
           +'<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap">'
           +'<span class="ovcal-person-chip"><span style="width:18px;height:18px;border-radius:4px;background:'+t2.bg+';color:'+t2.color+';display:inline-flex;align-items:center;justify-content:center;font-size:.52rem;font-weight:700;font-family:Syne,sans-serif">'+ini(k.person)+'</span><span style="color:'+t2.color+';font-size:.75rem">'+k.person+'</span></span>'
           +(k.planTime?'<span class="time-badge plan" style="font-size:.6rem;padding:2px 6px">⏱ '+k.planTime+'</span>':'')
-          +(isCompleted?'<span class="time-badge actual" style="font-size:.6rem;padding:2px 6px">✓ '+k.actualTime+'</span>':'')
+          +(isCompleted?'<span class="time-badge actual" style="font-size:.6rem;padding:2px 6px">✓ '+formatTime12(k.actualTime)+'</span>':'')
           +(isOverdue?'<span class="time-badge overdue" style="font-size:.6rem;padding:2px 6px">OVERDUE</span>':'')
           +'</div>'
           +'</div>';
@@ -1767,7 +1846,7 @@ function buildOverview(c){
           +(k.priority?'<span style="color:'+t2.accent+'">★ </span>':'')+k.task+'</div>'
           +'<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap">'
           +'<span class="ovcal-person-chip"><span style="width:18px;height:18px;border-radius:4px;background:'+t2.bg+';color:'+t2.color+';display:inline-flex;align-items:center;justify-content:center;font-size:.52rem;font-weight:700;font-family:Syne,sans-serif">'+ini(k.person)+'</span><span style="color:'+t2.color+';font-size:.75rem">'+k.person+'</span></span>'
-          +(k.actualTime?'<span class="time-badge actual" style="font-size:.6rem;padding:2px 6px">✓ '+k.actualTime+'</span>':'')
+          +(k.actualTime?'<span class="time-badge actual" style="font-size:.6rem;padding:2px 6px">✓ '+formatTime12(k.actualTime)+'</span>':'')
           +(cmp==='late'?'<span class="time-badge overdue" style="font-size:.6rem;padding:2px 6px">LATE</span>':'')
           +(cmp==='early'||cmp==='ontime'?'<span style="font-family:DM Mono,monospace;font-size:.6rem;color:#3ef0b0">ON TIME</span>':'')
           +'</div>'
@@ -1948,24 +2027,10 @@ function buildPlanTime(c){
 
   // summary strip
   const totalWithPlan=tasks.filter(t=>t.planTime).length;
-  const totalWithActual=tasks.filter(t=>t.actualTime).length;
-  const lateCount=tasks.filter(t=>t.planTime&&t.actualTime&&timeCmp(t.planTime,t.actualTime)==='late').length;
-  const earlyCount=tasks.filter(t=>t.planTime&&t.actualTime&&timeCmp(t.planTime,t.actualTime)==='early').length;
   const strip=document.createElement('div');
   strip.style.cssText='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;';
-  const chips=[
-    {label:'With Plan Time',val:totalWithPlan,color:'#60a5fa'},
-    {label:'Completed',val:totalWithActual,color:'#3ef0b0'},
-    {label:'On-time / Early',val:earlyCount+(totalWithActual-lateCount-earlyCount>=0?totalWithActual-lateCount-earlyCount:0),color:'#a3e635'},
-    {label:'Late',val:lateCount,color:'#f87171'},
-  ];
-  // recalc on-time
-  const onTimeCount=tasks.filter(t=>t.planTime&&t.actualTime&&timeCmp(t.planTime,t.actualTime)==='ontime').length;
   const chips2=[
     {label:'With Plan Time',val:totalWithPlan,color:'#60a5fa'},
-    {label:'Completed w/ Actual',val:totalWithActual,color:'#3ef0b0'},
-    {label:'Early / On-time',val:earlyCount+onTimeCount,color:'#a3e635'},
-    {label:'Late',val:lateCount,color:'#f87171'},
   ];
   chips2.forEach(ch=>{
     const el=document.createElement('div');
@@ -1990,25 +2055,14 @@ function buildPlanTime(c){
     });
     wrap.innerHTML='';
     const list=document.createElement('div');list.className='task-list';
-    const cols='36px 1fr 110px 120px 170px 90px';
+    const cols='36px 1fr 160px 180px';
     const hdr=document.createElement('div');hdr.className='tlh';hdr.style.gridTemplateColumns=cols;
     hdr.innerHTML=`<span>#</span><span>Task</span><span>Person</span>
-      <span style="color:#60a5fa;display:flex;align-items:center;gap:4px">${clockIcon()} PLAN TIME</span>
-      <span style="color:#3ef0b0;display:flex;align-items:center;gap:4px">${checkIcon()} ACTUAL TIME</span>
-      <span style="text-align:center">STATUS</span>`;
+      <span style="color:#60a5fa;display:flex;align-items:center;gap:4px">${clockIcon()} PLAN TIME SET</span>`;
     list.appendChild(hdr);
     if(!fil.length){list.innerHTML+='<div class="empty-msg">NO TASKS FOUND</div>';wrap.appendChild(list);return;}
     fil.forEach((k,i)=>{
       const t2=th(k.person);
-      const cmp=timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime);
-      const statusHtml=!k.planTime&&!k.actualTime
-        ?`<span style="font-family:'DM Mono',monospace;font-size:0.65rem;color:var(--muted)">—</span>`
-        :!k.actualTime
-        ?`<span style="font-family:'DM Mono',monospace;font-size:0.65rem;color:var(--muted)">Pending</span>`
-        :cmp==='late'
-        ?`<span style="font-family:'DM Mono',monospace;font-size:0.65rem;color:#f87171">✕ ${timeDiff(k.planDate,k.planTime,k.actualDate,k.actualTime)}</span>`
-        :`<span style="font-family:'DM Mono',monospace;font-size:0.65rem;color:#3ef0b0">✓ ${timeDiff(k.planDate,k.planTime,k.actualDate,k.actualTime)||'On Time'}</span>`;
-
       const row=document.createElement('div');
       row.className='trow'+(k.priority?' priority':'');
       row.style.gridTemplateColumns=cols;row.style.animationDelay=i*0.01+'s';
@@ -2023,11 +2077,7 @@ function buildPlanTime(c){
         <div class="time-input-wrap">
           <input type="time" class="time-inp pt-inp" id="pt-${k.sl}" value="${k.planTime||''}" data-sl="${k.sl}" style="width:88px;" title="Plan Time">
           <button class="time-save-btn pt-save" data-sl="${k.sl}">SET</button>
-        </div>
-        <div class="time-cell">
-          ${actualBadge(k)}
-        </div>
-        <div style="text-align:center">${statusHtml}</div>`;
+        </div>`;
       list.appendChild(row);
     });
     wrap.appendChild(list);
@@ -2083,6 +2133,9 @@ function buildKPICharts(){
   const wrap=document.getElementById('kpi-wrap');if(!wrap)return;
   try{Object.values(Chart.instances||{}).forEach(ch=>ch.destroy());}catch(e){}
   wrap.innerHTML='';
+  // Keep the KPI result area completely blank until the user chooses
+  // either a specific date or a month.
+  if(!kpiDate && kpiMonth==='')return;
   const filtered=getKPITasks();
   const total=filtered.length;
   const completed=filtered.filter(k=>k.actualDate||k.actualTime).length;
@@ -2121,8 +2174,10 @@ function buildKPICharts(){
   const cb4=document.createElement('div');cb4.className='chart-box';cb4.innerHTML='<h4>Plan Date Distribution <span>tasks by deadline</span></h4><canvas id="chartTimeline" style="max-height:220px"></canvas>';cg2.appendChild(cb4);
   wrap.appendChild(cg2);
   const tableBox=document.createElement('div');tableBox.className='chart-full';
-  tableBox.innerHTML='<h4 style="font-family:Syne,sans-serif;font-size:.9rem;font-weight:700;margin-bottom:12px">Team Performance</h4>'
-    +'<table class="pct-table"><thead><tr><th>PERSON</th><th>TASKS</th><th>DONE</th><th>PENDING</th><th>ON-TIME</th><th>LATE</th><th>RATE</th></tr></thead><tbody id="kpiTableBody"></tbody></table>';
+  const teamDateLabel=kpiDate?' · '+fmtDate(kpiDate):kpiMonth!==''?' · '+months[+kpiMonth]:' · All Actual Dates';
+  tableBox.innerHTML='<h4 style="font-family:Syne,sans-serif;font-size:.9rem;font-weight:700;margin-bottom:4px">Team Performance'+teamDateLabel+'</h4>'
+    +'<div style="font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted);margin-bottom:12px">LIVE ACTUAL DATA · PERSON-WISE TASK QUANTITY</div>'
+    +'<table class="pct-table"><thead><tr><th>PERSON</th><th>TASKS</th><th>DONE</th><th>PENDING</th><th>EARLY / ON-TIME</th><th>LATE</th><th>RATE</th></tr></thead><tbody id="kpiTableBody"></tbody></table>';
   wrap.appendChild(tableBox);
 
   // ── LEAD TIME CHARTS ──
@@ -2184,31 +2239,49 @@ function buildKPICharts(){
     // Table
     const tbody=document.getElementById('kpiTableBody');
     if(tbody){
-      PERSONS.forEach(p=>{
-        const mt=filtered.filter(k=>k.person===p);if(!mt.length)return;
-        const t2=th(p);const dn=mt.filter(k=>k.actualDate||k.actualTime).length;
+      // This table intentionally reads only completed Actual records. The
+      // master task list remains unchanged by KPI date/month filtering.
+      const actualFiltered=tasks.filter(k=>{
+        if(!k.actualDate||!k.actualTime)return false;
+        if(kpiDate)return k.actualDate===kpiDate;
+        if(kpiMonth!=='')return new Date(k.actualDate+'T00:00:00').getMonth()===+kpiMonth;
+        return true;
+      });
+      // PERSON and TASKS come from the unfiltered ALL TASKS master list.
+      // Only performance figures use the selected Actual Date/month.
+      const teamPersons=[...new Set([...PERSONS,...tasks.map(k=>k.person)])];
+      teamPersons.forEach(p=>{
+        const masterTasks=tasks.filter(k=>k.person===p);if(!masterTasks.length)return;
+        const mt=actualFiltered.filter(k=>k.person===p);
+        const t2=th(p);
+        const dn=mt.length;
+        const pending=Math.max(masterTasks.length-dn,0);
         const ot=mt.filter(k=>['early','ontime'].includes(timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime))).length;
         const lt=mt.filter(k=>timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='late').length;
-        const rate=Math.round(dn/mt.length*100);
+        const rate=masterTasks.length?Math.round(dn/masterTasks.length*100):0;
         const tr=document.createElement('tr');
         tr.innerHTML='<td><span style="display:inline-flex;align-items:center;gap:7px"><span style="width:22px;height:22px;border-radius:6px;background:'+t2.bg+';color:'+t2.color+';display:inline-flex;align-items:center;justify-content:center;font-size:.55rem;font-weight:700;font-family:Syne,sans-serif">'+ini(p)+'</span><span style="color:'+t2.color+'">'+p+'</span></span></td>'
-          +'<td style="font-family:DM Mono,monospace;font-size:.8rem">'+mt.length+'</td>'
+          +'<td style="font-family:DM Mono,monospace;font-size:.8rem">'+masterTasks.length+'</td>'
           +'<td style="color:#3ef0b0;font-family:DM Mono,monospace;font-size:.8rem">'+dn+'</td>'
-          +'<td style="color:#f87171;font-family:DM Mono,monospace;font-size:.8rem">'+(mt.length-dn)+'</td>'
+          +'<td style="color:#f87171;font-family:DM Mono,monospace;font-size:.8rem">'+pending+'</td>'
           +'<td style="color:#3ef0b0;font-family:DM Mono,monospace;font-size:.8rem">'+(ot||'—')+'</td>'
           +'<td style="color:#f87171;font-family:DM Mono,monospace;font-size:.8rem">'+(lt||'—')+'</td>'
           +'<td><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:4px;background:var(--border);border-radius:4px;min-width:50px"><div style="height:100%;width:'+rate+'%;background:'+t2.accent+';border-radius:4px"></div></div><span style="font-family:DM Mono,monospace;font-size:.72rem;color:'+t2.color+'">'+rate+'%</span></div></td>';
         tbody.appendChild(tr);
       });
-      if(!tbody.children.length)tbody.innerHTML='<tr><td colspan="7" style="text-align:center;padding:30px;font-family:DM Mono,monospace;font-size:.8rem;color:var(--muted)">No data in selected range</td></tr>';
+      if(!tbody.children.length)tbody.innerHTML='<tr><td colspan="7" style="text-align:center;padding:30px;font-family:DM Mono,monospace;font-size:.8rem;color:var(--muted)">No tasks found</td></tr>';
     }
 
     // ── LEAD TIME CHART 1: BY PERSON ──
     const parseLT=h=>h?parseFloat(h.replace('h','')):0;
 
     // Per-person lead time aggregation
-    const ltPersonData=PERSONS.map(p=>{
-      const pt=filtered.filter(k=>k.person===p&&k.leadTime);
+    // Lead-time analysis is a permanent master-task view. KPI date/month
+    // filters affect Actual performance only, never the saved lead-time plan.
+    const leadTimeSource=tasks;
+    const leadTimePersons=[...new Set([...PERSONS,...leadTimeSource.map(k=>k.person)])];
+    const ltPersonData=leadTimePersons.map(p=>{
+      const pt=leadTimeSource.filter(k=>k.person===p&&k.leadTime);
       const totalHrs=pt.reduce((s,k)=>s+parseLT(k.leadTime),0);
       const doneHrs=pt.filter(k=>k.actualDate||k.actualTime).reduce((s,k)=>s+parseLT(k.leadTime),0);
       const pendHrs=totalHrs-doneHrs;
@@ -2218,8 +2291,8 @@ function buildKPICharts(){
     const totalLeadHrs=ltPersonData.reduce((s,x)=>s+x.total,0);
     const avgHrs=ltPersonData.length?+(totalLeadHrs/ltPersonData.length).toFixed(1):0;
     const maxPerson=ltPersonData[0]||{name:'—',total:0};
-    const tasksWithLead=filtered.filter(k=>k.leadTime).length;
-    const tasksNoLead=filtered.length-tasksWithLead;
+    const tasksWithLead=leadTimeSource.filter(k=>k.leadTime).length;
+    const tasksNoLead=leadTimeSource.length-tasksWithLead;
 
     // Fill summary strip
     const ltStrip=document.getElementById('lt-summary-strip');
@@ -2227,7 +2300,7 @@ function buildKPICharts(){
       [{l:'Total Minutes Allocated',v:totalLeadHrs.toFixed(0)+'m',c:'#a3e635'},
        {l:'Avg Per Person',v:avgHrs+'m',c:'#60a5fa'},
        {l:'Heaviest Load',v:maxPerson.name.split('/')[0]+' ('+maxPerson.total+'m)',c:'#f87171'},
-       {l:'Tasks w/ Lead Time',v:tasksWithLead+'/'+filtered.length,c:'#f5c842'},
+       {l:'Tasks w/ Lead Time',v:tasksWithLead+'/'+leadTimeSource.length,c:'#f5c842'},
       ].forEach(x=>{
         const el=document.createElement('div');
         el.style.cssText='background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 16px;display:flex;align-items:center;gap:10px';
@@ -2297,7 +2370,7 @@ function buildKPICharts(){
     }
 
     // ── LEAD TIME CHART 2: BY TASK (top 20) ──
-    const ltTaskData=filtered.filter(k=>k.leadTime)
+    const ltTaskData=leadTimeSource.filter(k=>k.leadTime)
       .map(k=>({task:k.task.length>28?k.task.slice(0,28)+'…':k.task,hrs:parseLT(k.leadTime),person:k.person,done:!!(k.actualDate||k.actualTime),priority:k.priority}))
       .sort((a,b)=>b.hrs-a.hrs)
       .slice(0,20);
@@ -2390,17 +2463,14 @@ function buildKPICharts(){
 function buildAllTasks(c){
   const sl=document.createElement('div');sl.className='section-title';sl.textContent=`ALL TASKS — ${tasks.length} TOTAL`;c.appendChild(sl);
   const list=document.createElement('div');list.className='task-list';
-  const cols='36px 1fr 120px 120px 130px 70px';
+  const cols='36px 1fr 160px 120px';
   const hdr=document.createElement('div');hdr.className='tlh';hdr.style.gridTemplateColumns=cols;
   hdr.innerHTML=`<span>#</span><span>Task</span><span>Person</span>
-    <span style="color:#60a5fa">${clockIcon()} Plan</span>
-    <span style="color:#3ef0b0">${checkIcon()} Actual</span>
-    <span style="text-align:right">Status</span>`;
+    <span style="color:#60a5fa">${clockIcon()} Plan</span>`;
   list.appendChild(hdr);
   const rows=document.createElement('div');
   tasks.forEach((k,i)=>{
     const t2=th(k.person);const isDone=getDone(k.person).has(k.sl);
-    const cmp=timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime);
     const row=document.createElement('div');
     row.style.cssText=`display:grid;grid-template-columns:${cols};align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);gap:8px;font-size:0.84rem;transition:background 0.15s;animation:rowIn 0.2s ease ${i*0.005}s both;${k.priority?'border-left:3px solid '+t2.accent+';':''}${isDone?'opacity:0.42;':''}`;
     row.innerHTML=`<span style="font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--muted)">${k.sl}</span>
@@ -2409,14 +2479,7 @@ function buildAllTasks(c){
         <span style="width:20px;height:20px;border-radius:5px;background:${t2.bg};color:${t2.color};display:inline-flex;align-items:center;justify-content:center;font-size:0.56rem;font-weight:700;font-family:'Syne',sans-serif">${ini(k.person)}</span>
         <span style="color:${t2.color};font-size:0.78rem">${k.person}</span>
       </span>
-      <span>${k.planTime?`<span class="time-badge plan" style="font-size:0.62rem">${clockIcon()} ${k.planTime}</span>`:'<span class="time-badge unset" style="font-size:0.62rem">—</span>'}</span>
-      <span>${k.actualTime?`<span class="time-badge ${cmp==='late'?'overdue':'actual'}" style="font-size:0.62rem">${checkIcon()} ${k.actualTime}</span>`:'<span class="time-badge unset" style="font-size:0.62rem">—</span>'}</span>
-      <div style="text-align:right">
-        ${!k.planTime&&!k.actualTime?`<span style="font-family:'DM Mono',monospace;font-size:0.66rem;color:var(--muted);padding:3px 7px;border-radius:20px;background:rgba(255,255,255,0.04)">${isDone?'DONE':'PEND'}</span>`
-        :cmp==='late'?`<span style="font-family:'DM Mono',monospace;font-size:0.64rem;color:#f87171;padding:3px 7px;border-radius:20px;background:rgba(248,113,113,0.08)">LATE</span>`
-        :k.actualTime?`<span style="font-family:'DM Mono',monospace;font-size:0.64rem;color:#3ef0b0;padding:3px 7px;border-radius:20px;background:rgba(62,240,176,0.08)">✓ DONE</span>`
-        :`<span style="font-family:'DM Mono',monospace;font-size:0.64rem;color:var(--muted);padding:3px 7px;border-radius:20px;background:rgba(255,255,255,0.04)">PENDING</span>`}
-      </div>`;
+      <span>${k.planTime?`<span class="time-badge plan" style="font-size:0.62rem">${clockIcon()} ${k.planTime}</span>`:'<span class="time-badge unset" style="font-size:0.62rem">—</span>'}</span>`;
     row.onmouseenter=()=>row.style.background='var(--surface2)';
     row.onmouseleave=()=>row.style.background='';
     rows.appendChild(row);
@@ -2614,12 +2677,16 @@ function renderSettingsUsers(body){
     +'<button class="add-btn" id="admin-pass-btn" style="height:38px;font-size:.82rem;background:rgba(245,200,66,.15);color:#f5c842;border:1px solid rgba(245,200,66,.25)">UPDATE</button>'
     +'</div>'
   );
-  document.getElementById('admin-pass-btn').onclick=()=>{
+  document.getElementById('admin-pass-btn').onclick=async()=>{
     const np=document.getElementById('admin-newpass').value;
     const cp=document.getElementById('admin-confirmpass').value;
     if(!np){toast('Enter new password','error');return;}
     if(np!==cp){toast('Passwords do not match','error');return;}
-    CREDS['admin']=np;syncUsers();toast('Admin password updated','success');
+    const previous=CREDS.admin;
+    CREDS.admin=np;
+    const saved=await syncUsers();
+    if(!saved){CREDS.admin=previous;toast('Admin password could not be saved','error');return;}
+    toast('Admin password updated permanently','success');
     document.getElementById('admin-newpass').value='';document.getElementById('admin-confirmpass').value='';
   };
 }
@@ -2870,29 +2937,45 @@ function renderSettingsLeadTime(body){
         +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.8rem">'+k.task+(k.priority?' <span style="color:'+t2.accent+'">★</span>':'')+'</span>'
         +'<span style="color:'+t2.color+';font-size:.74rem">'+k.person.split('/')[0]+'</span>'
         +'<div style="display:flex;align-items:center;gap:5px">'+(k.leadTime?'<span class="lead-badge">'+k.leadTime+'</span>':'<span style="font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted)">—</span>')+'</div>'
-        +'<div style="display:flex;align-items:center;gap:5px"><input type="number" class="lead-inp lt-inp" id="lt-'+k.sl+'" value="'+curHrs+'" placeholder="min" min="0" step="1"><button class="lead-save lt-save" data-sl="'+k.sl+'">SET</button></div>';
+        +'<div style="display:flex;align-items:center;gap:5px"><input type="number" class="lead-inp lt-inp" id="lt-'+k.sl+'" value="'+curHrs+'" placeholder="min" min="0" step="1"><button class="lead-save lt-save" data-sl="'+k.sl+'">'+(k.leadTime?'EDIT':'SAVE')+'</button></div>';
       list.appendChild(row);
     });
     wrap2.appendChild(list);
     wrap2.querySelectorAll('.lt-save').forEach(btn=>{
-      btn.onclick=()=>{
+      btn.onclick=async()=>{
         const sl=+btn.dataset.sl;const k=tasks.find(t=>t.sl===sl);if(!k)return;
         const val=document.getElementById('lt-'+sl)?.value;
-        k.leadTime=val?parseFloat(val)+'min':'';
-        toast(k.leadTime?'Lead time set: '+k.task+' → '+k.leadTime:'Lead time cleared for #'+sl,'success');syncToSheets();
+        if(val===''||!Number.isFinite(Number(val))||Number(val)<0){toast('Enter valid minutes','error');return;}
+        const previous=k.leadTime;
+        k.leadTime=parseFloat(val)+'min';
+        btn.disabled=true;btn.textContent='SAVING...';
+        const ok=await syncNow();
+        if(!ok)k.leadTime=previous;
+        else toast('Lead time permanently saved: '+k.task+' → '+k.leadTime,'success');
         drawLT();
       };
     });
     // Bulk
-    document.getElementById('lt-bulk-btn').onclick=()=>{
+    document.getElementById('lt-bulk-btn').onclick=async()=>{
       const val=document.getElementById('lt-bulk-val')?.value;
-      if(!val){toast('Enter minutes first','error');return;}
+      if(val===''||!Number.isFinite(Number(val))||Number(val)<0){toast('Enter valid minutes','error');return;}
+      const previous=fil.map(k=>[k,k.leadTime]);
       fil.forEach(k=>{k.leadTime=parseFloat(val)+'min';});
-      toast('Lead time set to '+val+'min for '+fil.length+' tasks','success');syncToSheets();
+      const bulkBtn=document.getElementById('lt-bulk-btn');bulkBtn.disabled=true;bulkBtn.textContent='SAVING...';
+      const ok=await syncNow();
+      if(!ok)previous.forEach(([k,old])=>{k.leadTime=old;});
+      else toast('Lead time permanently saved for '+fil.length+' tasks','success');
       drawLT();
     };
     document.getElementById('lt-clear-all').onclick=()=>{
-      confirm2('Clear All Lead Times?','This will remove lead time from ALL tasks.',()=>{tasks.forEach(t=>{t.leadTime='';});syncToSheets();toast('All lead times cleared','info');drawLT();});
+      confirm2('Clear All Lead Times?','This will remove lead time from ALL tasks.',async()=>{
+        const previous=tasks.map(t=>[t,t.leadTime]);
+        tasks.forEach(t=>{t.leadTime='';});
+        const ok=await syncNow();
+        if(!ok)previous.forEach(([t,old])=>{t.leadTime=old;});
+        else toast('All lead times permanently cleared','info');
+        drawLT();
+      });
     };
   };
 
