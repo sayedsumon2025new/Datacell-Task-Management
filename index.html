@@ -622,6 +622,11 @@ function applyRemoteData(data) {
     data.users.forEach(u => { CREDS[u.name] = u.password; });
   }
   if (data.moduleAccess) moduleAccess = data.moduleAccess;
+  if (data.workingHours&&Object.keys(data.workingHours).length) {
+    const n=JSON.stringify(data.workingHours),c=JSON.stringify(workingHours);
+    if(n!==c){workingHours=data.workingHours;changed=true;}
+    try{localStorage.setItem('fts_working_hours',JSON.stringify(workingHours));}catch(e){}
+  }
   return changed;
 }
 
@@ -657,10 +662,16 @@ async function sbFetchAll() {
 
   const metaNext = (metaRows || []).find(r => r.key === 'nextSl');
   const metaVer = (metaRows || []).find(r => r.key === 'version');
+  const metaWorkingHours = (metaRows || []).find(r => r.key === 'workingHours');
   const fetchedNextSl = metaNext ? Number(metaNext.value) : 1;
+  let fetchedWorkingHours={};
+  if(metaWorkingHours&&metaWorkingHours.value){
+    try{const parsed=JSON.parse(metaWorkingHours.value);if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))fetchedWorkingHours=parsed;}catch(e){console.error('Invalid workingHours metadata:',e);}
+  }
 
   return {
     tasks: fetchedTasks, doneState: fetchedDone, users: fetchedUsers, moduleAccess: fetchedAccess,
+    workingHours: fetchedWorkingHours,
     nextSl: Number.isFinite(fetchedNextSl) && fetchedNextSl >= 1 ? fetchedNextSl : 1,
     version: metaVer ? String(metaVer.value) : '0'
   };
@@ -730,7 +741,10 @@ async function sbSaveAll() {
     username: user, done_sls: sls.join(',')
   }));
   if (!await sbSyncDoneState(doneRows)) return false;
-  return await sbUpsert('meta', [{ key: 'nextSl', value: String(nextSl) }]);
+  return await sbUpsert('meta', [
+    { key: 'nextSl', value: String(nextSl) },
+    { key: 'workingHours', value: JSON.stringify(workingHours) }
+  ]);
 }
 
 // ── WRITE: users ────────────────────────────────────────────────
@@ -757,6 +771,22 @@ async function syncModuleAccess() {
   if (rows.length && !await sbUpsert('module_access', rows)) return false;
   await sbBumpVersion();
   return true;
+}
+
+// ── WRITE: person-wise working hours ───────────────────────────
+async function syncWorkingHours() {
+  try{localStorage.setItem('fts_working_hours',JSON.stringify(workingHours));}
+  catch(e){console.error('Working-hours local save failed:',e);return false;}
+  if(!sbConfigured())return 'local';
+  clearTimeout(_syncDebounce);
+  setSyncStatus('syncing');
+  const saved=await sbUpsert('meta',[{key:'workingHours',value:JSON.stringify(workingHours)}]);
+  if(!saved){setSyncStatus('error');return 'local';}
+  // The working-hours record is already permanent at this point. Version
+  // notification is best-effort and must not roll back a successful save.
+  sbBumpVersion().catch(e=>console.error('Working-hours version notification failed:',e));
+  setSyncStatus('live');
+  return 'cloud';
 }
 
 // ── Version management ──────────────────────────────────────────
@@ -835,6 +865,12 @@ async function initFromSheets() {
 // ─── STATE ───
 let currentUser=null,taskFilter='all',searchQ='',adminTab='overview',userView='list',personalActualDate=localISODate();
 let moduleAccess = {}; // user → [module IDs]
+let workingHours = (()=>{
+  try{
+    const saved=JSON.parse(localStorage.getItem('fts_working_hours')||'{}');
+    return saved&&typeof saved==='object'&&!Array.isArray(saved)?saved:{};
+  }catch(e){return {};}
+})(); // person → daily working hours
 let kpiDate='',kpiMonth='';
 let calYear=new Date().getFullYear(),calMonth=new Date().getMonth(),calSelectedDate='';
 let ovCalYear=new Date().getFullYear(),ovCalMonth=new Date().getMonth(),ovCalSelected='';
@@ -905,16 +941,14 @@ function formatDisplayDate(isoDate) {
 }
 function timeCmp(pd,pt,ad,at){
   if(!pt||!at)return'';
-  const pDate=pd||ad||'2000-01-01',aDate=ad||pd||'2000-01-01';
-  const pMs=new Date(pDate+'T'+pt).getTime();
-  const aMs=new Date(aDate+'T'+at).getTime();
+  const [ph,pm]=String(pt).split(':').map(Number),[ah,am]=String(at).split(':').map(Number);
+  const pMs=(ph*60+pm)*60000,aMs=(ah*60+am)*60000;
   if(aMs===pMs)return'ontime'; return aMs<pMs?'early':'late';
 }
 function timeDiff(pd,pt,ad,at){
   if(!pt||!at)return'';
-  const pDate=pd||ad||'2000-01-01',aDate=ad||pd||'2000-01-01';
-  const pMs=new Date(pDate+'T'+pt).getTime();
-  const aMs=new Date(aDate+'T'+at).getTime();
+  const [ph,pm]=String(pt).split(':').map(Number),[ah,am]=String(at).split(':').map(Number);
+  const pMs=(ph*60+pm)*60000,aMs=(ah*60+am)*60000;
   const diff=aMs-pMs;const abs=Math.abs(diff);
   const h=Math.floor(abs/3600000),m=Math.floor((abs%3600000)/60000);
   const str=(h?h+'h ':'')+m+'m';
@@ -1649,8 +1683,7 @@ function buildOverview(c){
   // Legend
   const legend=document.createElement('div');legend.className='ovcal-legend';
   legend.innerHTML=
-    '<div class="ovcal-legend-item"><div class="ovcal-legend-dot" style="background:#3b82f6"></div>Plan Deadline</div>'
-    +'<div class="ovcal-legend-item"><div class="ovcal-legend-dot" style="background:#3ef0b0"></div>Completed</div>'
+    '<div class="ovcal-legend-item"><div class="ovcal-legend-dot" style="background:#3ef0b0"></div>Completed</div>'
     +'<div class="ovcal-legend-item"><div class="ovcal-legend-dot" style="background:#f5c842"></div>Today</div>'
     +'<div class="ovcal-legend-item"><div class="ovcal-legend-dot" style="background:#f87171;border-radius:2px"></div>Overdue</div>';
   c.appendChild(legend);
@@ -1665,11 +1698,9 @@ function buildOverview(c){
     const DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
     // Build date maps
-    // planMap: date → tasks with that planDate
-    // actualMap: date → tasks with that actualDate
+    // Calendar is based only on actual completion dates.
     const planMap={},actualMap={};
     tasks.forEach(k=>{
-      if(k.planDate){if(!planMap[k.planDate])planMap[k.planDate]=[];planMap[k.planDate].push(k);}
       if(k.actualDate){if(!actualMap[k.actualDate])actualMap[k.actualDate]=[];actualMap[k.actualDate].push(k);}
     });
 
@@ -1832,7 +1863,7 @@ function buildOverview(c){
     }
 
     // Actual completion tasks (deduplicate from plan list)
-    const actualOnly=actualTasks.filter(k=>k.planDate!==dateStr);
+    const actualOnly=actualTasks;
     if(actualOnly.length){
       const sh2=document.createElement('div');sh2.className='ovcal-section-hdr';sh2.style.marginTop='10px';
       sh2.innerHTML='<span style="color:#3ef0b0">✓ COMPLETED — '+actualOnly.length+' task'+(actualOnly.length>1?'s':'')+'</span>';
@@ -2122,10 +2153,10 @@ function buildKPI(c){
 
 function getKPITasks(){
   return tasks.filter(k=>{
-    const d=k.actualDate||k.planDate;
-    if(kpiMonth!==''){if(!d)return true;return new Date(d).getMonth()===+kpiMonth;}
+    const d=k.actualDate;
+    if(kpiMonth!==''){if(!d)return false;return new Date(d+'T00:00:00').getMonth()===+kpiMonth;}
     if(kpiDate){return d===kpiDate;}
-    return true;
+    return false;
   });
 }
 
@@ -2137,14 +2168,16 @@ function buildKPICharts(){
   // either a specific date or a month.
   if(!kpiDate && kpiMonth==='')return;
   const filtered=getKPITasks();
-  const total=filtered.length;
-  const completed=filtered.filter(k=>k.actualDate||k.actualTime).length;
-  const withPlan=filtered.filter(k=>k.planDate||k.planTime).length;
+  // TOTAL TASKS always mirrors the ALL TASKS master list. Date/month filters
+  // affect only the actual completion and performance figures.
+  const total=tasks.length;
+  const completed=filtered.filter(k=>k.actualDate&&k.actualTime).length;
+  const withPlan=tasks.filter(k=>k.planTime).length;
   const lateN=filtered.filter(k=>timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='late').length;
   const earlyN=filtered.filter(k=>timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='early').length;
   const ontimeN=filtered.filter(k=>timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='ontime').length;
-  const prios=filtered.filter(k=>k.priority);
-  const prioDone=prios.filter(k=>k.actualDate||k.actualTime).length;
+  const prios=tasks.filter(k=>k.priority);
+  const prioDone=filtered.filter(k=>k.priority&&k.actualDate&&k.actualTime).length;
   const onTimeRate=completed>0?Math.round(((earlyN+ontimeN)/completed)*100):0;
   const compRate=total>0?Math.round((completed/total)*100):0;
 
@@ -2171,7 +2204,7 @@ function buildKPICharts(){
   wrap.appendChild(cg1);
   const cg2=document.createElement('div');cg2.className='chart-grid';
   const cb3=document.createElement('div');cb3.className='chart-box';cb3.innerHTML='<h4>Priority vs Normal <span>completion</span></h4><canvas id="chartPrio" style="max-height:220px"></canvas>';cg2.appendChild(cb3);
-  const cb4=document.createElement('div');cb4.className='chart-box';cb4.innerHTML='<h4>Plan Date Distribution <span>tasks by deadline</span></h4><canvas id="chartTimeline" style="max-height:220px"></canvas>';cg2.appendChild(cb4);
+  const cb4=document.createElement('div');cb4.className='chart-box';cb4.innerHTML='<h4>Actual Date Distribution <span>completed tasks by date</span></h4><canvas id="chartTimeline" style="max-height:220px"></canvas>';cg2.appendChild(cb4);
   wrap.appendChild(cg2);
   const tableBox=document.createElement('div');tableBox.className='chart-full';
   const teamDateLabel=kpiDate?' · '+fmtDate(kpiDate):kpiMonth!==''?' · '+months[+kpiMonth]:' · All Actual Dates';
@@ -2217,7 +2250,8 @@ function buildKPICharts(){
     const cd={plugins:{legend:{labels:{color:'#505870',font:{size:9}}},tooltip:{backgroundColor:'#12151d',borderColor:'#1f2535',borderWidth:1,titleColor:'#dde1ec',bodyColor:'#505870'}}};
     Chart.defaults.color='#505870';
     // Person bar
-    const pData=PERSONS.map(p=>{const mt=filtered.filter(k=>k.person===p);const dn=mt.filter(k=>k.actualDate||k.actualTime).length;return{n:p,t:mt.length,d:dn};}).filter(x=>x.t>0);
+    const chartPersons=[...new Set([...PERSONS,...tasks.map(k=>k.person)])];
+    const pData=chartPersons.map(p=>{const master=tasks.filter(k=>k.person===p);const dn=filtered.filter(k=>k.person===p&&k.actualDate&&k.actualTime).length;return{n:p,t:master.length,d:dn};}).filter(x=>x.t>0);
     const pCtx=document.getElementById('chartPerson')?.getContext('2d');
     if(pCtx)new Chart(pCtx,{type:'bar',data:{labels:pData.map(x=>x.n.split('/')[0]),datasets:[{label:'Done',data:pData.map(x=>x.d),backgroundColor:pData.map(x=>th(x.n).accent+'cc'),borderRadius:4},{label:'Pending',data:pData.map(x=>x.t-x.d),backgroundColor:'rgba(80,88,112,0.3)',borderRadius:4}]},options:{...cd,indexAxis:'y',scales:{x:{stacked:true,grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#505870'}},y:{stacked:true,grid:{display:false},ticks:{color:'#dde1ec',font:{size:10}}}}}});
     // Status donut
@@ -2225,16 +2259,16 @@ function buildKPICharts(){
     if(sCtx)new Chart(sCtx,{type:'doughnut',data:{labels:['Early/On-time','Late','Not Started'],datasets:[{data:[earlyN+ontimeN,lateN,total-completed],backgroundColor:['rgba(62,240,176,.7)','rgba(248,113,113,.7)','rgba(80,88,112,.3)'],borderColor:['#3ef0b0','#f87171','#505870'],borderWidth:1,hoverOffset:8}]},options:{...cd,cutout:'65%',plugins:{...cd.plugins,legend:{position:'bottom',labels:{color:'#505870',font:{size:9},padding:10}}}}});
     // Priority
     const prCtx=document.getElementById('chartPrio')?.getContext('2d');
-    const nPrios=filtered.filter(k=>!k.priority);const nDone=nPrios.filter(k=>k.actualDate||k.actualTime).length;
+    const nPrios=tasks.filter(k=>!k.priority);const nDone=filtered.filter(k=>!k.priority&&k.actualDate&&k.actualTime).length;
     if(prCtx)new Chart(prCtx,{type:'bar',data:{labels:['Priority ★','Normal'],datasets:[{label:'Done',data:[prioDone,nDone],backgroundColor:['rgba(232,121,249,.7)','rgba(62,240,176,.6)'],borderRadius:6},{label:'Pending',data:[prios.length-prioDone,nPrios.length-nDone],backgroundColor:['rgba(232,121,249,.2)','rgba(62,240,176,.15)'],borderRadius:6}]},options:{...cd,scales:{x:{grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#dde1ec'}},y:{grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#505870'}}}}});
     // Timeline
     const tlCtx=document.getElementById('chartTimeline')?.getContext('2d');
-    const withDates=filtered.filter(k=>k.planDate);
-    const dateMap={};withDates.forEach(k=>{if(!dateMap[k.planDate])dateMap[k.planDate]={on:0,late:0,pend:0};const cmp=timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime);if(cmp==='late')dateMap[k.planDate].late++;else if(k.actualDate)dateMap[k.planDate].on++;else dateMap[k.planDate].pend++;});
+    const withDates=filtered.filter(k=>k.actualDate);
+    const dateMap={};withDates.forEach(k=>{if(!dateMap[k.actualDate])dateMap[k.actualDate]={on:0,late:0};const cmp=timeCmp('',k.planTime,k.actualDate,k.actualTime);if(cmp==='late')dateMap[k.actualDate].late++;else dateMap[k.actualDate].on++;});
     const sortedD=Object.keys(dateMap).sort();
     if(tlCtx){
-      if(sortedD.length)new Chart(tlCtx,{type:'bar',data:{labels:sortedD.map(d=>fmtDate(d)),datasets:[{label:'On-Time',data:sortedD.map(d=>dateMap[d].on),backgroundColor:'rgba(62,240,176,.65)',borderRadius:4},{label:'Late',data:sortedD.map(d=>dateMap[d].late),backgroundColor:'rgba(248,113,113,.65)',borderRadius:4},{label:'Pending',data:sortedD.map(d=>dateMap[d].pend),backgroundColor:'rgba(245,200,66,.35)',borderRadius:4}]},options:{...cd,scales:{x:{stacked:true,grid:{display:false},ticks:{color:'#505870',maxRotation:35}},y:{stacked:true,grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#505870'}}}}});
-      else tlCtx.canvas.closest('.chart-box').insertAdjacentHTML('beforeend','<p style="font-size:.75rem;color:var(--muted);text-align:center;padding:30px;font-family:DM Mono,monospace">No plan dates yet. Add in Plan Time tab.</p>');
+      if(sortedD.length)new Chart(tlCtx,{type:'bar',data:{labels:sortedD.map(d=>fmtDate(d)),datasets:[{label:'On-Time',data:sortedD.map(d=>dateMap[d].on),backgroundColor:'rgba(62,240,176,.65)',borderRadius:4},{label:'Late',data:sortedD.map(d=>dateMap[d].late),backgroundColor:'rgba(248,113,113,.65)',borderRadius:4}]},options:{...cd,scales:{x:{stacked:true,grid:{display:false},ticks:{color:'#505870',maxRotation:35}},y:{stacked:true,grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#505870'}}}}});
+      else tlCtx.canvas.closest('.chart-box').insertAdjacentHTML('beforeend','<p style="font-size:.75rem;color:var(--muted);text-align:center;padding:30px;font-family:DM Mono,monospace">No completed data for the selected date.</p>');
     }
     // Table
     const tbody=document.getElementById('kpiTableBody');
@@ -2505,6 +2539,7 @@ function buildSettings(c){
     {id:'tasksetup',icon:'📋',label:'TASK SETUP'},
     {id:'plantime2',icon:'📅',label:'PLAN TIME'},
     {id:'leadtime',icon:'⏱',label:'LEAD TIME'},
+    {id:'workinghours',icon:'🕒',label:'WORKING HOURS'},
   ];
   navItems.forEach((item,i)=>{
     if(i===2){const sep=document.createElement('div');sep.className='snav-sep';nav.appendChild(sep);}
@@ -2526,7 +2561,7 @@ function renderSettingsBody(body){
   // Re-mark active nav
   document.querySelectorAll('.snav-btn').forEach(btn=>{
     const lbl=btn.textContent.trim();
-    const map={users:'USER MANAGEMENT',access:'MODULE ACCESS',tasksetup:'TASK SETUP',plantime2:'PLAN TIME',leadtime:'LEAD TIME'};
+    const map={users:'USER MANAGEMENT',access:'MODULE ACCESS',tasksetup:'TASK SETUP',plantime2:'PLAN TIME',leadtime:'LEAD TIME',workinghours:'WORKING HOURS'};
     btn.classList.toggle('active',map[settingsTab]===lbl);
   });
   if(settingsTab==='users')renderSettingsUsers(body);
@@ -2534,6 +2569,7 @@ function renderSettingsBody(body){
   else if(settingsTab==='tasksetup')renderSettingsTaskSetup(body);
   else if(settingsTab==='plantime2')renderSettingsPlanTime(body);
   else if(settingsTab==='leadtime')renderSettingsLeadTime(body);
+  else if(settingsTab==='workinghours')renderSettingsWorkingHours(body);
 }
 
 // ── SECTION 1: USER MANAGEMENT ──────────────────
@@ -2771,7 +2807,6 @@ function renderSettingsTaskSetup(body){
     +'<div class="fg" style="grid-column:1/-1"><label>TASK NAME *</label><input type="text" class="fi" id="sts-name" placeholder="Enter task name..." style="padding:9px 12px;font-size:.85rem"></div>'
     +'<div class="fg"><label>ASSIGN TO *</label><select class="fi-sel" id="sts-person" style="padding:9px 12px;font-size:.85rem"><option value="">-- Select Person --</option>'+pOpts+'</select></div>'
     +'<div class="fg"><label>LEAD TIME (minutes)</label><input type="number" class="fi" id="sts-lead" placeholder="e.g. 30" min="0" step="1" style="padding:9px 12px;font-size:.85rem"></div>'
-    +'<div class="fg"><label>PLAN DATE</label><input type="date" class="fi" id="sts-plandate" style="padding:9px 12px;font-size:.85rem;color-scheme:dark"></div>'
     +'<div class="fg"><label>PLAN TIME (deadline)</label><input type="time" class="fi" id="sts-plantime" style="padding:9px 12px;font-size:.85rem;color-scheme:dark"></div>'
     +'</div>'
     +'<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">'
@@ -2785,16 +2820,15 @@ function renderSettingsTaskSetup(body){
     const person=document.getElementById('sts-person').value;
     const leadRaw=document.getElementById('sts-lead').value;
     const planTime=document.getElementById('sts-plantime').value;
-    const planDate=document.getElementById('sts-plandate').value;
     const priority=document.getElementById('sts-prio').checked;
     if(!name){toast('Task name required','error');return;}
     if(!person){toast('Please assign to a person','error');return;}
     const leadTime=leadRaw?parseFloat(leadRaw)+'min':'';
-    tasks.push({sl:nextSl++,task:name,person,priority,planDate,planTime,actualDate:'',actualTime:'',leadTime});
+    tasks.push({sl:nextSl++,task:name,person,priority,planDate:'',planTime,actualDate:'',actualTime:'',leadTime});
     syncToSheets();
     toast('Task #'+(nextSl-1)+' added → '+person,'success');
     document.getElementById('sts-name').value='';document.getElementById('sts-person').value='';
-    document.getElementById('sts-lead').value='';document.getElementById('sts-plandate').value='';
+    document.getElementById('sts-lead').value='';
     document.getElementById('sts-plantime').value='';document.getElementById('sts-prio').checked=false;
     renderRecentSetup(body);
   };
@@ -2808,9 +2842,9 @@ function renderRecentSetup(body){
   const recent=tasks.slice(-6).reverse();
   if(!recent.length){wrap.innerHTML+='<div class="empty-msg">No tasks yet</div>';body.appendChild(wrap);return;}
   const list=document.createElement('div');list.className='task-list';
-  const cols='32px 1fr 110px 100px 80px 70px';
+  const cols='32px 1fr 110px 90px 70px';
   const hdr=document.createElement('div');hdr.className='tlh';hdr.style.gridTemplateColumns=cols;
-  hdr.innerHTML='<span>#</span><span>Task</span><span>Person</span><span>Plan Date</span><span>Plan Time</span><span>Lead</span>';
+  hdr.innerHTML='<span>#</span><span>Task</span><span>Person</span><span>Plan Time</span><span>Lead</span>';
   list.appendChild(hdr);
   recent.forEach((k,i)=>{
     const t2=th(k.person);const row=document.createElement('div');
@@ -2818,7 +2852,6 @@ function renderRecentSetup(body){
     row.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.7rem;color:var(--muted)">'+k.sl+'</span>'
       +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+k.task+(k.priority?' <span style="color:'+t2.accent+'">★</span>':'')+'</span>'
       +'<span style="display:flex;align-items:center;gap:5px"><span style="width:18px;height:18px;border-radius:4px;background:'+t2.bg+';color:'+t2.color+';display:inline-flex;align-items:center;justify-content:center;font-size:.5rem;font-weight:700;font-family:Syne,sans-serif">'+ini(k.person)+'</span><span style="color:'+t2.color+';font-size:.76rem">'+k.person.split('/')[0]+'</span></span>'
-      +'<span style="font-family:DM Mono,monospace;font-size:.7rem;color:#60a5fa">'+(k.planDate?fmtDate(k.planDate):'—')+'</span>'
       +'<span style="font-family:DM Mono,monospace;font-size:.7rem;color:#60a5fa">'+(k.planTime||'—')+'</span>'
       +'<span>'+(k.leadTime?'<span class="lead-badge">'+k.leadTime+'</span>':'<span style="font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted)">—</span>')+'</span>';
     list.appendChild(row);
@@ -2830,7 +2863,7 @@ function renderRecentSetup(body){
 function renderSettingsPlanTime(body){
   body.insertAdjacentHTML('beforeend',
     '<div class="s-section-title">📅 Plan Time</div>'
-    +'<div class="s-section-sub">// SET PLAN DATE & DEADLINE FOR EACH TASK · QUICK ACCESS</div>'
+    +'<div class="s-section-sub">// SET PLAN TIME FOR EACH TASK · QUICK ACCESS</div>'
   );
   // Compact filter
   const pOpts='<option value="">All Persons</option>'+PERSONS.map(p=>`<option value="${p}">${p}</option>`).join('');
@@ -2845,9 +2878,9 @@ function renderSettingsPlanTime(body){
     const fil=tasks.filter(k=>{if(q&&!k.task.toLowerCase().includes(q)&&!k.person.toLowerCase().includes(q))return false;if(pf&&k.person!==pf)return false;return true;});
     wrap.innerHTML='';
     const list=document.createElement('div');list.className='task-list';
-    const cols='30px 1fr 90px 125px 96px 80px';
+    const cols='30px 1fr 110px 120px 80px';
     const hdr=document.createElement('div');hdr.className='tlh';hdr.style.gridTemplateColumns=cols;
-    hdr.innerHTML='<span>#</span><span>Task</span><span>Person</span><span>Plan Date</span><span>Plan Time</span><span></span>';
+    hdr.innerHTML='<span>#</span><span>Task</span><span>Person</span><span>Plan Time</span><span></span>';
     list.appendChild(hdr);
     if(!fil.length){list.innerHTML+='<div class="empty-msg">No tasks found</div>';wrap.appendChild(list);return;}
     fil.slice(0,30).forEach((k,i)=>{
@@ -2856,7 +2889,6 @@ function renderSettingsPlanTime(body){
       row.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted)">'+k.sl+'</span>'
         +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.8rem">'+k.task+'</span>'
         +'<span style="color:'+t2.color+';font-size:.74rem">'+k.person.split('/')[0]+'</span>'
-        +'<div><input type="date" class="lead-inp" id="sptd-'+k.sl+'" value="'+(k.planDate||'')+'" style="width:125px;color-scheme:dark"></div>'
         +'<div><input type="time" class="lead-inp" id="sptt-'+k.sl+'" value="'+(k.planTime||'')+'" style="width:88px;color-scheme:dark"></div>'
         +'<button class="lead-save spt-save" data-sl="'+k.sl+'">SET</button>';
       list.appendChild(row);
@@ -2866,9 +2898,8 @@ function renderSettingsPlanTime(body){
     wrap.querySelectorAll('.spt-save').forEach(btn=>{
       btn.onclick=()=>{
         const sl=+btn.dataset.sl;const k=tasks.find(t=>t.sl===sl);if(!k)return;
-        k.planDate=document.getElementById('sptd-'+sl)?.value||'';
         k.planTime=document.getElementById('sptt-'+sl)?.value||'';
-        toast('Plan set for #'+sl+(k.planDate?' · '+fmtDate(k.planDate):'')+(k.planTime?' '+k.planTime:''),'success');syncToSheets();
+        toast('Plan time set for #'+sl+(k.planTime?' · '+k.planTime:''),'success');syncToSheets();
       };
     });
   };
@@ -2877,7 +2908,70 @@ function renderSettingsPlanTime(body){
   document.getElementById('spt-pf').onchange=drawSPT;
 }
 
-// ── SECTION 5: LEAD TIME ─────────────────────────
+// ── SECTION 5: WORKING HOURS ──────────────────────
+function renderSettingsWorkingHours(body){
+  body.insertAdjacentHTML('beforeend',
+    '<div class="s-section-title">🕒 Team Working Hours</div>'
+    +'<div class="s-section-sub">// DEFAULT 8 HOURS · EDIT PERSON-WISE BASED ON DAILY WORKLOAD</div>'
+  );
+  const persons=[...new Set([...PERSONS,...userRegistry.filter(u=>u.name!=='admin').map(u=>u.name),...tasks.map(t=>t.person)].filter(Boolean))];
+  const customCount=persons.filter(p=>Number(workingHours[p])>0&&Number(workingHours[p])!==8).length;
+  body.insertAdjacentHTML('beforeend',
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">'
+    +'<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px"><span style="font-family:Syne,sans-serif;font-size:1.3rem;font-weight:800;color:#60a5fa">'+persons.length+'</span><span style="margin-left:9px;font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted)">TEAM PERSONS</span></div>'
+    +'<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px"><span style="font-family:Syne,sans-serif;font-size:1.3rem;font-weight:800;color:#3ef0b0">8h</span><span style="margin-left:9px;font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted)">DEFAULT HOURS</span></div>'
+    +'<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px"><span style="font-family:Syne,sans-serif;font-size:1.3rem;font-weight:800;color:#f5c842">'+customCount+'</span><span style="margin-left:9px;font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted)">CUSTOMIZED</span></div>'
+    +'</div>'
+  );
+  const list=document.createElement('div');list.className='task-list';
+  const cols='45px 1fr 130px 190px';
+  const hdr=document.createElement('div');hdr.className='tlh';hdr.style.gridTemplateColumns=cols;
+  hdr.innerHTML='<span>#</span><span>Person</span><span>Current Hours</span><span>Set / Edit Daily Hours</span>';
+  list.appendChild(hdr);
+  if(!persons.length){list.innerHTML+='<div class="empty-msg">No team persons found</div>';body.appendChild(list);return;}
+  persons.forEach((person,i)=>{
+    const hasSaved=Number(workingHours[person])>0;
+    const t2=th(person),current=hasSaved?Number(workingHours[person]):8;
+    const row=document.createElement('div');
+    row.style.cssText='display:grid;grid-template-columns:'+cols+';align-items:center;padding:11px 14px;border-bottom:1px solid var(--border);gap:10px;font-size:.82rem;animation:rowIn .18s ease '+i*0.01+'s both';
+    row.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.68rem;color:var(--muted)">'+(i+1)+'</span>'
+      +'<span style="display:flex;align-items:center;gap:8px"><span style="width:24px;height:24px;border-radius:6px;background:'+t2.bg+';color:'+t2.color+';display:inline-flex;align-items:center;justify-content:center;font-size:.56rem;font-weight:700;font-family:Syne,sans-serif">'+ini(person)+'</span><span style="color:'+t2.color+'">'+person+'</span></span>'
+      +'<span><span class="time-badge plan" id="wh-current-'+i+'" style="font-size:.68rem">'+current+' Hours'+(!hasSaved?' · Default':'')+'</span></span>'
+      +'<div style="display:flex;align-items:center;gap:7px"><input type="number" class="lead-inp wh-inp" id="wh-'+i+'" value="'+current+'" placeholder="Hours" min="0.5" max="24" step="0.5" style="width:90px"><button class="lead-save wh-save" data-index="'+i+'">SAVE</button></div>';
+    list.appendChild(row);
+  });
+  body.appendChild(list);
+  list.querySelectorAll('.wh-save').forEach(btn=>{
+    btn.onclick=async()=>{
+      const i=Number(btn.dataset.index),person=persons[i];
+      const value=Number(document.getElementById('wh-'+i)?.value);
+      if(!Number.isFinite(value)||value<=0||value>24){toast('Enter working hours between 0.5 and 24','error');return;}
+      const had=Object.prototype.hasOwnProperty.call(workingHours,person),previous=workingHours[person];
+      workingHours[person]=value;
+      btn.disabled=true;btn.textContent='SAVING...';
+      const saveResult=await syncWorkingHours();
+      if(!saveResult){
+        if(had)workingHours[person]=previous;else delete workingHours[person];
+        btn.disabled=false;btn.textContent='SAVE';
+        toast('Working hours could not be saved','error');
+        return;
+      }
+      const currentBadge=document.getElementById('wh-current-'+i);
+      if(currentBadge)currentBadge.textContent=value+' Hours';
+      toast(person+' → '+value+' working hours saved'+(saveResult==='local'?' on this browser':''),'success');
+      renderSettingsBody(body);
+    };
+  });
+  list.querySelectorAll('.wh-inp').forEach((inp,i)=>{
+    inp.addEventListener('input',()=>{
+      const btn=list.querySelector('.wh-save[data-index="'+i+'"]');
+      if(btn){btn.textContent='SAVE';btn.style.color='#3ef0b0';btn.style.borderColor='rgba(62,240,176,.35)';}
+    });
+    inp.addEventListener('keydown',e=>{if(e.key==='Enter')list.querySelector('.wh-save[data-index="'+i+'"]')?.click();});
+  });
+}
+
+// ── SECTION 6: LEAD TIME ─────────────────────────
 function renderSettingsLeadTime(body){
   body.insertAdjacentHTML('beforeend',
     '<div class="s-section-title">⏱ Lead Time</div>'
