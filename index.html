@@ -841,6 +841,14 @@ function formatDateStorage(dateStr) {
 
 function getDone(u){if(!doneState[u])doneState[u]=new Set();return doneState[u];}
 
+function toAmPm(hhmm){
+  if(!hhmm||!hhmm.includes(':'))return hhmm;
+  const [h,m]=hhmm.split(':').map(Number);
+  const ampm=h<12?'AM':'PM';
+  const h12=h%12||12;
+  return String(h12).padStart(2,'0')+':'+String(m).padStart(2,'0')+' '+ampm;
+}
+
 // ─── HELPERS ───
 function formatDisplayDate(isoDate) {
   if (!isoDate) return '';
@@ -880,8 +888,7 @@ function actualBadge(k){
   const cmp=timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime);
   const cls=cmp==='late'?'overdue':cmp==='early'?'actual':'actual';
   const diff=timeDiff(k.planDate,k.planTime,k.actualDate,k.actualTime);
-  const locked=isTaskLocked(k,k.person);
-  return`<span class="time-badge ${cls}" title="${locked?'Locked after completion':''}">${checkIcon()} Done: ${k.actualTime}${diff?` <span style="opacity:0.7;font-size:0.6rem">(${diff})</span>`:''}${locked?' 🔒':''}</span>`;
+  return`<span class="time-badge ${cls}">${checkIcon()} Done: ${toAmPm(k.actualTime)}${diff?` <span style="opacity:0.7;font-size:0.6rem">(${diff})</span>`:''} 🔒</span>`;
 }
 
 // ─── LOGIN ───
@@ -1127,47 +1134,25 @@ function renderPersonal(){
 
     document.getElementById('taskRows').addEventListener('click',e=>{
       const tog=e.target.closest('.tog');
-      if(tog){
-        const sl=+tog.dataset.sl;
-        const d=getDone(currentUser);
-        const lockedTask=tasks.find(task=>task.sl===sl);
-        if(!lockedTask)return;
-
-        // Once actual time is saved and the task is marked DONE, it is permanently locked.
-        if(isTaskLocked(lockedTask,currentUser)){
-          toast('⚠ Task is locked (Actual Time saved + Done)','error');
-          return;
+      if(tog){const sl=+tog.dataset.sl,d=getDone(currentUser);
+        const lockedTask=tasks.find(x=>x.sl===sl);
+        // PERMANENT LOCK: once done with time, cannot undo
+        if(lockedTask && lockedTask.actualTime && d.has(sl)){
+          toast('🔒 Task locked — cannot undo once completed','error');return;
         }
-
-        if(d.has(sl)){
-          // Normally unreachable for a locked task, but keep state consistent.
-          d.delete(sl);
-        }else{
-          // Capture the exact browser-local current date/time when DONE is clicked.
-          const now=new Date();
-          const yyyy=now.getFullYear();
-          const mm=String(now.getMonth()+1).padStart(2,'0');
-          const dd=String(now.getDate()).padStart(2,'0');
-          const hh=String(now.getHours()).padStart(2,'0');
-          const mi=String(now.getMinutes()).padStart(2,'0');
-          const ss=String(now.getSeconds()).padStart(2,'0');
-
-          lockedTask.actualDate=`${yyyy}-${mm}-${dd}`;
-          lockedTask.actualTime=`${hh}:${mi}:${ss}`;
+        if(!d.has(sl)){
           d.add(sl);
-
-          syncToSheets();
-          updatePersonalStats(myTasks,t);
-          renderUserRows(myTasks,t,cols);
-          toast(`✓ Actual Time saved: ${lockedTask.actualTime} — Task locked`,'success');
-          return;
+          if(lockedTask){
+            const now=new Date();
+            const h=now.getHours(),m=now.getMinutes();
+            const ampm=h<12?'AM':'PM';
+            const h12=h%12||12;
+            lockedTask.actualTime=String(h12).padStart(2,'0')+':'+String(m).padStart(2,'0')+' '+ampm;
+            lockedTask.actualDate=now.toISOString().slice(0,10);
+          }
         }
-
-        syncToSheets();
-        updatePersonalStats(myTasks,t);
-        renderUserRows(myTasks,t,cols);
-        return;
-      }
+        syncToSheets();updatePersonalStats(myTasks,t);renderUserRows(myTasks,t,cols);return;}
+      // save-actual removed — time auto-set on toggle
     });
   }
 
@@ -1351,7 +1336,7 @@ function renderPersonal(){
         +'<span style="font-family:DM Mono,monospace;font-size:.62rem;color:var(--muted)">#'+k.sl+'</span>'
         +(k.planTime?'<span class="time-badge plan" style="font-size:.6rem;padding:2px 6px">Plan: '+k.planTime+'</span>':'')
         +(isUpdatedThisDay&&k.actualTime
-          ?'<span class="time-badge actual" style="font-size:.6rem;padding:2px 6px">Done: '+k.actualTime
+          ?'<span class="time-badge actual" style="font-size:.6rem;padding:2px 6px">Done: '+toAmPm(k.actualTime)
             +(k.planTime?' ('+timeDiff('',k.planTime,'',k.actualTime).replace('+','').replace(' late','').replace(' early','')+')'
             :'')
             +'</span>'
@@ -1363,17 +1348,31 @@ function renderPersonal(){
       const actDiv=document.createElement('div');
       actDiv.style.cssText='display:flex;align-items:center;gap:6px;flex-shrink:0;';
       if(isToday){
-        // read-only — time is set automatically by toggle
-        if(k.actualTime){
-          const lbl=document.createElement('span');
-          lbl.style.cssText='font-size:.7rem;color:#3ef0b0;font-family:"DM Mono",monospace;';
-          lbl.textContent='✓ '+k.actualTime;
-          actDiv.appendChild(lbl);
-        }
+        // editable today
+        const timeInp=document.createElement('input');
+        timeInp.type='time';timeInp.className='time-inp';
+        timeInp.value=k.actualTime||'';
+        timeInp.style.cssText='font-size:.68rem;padding:4px 6px;width:90px;color-scheme:dark;';
+        timeInp.id='cal-inp-'+k.sl;
+        const saveBtn=document.createElement('button');
+        saveBtn.className='time-save-btn actual-save';
+        saveBtn.textContent='SAVE';
+        saveBtn.onclick=()=>{
+          if(!timeInp.value){toast('Enter time first','error');return;}
+          k.actualTime=timeInp.value;
+          k.actualDate=dateStr;
+          getDone(currentUser).add(k.sl);
+          updatePersonalStats(myTasks,t);
+          toast('Saved: '+k.task+' @ '+k.actualTime,'success');
+          // rebuild day detail and calendar
+          const dateMap={};myTasks.forEach(x=>{if(x.actualDate){if(!dateMap[x.actualDate])dateMap[x.actualDate]=[];dateMap[x.actualDate].push(x);}});
+          buildCal();buildDayDetail(dateStr,dateMap[dateStr]||[],true,false,dateMap);
+        };
+        actDiv.appendChild(timeInp);actDiv.appendChild(saveBtn);
       } else if(isPast){
         // read-only past
         if(k.actualTime&&isUpdatedThisDay){
-          actDiv.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.66rem;color:#3ef0b0;background:rgba(62,240,176,.08);border:1px solid rgba(62,240,176,.2);border-radius:6px;padding:3px 8px">✓ '+k.actualTime+'</span>';
+          actDiv.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.66rem;color:#3ef0b0;background:rgba(62,240,176,.08);border:1px solid rgba(62,240,176,.2);border-radius:6px;padding:3px 8px">✓ '+toAmPm(k.actualTime)+' 🔒</span>';
         } else {
           actDiv.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted)">View only</span>';
         }
@@ -1419,11 +1418,7 @@ function renderUserRows(myTasks,t,cols){
     row.style.animationDelay=i*0.016+'s';
     if(k.priority)row.style.borderLeftColor=t.accent;
 
-    // actual time — read only, set automatically when toggled DONE
-    const actualInputHtml=`
-      <div class="time-cell">
-        ${actualBadge(k)}
-      </div>`;
+    const actualInputHtml=`<div class="time-cell">${actualBadge(k)}</div>`;
 
     row.innerHTML=`
       <span class="tsl">${k.sl}</span>
@@ -1434,8 +1429,8 @@ function renderUserRows(myTasks,t,cols){
       <div class="time-cell">${planBadge(k)}<span class="time-label">${k.planTime?'Deadline':'Admin sets this'}</span></div>
       ${actualInputHtml}
       <div class="tog-wrap" style="justify-content:flex-end">
-        <button class="tog${isDone?' on':''}" data-sl="${k.sl}"></button>
-        <span class="tog-lbl">${isDone?'DONE':'PEND'}</span>
+        <button class="tog${isDone?' on':''}" data-sl="${k.sl}" style="${isDone&&k.actualTime?'cursor:not-allowed;opacity:0.75;':''}"></button>
+        <span class="tog-lbl" style="${isDone&&k.actualTime?'color:#3ef0b0;font-weight:700;':''}">${isDone?'DONE':'PEND'}</span>
       </div>`;
     wrap.appendChild(row);
   });
