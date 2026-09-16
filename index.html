@@ -805,7 +805,7 @@ async function initFromSheets() {
 // ─── STATE ───
 let currentUser=null,taskFilter='all',searchQ='',adminTab='overview',userView='list';
 let moduleAccess = {}; // user → [module IDs]
-let kpiFrom='',kpiTo='',kpiMonth='';
+let kpiDate='',kpiMonth='';
 let calYear=new Date().getFullYear(),calMonth=new Date().getMonth(),calSelectedDate='';
 let ovCalYear=new Date().getFullYear(),ovCalMonth=new Date().getMonth(),ovCalSelected='';
 const doneState={};
@@ -840,14 +840,6 @@ function formatDateStorage(dateStr) {
 }
 
 function getDone(u){if(!doneState[u])doneState[u]=new Set();return doneState[u];}
-
-function toAmPm(hhmm){
-  if(!hhmm||!hhmm.includes(':'))return hhmm;
-  const [h,m]=hhmm.split(':').map(Number);
-  const ampm=h<12?'AM':'PM';
-  const h12=h%12||12;
-  return String(h12).padStart(2,'0')+':'+String(m).padStart(2,'0')+' '+ampm;
-}
 
 // ─── HELPERS ───
 function formatDisplayDate(isoDate) {
@@ -888,7 +880,7 @@ function actualBadge(k){
   const cmp=timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime);
   const cls=cmp==='late'?'overdue':cmp==='early'?'actual':'actual';
   const diff=timeDiff(k.planDate,k.planTime,k.actualDate,k.actualTime);
-  return`<span class="time-badge ${cls}">${checkIcon()} Done: ${toAmPm(k.actualTime)}${diff?` <span style="opacity:0.7;font-size:0.6rem">(${diff})</span>`:''} 🔒</span>`;
+  return`<span class="time-badge ${cls}">${checkIcon()} Done: ${k.actualTime}${diff?` <span style="opacity:0.7;font-size:0.6rem">(${diff})</span>`:''}</span>`;
 }
 
 // ─── LOGIN ───
@@ -979,7 +971,7 @@ function openApp(){startPolling();
   av.style.background=t.bg;av.style.color=t.color;
   document.getElementById('ucNm').textContent=currentUser==='admin'?'Administrator':currentUser;
   document.getElementById('adminBadge').style.display=currentUser==='admin'?'inline':'none';
-  taskFilter='all';searchQ='';adminTab='overview';userView='list';kpiFrom='';kpiTo='';kpiMonth='';
+  taskFilter='all';searchQ='';adminTab='overview';userView='list';kpiDate='';kpiMonth='';
   calYear=new Date().getFullYear();calMonth=new Date().getMonth();calSelectedDate='';
   ovCalYear=new Date().getFullYear();ovCalMonth=new Date().getMonth();ovCalSelected='';
   renderContent();
@@ -1134,25 +1126,24 @@ function renderPersonal(){
 
     document.getElementById('taskRows').addEventListener('click',e=>{
       const tog=e.target.closest('.tog');
-      if(tog){const sl=+tog.dataset.sl,d=getDone(currentUser);
-        const lockedTask=tasks.find(x=>x.sl===sl);
-        // PERMANENT LOCK: once done with time, cannot undo
-        if(lockedTask && lockedTask.actualTime && d.has(sl)){
-          toast('🔒 Task locked — cannot undo once completed','error');return;
-        }
-        if(!d.has(sl)){
-          d.add(sl);
-          if(lockedTask){
-            const now=new Date();
-            const h=now.getHours(),m=now.getMinutes();
-            const ampm=h<12?'AM':'PM';
-            const h12=h%12||12;
-            lockedTask.actualTime=String(h12).padStart(2,'0')+':'+String(m).padStart(2,'0')+' '+ampm;
-            lockedTask.actualDate=now.toISOString().slice(0,10);
-          }
-        }
-        syncToSheets();updatePersonalStats(myTasks,t);renderUserRows(myTasks,t,cols);return;}
-      // save-actual removed — time auto-set on toggle
+      if(tog){const sl=+tog.dataset.sl,d=getDone(currentUser);// Check if task is locked
+      const lockedTask = tasks.find(t => t.sl === sl);
+      if (lockedTask && isTaskLocked(lockedTask, t)) {
+        toast('⚠ Task is locked (saved + done)', 'error');
+        return;
+      }
+      d.has(sl)?d.delete(sl):d.add(sl);syncToSheets();updatePersonalStats(myTasks,t);renderUserRows(myTasks,t,cols);return;}
+      const saveBtn=e.target.closest('.save-actual');
+      if(saveBtn){
+        const sl=+saveBtn.dataset.sl;
+        const timeEl=document.getElementById('at-inp-'+sl);
+        const k=tasks.find(x=>x.sl===sl);
+        if(k){k.actualTime=timeEl?timeEl.value:'';
+          if(!k.actualTime){toast('Enter completion time first','error');return;}
+          k.actualDate=new Date().toISOString().slice(0,10);
+          toast('Completion time saved ✓','success');}
+        renderUserRows(myTasks,t,cols);
+      }
     });
   }
 
@@ -1336,7 +1327,7 @@ function renderPersonal(){
         +'<span style="font-family:DM Mono,monospace;font-size:.62rem;color:var(--muted)">#'+k.sl+'</span>'
         +(k.planTime?'<span class="time-badge plan" style="font-size:.6rem;padding:2px 6px">Plan: '+k.planTime+'</span>':'')
         +(isUpdatedThisDay&&k.actualTime
-          ?'<span class="time-badge actual" style="font-size:.6rem;padding:2px 6px">Done: '+toAmPm(k.actualTime)
+          ?'<span class="time-badge actual" style="font-size:.6rem;padding:2px 6px">Done: '+k.actualTime
             +(k.planTime?' ('+timeDiff('',k.planTime,'',k.actualTime).replace('+','').replace(' late','').replace(' early','')+')'
             :'')
             +'</span>'
@@ -1372,7 +1363,7 @@ function renderPersonal(){
       } else if(isPast){
         // read-only past
         if(k.actualTime&&isUpdatedThisDay){
-          actDiv.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.66rem;color:#3ef0b0;background:rgba(62,240,176,.08);border:1px solid rgba(62,240,176,.2);border-radius:6px;padding:3px 8px">✓ '+toAmPm(k.actualTime)+' 🔒</span>';
+          actDiv.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.66rem;color:#3ef0b0;background:rgba(62,240,176,.08);border:1px solid rgba(62,240,176,.2);border-radius:6px;padding:3px 8px">✓ '+k.actualTime+'</span>';
         } else {
           actDiv.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted)">View only</span>';
         }
@@ -1418,7 +1409,17 @@ function renderUserRows(myTasks,t,cols){
     row.style.animationDelay=i*0.016+'s';
     if(k.priority)row.style.borderLeftColor=t.accent;
 
-    const actualInputHtml=`<div class="time-cell">${actualBadge(k)}</div>`;
+    // actual time — locked if already saved, editable if not yet set
+    const actualInputHtml=`
+      <div class="time-cell">
+        ${actualBadge(k)}
+        ${!k.actualTime?`
+        <div class="time-input-wrap" style="margin-top:4px">
+          <input type="time" class="time-inp" id="at-inp-${k.sl}" value="" style="font-size:.66rem;padding:3px 5px;width:85px;" title="Completion Time">
+          <button class="time-save-btn actual-save save-actual" data-sl="${k.sl}">SAVE</button>
+        </div>`
+        :`<span style="font-family:'DM Mono',monospace;font-size:.6rem;color:var(--muted);margin-top:3px;display:block">🔒 Locked</span>`}
+      </div>`;
 
     row.innerHTML=`
       <span class="tsl">${k.sl}</span>
@@ -1429,8 +1430,8 @@ function renderUserRows(myTasks,t,cols){
       <div class="time-cell">${planBadge(k)}<span class="time-label">${k.planTime?'Deadline':'Admin sets this'}</span></div>
       ${actualInputHtml}
       <div class="tog-wrap" style="justify-content:flex-end">
-        <button class="tog${isDone?' on':''}" data-sl="${k.sl}" style="${isDone&&k.actualTime?'cursor:not-allowed;opacity:0.75;':''}"></button>
-        <span class="tog-lbl" style="${isDone&&k.actualTime?'color:#3ef0b0;font-weight:700;':''}">${isDone?'DONE':'PEND'}</span>
+        <button class="tog${isDone?' on':''}" data-sl="${k.sl}"></button>
+        <span class="tog-lbl">${isDone?'DONE':'PEND'}</span>
       </div>`;
     wrap.appendChild(row);
   });
@@ -2035,23 +2036,20 @@ function buildPlanTime(c){
 
 // ── KPI DASHBOARD ──
 function buildKPI(c){
-  c.insertAdjacentHTML('beforeend','<div style="font-family:Syne,sans-serif;font-size:1.5rem;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">KPI <span style="color:#f5c842">Dashboard</span></div><div style="font-size:.72rem;font-family:DM Mono,monospace;color:var(--muted);margin-bottom:16px">// ANALYTICS · FILTER BY DATE RANGE OR MONTH</div>');
+  c.insertAdjacentHTML('beforeend','<div style="font-family:Syne,sans-serif;font-size:1.5rem;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">KPI <span style="color:#f5c842">Dashboard</span></div><div style="font-size:.72rem;font-family:DM Mono,monospace;color:var(--muted);margin-bottom:16px">// ANALYTICS · FILTER BY DATE OR MONTH</div>');
   const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
   const fb=document.createElement('div');fb.className='dr-bar';fb.style.flexWrap='wrap';
-  fb.innerHTML=calIco()+' <label>DATE RANGE</label>'
-    +'<input type="text" pattern="\d{2}/\d{2}/\d{4}" class="date-inp" id="kpiFrom" value="'+kpiFrom+'">'
-    +'<span class="dr-sep">to</span>'
-    +'<input type="text" pattern="\d{2}/\d{2}/\d{4}" class="date-inp" id="kpiTo" value="'+kpiTo+'">'
-    +'<label style="margin-left:8px">OR MONTH</label>'
+  fb.innerHTML=calIco()+' <label>DATE</label>'
+    +'<input type="date" class="date-inp" id="kpiDate" value="'+kpiDate+'" style="color-scheme:dark;">'
+    +'<label style="margin-left:12px">MONTH</label>'
     +'<select class="field-select" id="kpiMonth" style="padding:6px 26px 6px 10px;font-size:.78rem"><option value="">All Months</option>'
     +months.map((m,i)=>'<option value="'+i+'" '+(kpiMonth===String(i)?'selected':'')+'>'+m+'</option>').join('')
     +'</select><button class="dr-clear" id="kpiClear">Clear</button>';
   c.appendChild(fb);
   const wrap=document.createElement('div');wrap.id='kpi-wrap';c.appendChild(wrap);
-  document.getElementById('kpiFrom').onchange=e=>{kpiFrom=e.target.value;kpiMonth='';document.getElementById('kpiMonth').value='';buildKPICharts();};
-  document.getElementById('kpiTo').onchange=e=>{kpiTo=e.target.value;kpiMonth='';document.getElementById('kpiMonth').value='';buildKPICharts();};
-  document.getElementById('kpiMonth').onchange=e=>{kpiMonth=e.target.value;kpiFrom='';kpiTo='';document.getElementById('kpiFrom').value='';document.getElementById('kpiTo').value='';buildKPICharts();};
-  document.getElementById('kpiClear').onclick=()=>{kpiFrom='';kpiTo='';kpiMonth='';['kpiFrom','kpiTo','kpiMonth'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});buildKPICharts();};
+  document.getElementById('kpiDate').onchange=e=>{kpiDate=e.target.value;kpiMonth='';document.getElementById('kpiMonth').value='';buildKPICharts();};
+  document.getElementById('kpiMonth').onchange=e=>{kpiMonth=e.target.value;kpiDate='';document.getElementById('kpiDate').value='';buildKPICharts();};
+  document.getElementById('kpiClear').onclick=()=>{kpiDate='';kpiMonth='';document.getElementById('kpiDate').value='';document.getElementById('kpiMonth').value='';buildKPICharts();};
   buildKPICharts();
 }
 
@@ -2059,7 +2057,7 @@ function getKPITasks(){
   return tasks.filter(k=>{
     const d=k.actualDate||k.planDate;
     if(kpiMonth!==''){if(!d)return true;return new Date(d).getMonth()===+kpiMonth;}
-    if(kpiFrom||kpiTo){return inRange(d,kpiFrom,kpiTo);}
+    if(kpiDate){return d===kpiDate;}
     return true;
   });
 }
