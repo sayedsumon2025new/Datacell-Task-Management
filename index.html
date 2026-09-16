@@ -814,11 +814,10 @@ const doneState={};
 // Helper functions for task locking and date formatting
 // ──────────────────────────────────────────────────────────────────
 
-// Check if task is locked (has actual time saved AND is marked done)
-function isTaskLocked(task, user) {
-  if (!task.actualTime) return false;
-  const done = doneState[user];
-  return done && done.has(task.sl);
+// Actual time is immutable once saved. This remains true even if an older
+// record is missing its done-state row.
+function isTaskLocked(task) {
+  return !!(task && task.actualTime);
 }
 
 // Format date for display: YYYY-MM-DD → DD/MM/YYYY
@@ -837,6 +836,15 @@ function formatDateStorage(dateStr) {
   if (parts.length !== 3) return dateStr;
   const [d, m, y] = parts;
   return y + '-' + m.padStart(2,'0') + '-' + d.padStart(2,'0');
+}
+
+// Use the browser's local date instead of UTC so a completion saved near
+// midnight is not accidentally recorded against the previous/next day.
+function localISODate(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 function getDone(u){if(!doneState[u])doneState[u]=new Set();return doneState[u];}
@@ -1128,7 +1136,7 @@ function renderPersonal(){
       const tog=e.target.closest('.tog');
       if(tog){const sl=+tog.dataset.sl,d=getDone(currentUser);// Check if task is locked
       const lockedTask = tasks.find(t => t.sl === sl);
-      if (lockedTask && isTaskLocked(lockedTask, t)) {
+      if (lockedTask && isTaskLocked(lockedTask, currentUser)) {
         toast('⚠ Task is locked (saved + done)', 'error');
         return;
       }
@@ -1138,10 +1146,16 @@ function renderPersonal(){
         const sl=+saveBtn.dataset.sl;
         const timeEl=document.getElementById('at-inp-'+sl);
         const k=tasks.find(x=>x.sl===sl);
-        if(k){k.actualTime=timeEl?timeEl.value:'';
-          if(!k.actualTime){toast('Enter completion time first','error');return;}
-          k.actualDate=new Date().toISOString().slice(0,10);
-          toast('Completion time saved ✓','success');}
+        if(k){
+          const actualTime=timeEl?timeEl.value:'';
+          if(!actualTime){toast('Enter completion time first','error');return;}
+          k.actualTime=actualTime;
+          k.actualDate=localISODate();
+          getDone(currentUser).add(k.sl);
+          syncToSheets();
+          updatePersonalStats(myTasks,t);
+          toast('Completion time saved and locked ✓','success');
+        }
         renderUserRows(myTasks,t,cols);
       }
     });
@@ -1155,7 +1169,7 @@ function renderPersonal(){
 
     function buildCal(){
       calBox.innerHTML='';
-      const today=new Date().toISOString().slice(0,10);
+      const today=localISODate();
       const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
       const DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
@@ -1338,8 +1352,8 @@ function renderPersonal(){
 
       const actDiv=document.createElement('div');
       actDiv.style.cssText='display:flex;align-items:center;gap:6px;flex-shrink:0;';
-      if(isToday){
-        // editable today
+      if(isToday && !isTaskLocked(k,currentUser)){
+        // Today's unsaved task is editable; a saved completion is locked.
         const timeInp=document.createElement('input');
         timeInp.type='time';timeInp.className='time-inp';
         timeInp.value=k.actualTime||'';
@@ -1353,13 +1367,16 @@ function renderPersonal(){
           k.actualTime=timeInp.value;
           k.actualDate=dateStr;
           getDone(currentUser).add(k.sl);
+          syncToSheets();
           updatePersonalStats(myTasks,t);
-          toast('Saved: '+k.task+' @ '+k.actualTime,'success');
+          toast('Saved and locked: '+k.task+' @ '+k.actualTime,'success');
           // rebuild day detail and calendar
           const dateMap={};myTasks.forEach(x=>{if(x.actualDate){if(!dateMap[x.actualDate])dateMap[x.actualDate]=[];dateMap[x.actualDate].push(x);}});
           buildCal();buildDayDetail(dateStr,dateMap[dateStr]||[],true,false,dateMap);
         };
         actDiv.appendChild(timeInp);actDiv.appendChild(saveBtn);
+      } else if(isTaskLocked(k,currentUser)){
+        actDiv.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.66rem;color:#3ef0b0;background:rgba(62,240,176,.08);border:1px solid rgba(62,240,176,.2);border-radius:6px;padding:3px 8px">🔒 '+k.actualTime+'</span>';
       } else if(isPast){
         // read-only past
         if(k.actualTime&&isUpdatedThisDay){
@@ -1564,7 +1581,7 @@ function buildOverview(c){
 
   function buildOvCal(){
     ovCalBox.innerHTML='';
-    const today=new Date().toISOString().slice(0,10);
+    const today=localISODate();
     const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
     const DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
@@ -1659,7 +1676,7 @@ function buildOverview(c){
       buildOvCal();
       if(ovCalSelected){
         const pT=planMap[ovCalSelected]||[],aT=actualMap[ovCalSelected]||[];
-        buildOvDayDetail(ovCalSelected,pT,aT,ovCalSelected===new Date().toISOString().slice(0,10));
+        buildOvDayDetail(ovCalSelected,pT,aT,ovCalSelected===localISODate());
       }
     };
     document.getElementById('ovCalNext').onclick=()=>{
@@ -1667,7 +1684,7 @@ function buildOverview(c){
       buildOvCal();
       if(ovCalSelected){
         const pT=planMap[ovCalSelected]||[],aT=actualMap[ovCalSelected]||[];
-        buildOvDayDetail(ovCalSelected,pT,aT,ovCalSelected===new Date().toISOString().slice(0,10));
+        buildOvDayDetail(ovCalSelected,pT,aT,ovCalSelected===localISODate());
       }
     };
 
@@ -1683,7 +1700,7 @@ function buildOverview(c){
     const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
     const [y,mo,d]=dateStr.split('-');
     const dateLabel=d+' '+MONTHS[+mo-1]+' '+y;
-    const today=new Date().toISOString().slice(0,10);
+    const today=localISODate();
     const isPast=dateStr<today;
 
     const panel=document.createElement('div');panel.className='day-detail';
@@ -2136,7 +2153,7 @@ function buildKPICharts(){
   const ltTableBox=document.createElement('div');ltTableBox.className='chart-full';
   ltTableBox.innerHTML='<h4 style="font-family:Syne,sans-serif;font-size:.9rem;font-weight:700;margin-bottom:12px">⏱ Workload Balancing Table <span style="font-family:DM Mono,monospace;font-size:.62rem;font-weight:400;color:var(--muted)">· lead time per person vs team average</span></h4>'
     +'<table class="pct-table"><thead><tr>'
-    +'<th>PERSON</th><th>TASKS W/ LEAD</th><th>TOTAL HRS</th><th>AVG PER TASK</th><th>COMPLETED HRS</th><th>REMAINING HRS</th><th>VS AVERAGE</th>'
+    +'<th>PERSON</th><th>TASKS W/ LEAD</th><th>TOTAL MIN</th><th>AVG PER TASK</th><th>COMPLETED MIN</th><th>REMAINING MIN</th><th>VS AVERAGE</th>'
     +'</tr></thead><tbody id="ltTableBody"></tbody></table>';
   ltSection.appendChild(ltTableBox);
   wrap.appendChild(ltSection);
@@ -2208,8 +2225,8 @@ function buildKPICharts(){
     const ltStrip=document.getElementById('lt-summary-strip');
     if(ltStrip){
       [{l:'Total Minutes Allocated',v:totalLeadHrs.toFixed(0)+'m',c:'#a3e635'},
-       {l:'Avg Per Person',v:avgHrs+'h',c:'#60a5fa'},
-       {l:'Heaviest Load',v:maxPerson.name.split('/')[0]+' ('+maxPerson.total+'h)',c:'#f87171'},
+       {l:'Avg Per Person',v:avgHrs+'m',c:'#60a5fa'},
+       {l:'Heaviest Load',v:maxPerson.name.split('/')[0]+' ('+maxPerson.total+'m)',c:'#f87171'},
        {l:'Tasks w/ Lead Time',v:tasksWithLead+'/'+filtered.length,c:'#f5c842'},
       ].forEach(x=>{
         const el=document.createElement('div');
@@ -2227,8 +2244,8 @@ function buildKPICharts(){
           data:{
             labels:ltPersonData.map(x=>x.name.split('/')[0]),
             datasets:[
-              {label:'Done hrs',data:ltPersonData.map(x=>x.done),backgroundColor:ltPersonData.map(x=>th(x.name).accent+'cc'),borderRadius:4,borderSkipped:false},
-              {label:'Remaining hrs',data:ltPersonData.map(x=>x.pend),backgroundColor:ltPersonData.map(x=>th(x.name).accent+'33'),borderRadius:4,borderSkipped:false},
+              {label:'Done min',data:ltPersonData.map(x=>x.done),backgroundColor:ltPersonData.map(x=>th(x.name).accent+'cc'),borderRadius:4,borderSkipped:false},
+              {label:'Remaining min',data:ltPersonData.map(x=>x.pend),backgroundColor:ltPersonData.map(x=>th(x.name).accent+'33'),borderRadius:4,borderSkipped:false},
             ]
           },
           options:{
@@ -2246,13 +2263,13 @@ function buildKPICharts(){
                 callbacks:{
                   label:ctx=>{
                     const d=ltPersonData[ctx.dataIndex];
-                    if(ctx.datasetIndex===0)return' Done: '+d.done+'h ('+d.count+' tasks)';
-                    return' Remaining: '+d.pend+'h';
+                    if(ctx.datasetIndex===0)return' Done: '+d.done+'m ('+d.count+' tasks)';
+                    return' Remaining: '+d.pend+'m';
                   },
                   afterBody:items=>{
                     const d=ltPersonData[items[0].dataIndex];
                     const vs=d.total-avgHrs;
-                    return['Total: '+d.total+'h','vs Avg: '+(vs>=0?'+':'')+vs.toFixed(1)+'h '+(vs>0?'⬆ Overloaded':'⬇ Under avg')];
+                    return['Total: '+d.total+'m','vs Avg: '+(vs>=0?'+':'')+vs.toFixed(1)+'m '+(vs>0?'⬆ Overloaded':'⬇ Under avg')];
                   }
                 }
               },
@@ -2270,7 +2287,7 @@ function buildKPICharts(){
           ctx2.strokeStyle='rgba(245,200,66,.6)';ctx2.lineWidth=1.5;ctx2.setLineDash([5,4]);
           ctx2.moveTo(xPx,yScale.top);ctx2.lineTo(xPx,yScale.bottom);ctx2.stroke();
           ctx2.fillStyle='#f5c842';ctx2.font='9px DM Mono,monospace';
-          ctx2.fillText('avg '+avgHrs+'h',xPx+4,yScale.top+10);
+          ctx2.fillText('avg '+avgHrs+'m',xPx+4,yScale.top+10);
           ctx2.restore();
         }};
         Chart.register(avgLinePlugin);
@@ -2317,7 +2334,7 @@ function buildKPICharts(){
                 callbacks:{
                   label:ctx=>{
                     const d=ltTaskData[ctx.dataIndex];
-                    return[' '+d.hrs+'h · '+d.person,' Status: '+(d.done?'✓ Done':'Pending')+(d.priority?' ★':'')];
+                    return[' '+d.hrs+'m · '+d.person,' Status: '+(d.done?'✓ Done':'Pending')+(d.priority?' ★':'')];
                   }
                 }
               }
@@ -2337,17 +2354,17 @@ function buildKPICharts(){
           const t2=th(x.name);
           const vs=+(x.total-avgHrs).toFixed(1);
           const vsColor=vs>2?'#f87171':vs<-2?'#3ef0b0':'#f5c842';
-          const vsLabel=vs===0?'On avg':vs>0?'+'+vs+'h overloaded':vs+'h under avg';
+          const vsLabel=vs===0?'On avg':vs>0?'+'+vs+'m overloaded':vs+'m under avg';
           const barPct=maxPerson.total>0?Math.round((x.total/maxPerson.total)*100):0;
           const tr=document.createElement('tr');
           tr.innerHTML='<td><span style="display:inline-flex;align-items:center;gap:7px">'
             +'<span style="width:22px;height:22px;border-radius:6px;background:'+t2.bg+';color:'+t2.color+';display:inline-flex;align-items:center;justify-content:center;font-size:.55rem;font-weight:700;font-family:Syne,sans-serif">'+ini(x.name)+'</span>'
             +'<span style="color:'+t2.color+'">'+x.name+'</span></span></td>'
             +'<td style="font-family:DM Mono,monospace;font-size:.8rem">'+x.count+'</td>'
-            +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:#a3e635;font-weight:600">'+x.total+'h</td>'
-            +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:var(--muted)">'+(x.count?+(x.total/x.count).toFixed(1)+'h':'—')+'</td>'
-            +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:#3ef0b0">'+x.done+'h</td>'
-            +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:#f87171">'+x.pend+'h</td>'
+            +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:#a3e635;font-weight:600">'+x.total+'m</td>'
+            +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:var(--muted)">'+(x.count?+(x.total/x.count).toFixed(1)+'m':'—')+'</td>'
+            +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:#3ef0b0">'+x.done+'m</td>'
+            +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:#f87171">'+x.pend+'m</td>'
             +'<td><div style="display:flex;align-items:center;gap:8px">'
             +'<div style="flex:1;height:5px;background:var(--border);border-radius:4px;min-width:60px"><div style="height:100%;width:'+barPct+'%;background:'+t2.accent+';border-radius:4px;transition:width .4s"></div></div>'
             +'<span style="font-family:DM Mono,monospace;font-size:.7rem;color:'+vsColor+';white-space:nowrap">'+vsLabel+'</span>'
@@ -2358,8 +2375,8 @@ function buildKPICharts(){
         const avgTr=document.createElement('tr');
         avgTr.style.cssText='background:rgba(245,200,66,.04);border-top:1px solid rgba(245,200,66,.15)';
         avgTr.innerHTML='<td style="font-family:DM Mono,monospace;font-size:.72rem;color:#f5c842;letter-spacing:.06em" colspan="2">TEAM AVERAGE</td>'
-          +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:#f5c842;font-weight:600">'+totalLeadHrs.toFixed(1)+'h total</td>'
-          +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:#f5c842">'+avgHrs+'h / person</td>'
+          +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:#f5c842;font-weight:600">'+totalLeadHrs.toFixed(1)+'m total</td>'
+          +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:#f5c842">'+avgHrs+'m / person</td>'
           +'<td colspan="3" style="font-family:DM Mono,monospace;font-size:.7rem;color:var(--muted)">'+tasksWithLead+' tasks with lead time · '+tasksNoLead+' without</td>';
         ltTbody.appendChild(avgTr);
       } else {
@@ -2687,7 +2704,7 @@ function renderSettingsTaskSetup(body){
     +'<div class="fg" style="grid-column:1/-1"><label>TASK NAME *</label><input type="text" class="fi" id="sts-name" placeholder="Enter task name..." style="padding:9px 12px;font-size:.85rem"></div>'
     +'<div class="fg"><label>ASSIGN TO *</label><select class="fi-sel" id="sts-person" style="padding:9px 12px;font-size:.85rem"><option value="">-- Select Person --</option>'+pOpts+'</select></div>'
     +'<div class="fg"><label>LEAD TIME (minutes)</label><input type="number" class="fi" id="sts-lead" placeholder="e.g. 30" min="0" step="1" style="padding:9px 12px;font-size:.85rem"></div>'
-    +'<div class="fg"><label>PLAN DATE</label><input type="text" pattern="\d{2}/\d{2}/\d{4}" class="fi" id="sts-plandate" style="padding:9px 12px;font-size:.85rem;color-scheme:dark"></div>'
+    +'<div class="fg"><label>PLAN DATE</label><input type="date" class="fi" id="sts-plandate" style="padding:9px 12px;font-size:.85rem;color-scheme:dark"></div>'
     +'<div class="fg"><label>PLAN TIME (deadline)</label><input type="time" class="fi" id="sts-plantime" style="padding:9px 12px;font-size:.85rem;color-scheme:dark"></div>'
     +'</div>'
     +'<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">'
@@ -2701,7 +2718,7 @@ function renderSettingsTaskSetup(body){
     const person=document.getElementById('sts-person').value;
     const leadRaw=document.getElementById('sts-lead').value;
     const planTime=document.getElementById('sts-plantime').value;
-    const planDate=''; // removed — only planTime used
+    const planDate=document.getElementById('sts-plandate').value;
     const priority=document.getElementById('sts-prio').checked;
     if(!name){toast('Task name required','error');return;}
     if(!person){toast('Please assign to a person','error');return;}
@@ -2772,7 +2789,7 @@ function renderSettingsPlanTime(body){
       row.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted)">'+k.sl+'</span>'
         +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.8rem">'+k.task+'</span>'
         +'<span style="color:'+t2.color+';font-size:.74rem">'+k.person.split('/')[0]+'</span>'
-        +'<div><input type="text" pattern="\d{2}/\d{2}/\d{4}" class="lead-inp" id="sptd-'+k.sl+'" value="'+(k.planDate||'')+'" style="width:115px;color-scheme:dark"></div>'
+        +'<div><input type="date" class="lead-inp" id="sptd-'+k.sl+'" value="'+(k.planDate||'')+'" style="width:125px;color-scheme:dark"></div>'
         +'<div><input type="time" class="lead-inp" id="sptt-'+k.sl+'" value="'+(k.planTime||'')+'" style="width:88px;color-scheme:dark"></div>'
         +'<button class="lead-save spt-save" data-sl="'+k.sl+'">SET</button>';
       list.appendChild(row);
@@ -2821,7 +2838,7 @@ function renderSettingsLeadTime(body){
   const bulk=document.createElement('div');
   bulk.style.cssText='background:rgba(163,230,53,.04);border:1px solid rgba(163,230,53,.15);border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap';
   bulk.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.68rem;color:#a3e635">BULK SET</span>'
-    +'<input type="number" class="lead-inp" id="lt-bulk-val" placeholder="Hours" min="0" step="1" style="width:90px">'
+    +'<input type="number" class="lead-inp" id="lt-bulk-val" placeholder="Minutes" min="0" step="1" style="width:100px">'
     +'<button class="lead-save" id="lt-bulk-btn">Apply to Filtered</button>'
     +'<button class="fbtn" id="lt-clear-all" style="font-size:.65rem">Clear All Lead Times</button>';
   body.appendChild(bulk);
@@ -2848,12 +2865,12 @@ function renderSettingsLeadTime(body){
     fil.forEach((k,i)=>{
       const t2=th(k.person);const row=document.createElement('div');
       row.style.cssText='display:grid;grid-template-columns:'+cols+';align-items:center;padding:9px 14px;border-bottom:1px solid var(--border);gap:8px;font-size:.82rem;animation:rowIn .18s ease '+i*0.008+'s both;'+(k.priority?'border-left:3px solid '+t2.accent+';':'');
-      const curHrs=k.leadTime?k.leadTime.replace('h',''):'';
+      const curHrs=k.leadTime?parseFloat(k.leadTime):'';
       row.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted)">'+k.sl+'</span>'
         +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.8rem">'+k.task+(k.priority?' <span style="color:'+t2.accent+'">★</span>':'')+'</span>'
         +'<span style="color:'+t2.color+';font-size:.74rem">'+k.person.split('/')[0]+'</span>'
         +'<div style="display:flex;align-items:center;gap:5px">'+(k.leadTime?'<span class="lead-badge">'+k.leadTime+'</span>':'<span style="font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted)">—</span>')+'</div>'
-        +'<div style="display:flex;align-items:center;gap:5px"><input type="number" class="lead-inp lt-inp" id="lt-'+k.sl+'" value="'+curHrs+'" placeholder="hrs" min="0" step="1"><button class="lead-save lt-save" data-sl="'+k.sl+'">SET</button></div>';
+        +'<div style="display:flex;align-items:center;gap:5px"><input type="number" class="lead-inp lt-inp" id="lt-'+k.sl+'" value="'+curHrs+'" placeholder="min" min="0" step="1"><button class="lead-save lt-save" data-sl="'+k.sl+'">SET</button></div>';
       list.appendChild(row);
     });
     wrap2.appendChild(list);
@@ -2871,11 +2888,11 @@ function renderSettingsLeadTime(body){
       const val=document.getElementById('lt-bulk-val')?.value;
       if(!val){toast('Enter minutes first','error');return;}
       fil.forEach(k=>{k.leadTime=parseFloat(val)+'min';});
-      toast('Lead time set to '+val+'h for '+fil.length+' tasks','success');syncToSheets();
+      toast('Lead time set to '+val+'min for '+fil.length+' tasks','success');syncToSheets();
       drawLT();
     };
     document.getElementById('lt-clear-all').onclick=()=>{
-      confirm2('Clear All Lead Times?','This will remove lead time from ALL tasks.',()=>{tasks.forEach(t=>{t.leadTime='';});toast('All lead times cleared','info');drawLT();});
+      confirm2('Clear All Lead Times?','This will remove lead time from ALL tasks.',()=>{tasks.forEach(t=>{t.leadTime='';});syncToSheets();toast('All lead times cleared','info');drawLT();});
     };
   };
 
