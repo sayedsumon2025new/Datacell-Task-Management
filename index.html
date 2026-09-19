@@ -2357,6 +2357,18 @@ function buildPlanTime(c){
 
 
 // ── KPI DASHBOARD ──
+function personWorkloadMetrics(person,date){
+  const assigned=tasks.filter(task=>task.person===person);
+  const totalMinutes=assigned.reduce((sum,task)=>sum+leadMinutes(task.leadTime),0);
+  const completedMinutes=assigned.filter(task=>isTaskComplete(task)&&task.actualDate===date)
+    .reduce((sum,task)=>sum+leadMinutes(task.leadTime),0);
+  const workingMinutes=dailyMinutes(person,date);
+  return {totalMinutes,completedMinutes,workingMinutes,
+    utilization:workingMinutes>0?totalMinutes/workingMinutes*100:null,
+    efficiency:workingMinutes>0?completedMinutes/workingMinutes*100:null};
+}
+function workloadPercent(value){return value===null?'—':value.toFixed(1)+'%';}
+
 function buildKPI(c){
   c.insertAdjacentHTML('beforeend','<div style="font-family:Syne,sans-serif;font-size:1.5rem;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">KPI <span style="color:#f5c842">Dashboard</span></div><div style="font-size:.72rem;font-family:DM Mono,monospace;color:var(--muted);margin-bottom:16px">// ANALYTICS · FILTER BY DATE OR MONTH</div>');
   const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -2431,11 +2443,11 @@ function buildKPICharts(){
   const cb3=document.createElement('div');cb3.className='chart-box';cb3.innerHTML='<h4>Priority vs Normal <span>completion</span></h4><canvas id="chartPrio" style="max-height:220px"></canvas>';cg2.appendChild(cb3);
   const cb4=document.createElement('div');cb4.className='chart-box';cb4.innerHTML='<h4>Actual Date Distribution <span>completed tasks by date</span></h4><canvas id="chartTimeline" style="max-height:220px"></canvas>';cg2.appendChild(cb4);
   wrap.appendChild(cg2);
-  const tableBox=document.createElement('div');tableBox.className='chart-full';
+  const tableBox=document.createElement('div');tableBox.className='chart-full';tableBox.style.overflowX='auto';
   const teamDateLabel=kpiDate?' · '+fmtDate(kpiDate):kpiMonth!==''?' · '+months[+kpiMonth]:' · All Actual Dates';
   tableBox.innerHTML='<h4 style="font-family:Syne,sans-serif;font-size:.9rem;font-weight:700;margin-bottom:4px">Team Performance'+teamDateLabel+'</h4>'
-    +'<div style="font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted);margin-bottom:12px">LIVE ACTUAL DATA · PERSON-WISE TASK QUANTITY</div>'
-    +'<table class="pct-table"><thead><tr><th>PERSON</th><th>TASKS</th><th>DONE</th><th>PENDING</th><th>EARLY / ON-TIME</th><th>LATE</th><th>RATE</th></tr></thead><tbody id="kpiTableBody"></tbody></table>';
+    +'<div style="font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted);margin-bottom:12px">LIVE ACTUAL DATA · PERSON-WISE TASK QUANTITY · UTILIZATION / EFFICIENCY: '+fmtDate(workloadDate)+' (WORKLOAD DATE)</div>'
+    +'<table class="pct-table"><thead><tr><th>PERSON</th><th>TASKS</th><th>DONE</th><th>PENDING</th><th>EARLY / ON-TIME</th><th>LATE</th><th>RATE</th><th title="Total task minutes / working minutes × 100">UTILIZATION</th><th title="Completed minutes / working minutes × 100">EFFICIENCY</th></tr></thead><tbody id="kpiTableBody"></tbody></table>';
   wrap.appendChild(tableBox);
 
   // ── LEAD TIME CHARTS ──
@@ -2523,6 +2535,7 @@ function buildKPICharts(){
         const ot=mt.filter(k=>['early','ontime'].includes(timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime))).length;
         const lt=mt.filter(k=>timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='late').length;
         const rate=masterTasks.length?Math.round(dn/masterTasks.length*100):0;
+        const metrics=personWorkloadMetrics(p,workloadDate);
         const tr=document.createElement('tr');
         tr.innerHTML='<td><span style="display:inline-flex;align-items:center;gap:7px"><span style="width:22px;height:22px;border-radius:6px;background:'+t2.bg+';color:'+t2.color+';display:inline-flex;align-items:center;justify-content:center;font-size:.55rem;font-weight:700;font-family:Syne,sans-serif">'+ini(p)+'</span><span style="color:'+t2.color+'">'+p+'</span></span></td>'
           +'<td style="font-family:DM Mono,monospace;font-size:.8rem">'+masterTasks.length+'</td>'
@@ -2531,9 +2544,16 @@ function buildKPICharts(){
           +'<td style="color:#3ef0b0;font-family:DM Mono,monospace;font-size:.8rem">'+(ot||'—')+'</td>'
           +'<td style="color:#f87171;font-family:DM Mono,monospace;font-size:.8rem">'+(lt||'—')+'</td>'
           +'<td><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:4px;background:var(--border);border-radius:4px;min-width:50px"><div style="height:100%;width:'+rate+'%;background:'+t2.accent+';border-radius:4px"></div></div><span style="font-family:DM Mono,monospace;font-size:.72rem;color:'+t2.color+'">'+rate+'%</span></div></td>';
+        const utilizationCell=document.createElement('td');
+        utilizationCell.textContent=workloadPercent(metrics.utilization);
+        utilizationCell.title=metrics.totalMinutes+' / '+metrics.workingMinutes+' minutes'+(metrics.workingMinutes===0?' · No working capacity':'');
+        const efficiencyCell=document.createElement('td');
+        efficiencyCell.textContent=workloadPercent(metrics.efficiency);
+        efficiencyCell.title=metrics.completedMinutes+' / '+metrics.workingMinutes+' minutes'+(metrics.workingMinutes===0?' · No working capacity':'');
+        [utilizationCell,efficiencyCell].forEach(cell=>{cell.style.cssText='font-family:DM Mono,monospace;font-size:.8rem;white-space:nowrap;color:#60a5fa';tr.appendChild(cell);});
         tbody.appendChild(tr);
       });
-      if(!tbody.children.length)tbody.innerHTML='<tr><td colspan="7" style="text-align:center;padding:30px;font-family:DM Mono,monospace;font-size:.8rem;color:var(--muted)">No tasks found</td></tr>';
+      if(!tbody.children.length)tbody.innerHTML='<tr><td colspan="9" style="text-align:center;padding:30px;font-family:DM Mono,monospace;font-size:.8rem;color:var(--muted)">No tasks found</td></tr>';
     }
 
     // ── LEAD TIME CHART 1: BY PERSON ──
