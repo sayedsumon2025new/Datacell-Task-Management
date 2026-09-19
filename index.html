@@ -803,26 +803,28 @@ async function sbBumpVersion() {
 async function pollSheets() {
   if (!currentUser || _isSyncing || !sbConfigured()) return;
   _isSyncing = true;
+  const pollingUser = currentUser;
   try {
     const metaRows = await sbGet('meta');
     if (metaRows === null) return;
-    const verRow = metaRows.find(r => r.key === 'version');
-    const remoteVer = verRow ? String(verRow.value) : '0';
+    const remoteVer = String(metaRows.find(r => r.key === 'version')?.value ?? '0');
     if (remoteVer !== _lastVersion) {
-      if (_lastVersion !== null) {
-        setSyncStatus('syncing');
-        const data = await sbFetchAll();
-        if (data) {
-          const changed = applyRemoteData(data);
-          if (changed) { renderContent(); toast('↻ Updated by another user', 'info'); }
-        }
-      }
-      _lastVersion = remoteVer;
+      setSyncStatus('syncing');
+      const data = await sbFetchAll();
+      // Preserve the previous version on failure so the next poll retries.
+      if (!data) { setSyncStatus('error'); return; }
+      if (currentUser !== pollingUser) return;
+      const changed = applyRemoteData(data);
+      _lastVersion = data.version;
+      if (changed) renderContent();
     }
     setSyncStatus('live');
-  } catch(e) {
-    console.error('Polling error:', e); setSyncStatus('error');
-  } finally { _isSyncing = false; }
+  } catch (e) {
+    console.error('Polling error:', e);
+    setSyncStatus('error');
+  } finally {
+    _isSyncing = false;
+  }
 }
 
 function startPolling() {
@@ -3056,10 +3058,19 @@ function renderSettingsLeadTime(body){
       const previous=fil.map(k=>[k,k.leadTime]);
       fil.forEach(k=>{k.leadTime=parseFloat(val)+'min';});
       const bulkBtn=document.getElementById('lt-bulk-btn');bulkBtn.disabled=true;bulkBtn.textContent='SAVING...';
-      const ok=await syncNow();
-      if(!ok)previous.forEach(([k,old])=>{k.leadTime=old;});
-      else toast('Lead time permanently saved for '+fil.length+' tasks','success');
-      drawLT();
+      try {
+        const ok=await syncNow();
+        if(!ok)previous.forEach(([k,old])=>{k.leadTime=old;});
+        else toast('Lead time permanently saved for '+fil.length+' tasks','success');
+      } catch(e) {
+        previous.forEach(([k,old])=>{k.leadTime=old;});
+        console.error('Bulk lead-time save failed:',e);
+        toast('Lead-time save failed. Please retry.','error');
+      } finally {
+        bulkBtn.disabled=false;
+        bulkBtn.textContent='Apply to Filtered';
+        drawLT();
+      }
     };
     document.getElementById('lt-clear-all').onclick=()=>{
       confirm2('Clear All Lead Times?','This will remove lead time from ALL tasks.',async()=>{
