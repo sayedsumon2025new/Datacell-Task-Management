@@ -3132,6 +3132,7 @@ function buildLeadImportPlan(source,remote){
 function postgrestText(value){
   return encodeURIComponent('"'+String(value).replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"');
 }
+let leadImportView={plan:[],message:'',open:true};
 async function applyLeadImportEntry(entry){
   const row=entry.row,value=entry.minutes+'min';
   // Match exact database name and previous lead time as well as ID. A rename
@@ -3143,12 +3144,20 @@ async function applyLeadImportEntry(entry){
       saved[0].task!==row.task||saved[0].lead_time!==value){
     throw new Error('Task changed since preview or save was not confirmed; reload preview.');
   }
+  // Read back from Supabase before reporting success, including after a refresh.
+  const verified=await dbRequest('tasks','GET','sl=eq.'+encodeURIComponent(row.sl)+'&select=sl,task,lead_time');
+  if(!Array.isArray(verified)||verified.length!==1||verified[0].task!==row.task||
+      verified[0].lead_time!==value){
+    throw new Error('Write returned but Supabase read-back did not confirm the value. Preview again.');
+  }
   const task=tasks.find(t=>t.sl===Number(row.sl));
   if(task)task.leadTime=value;
   const baseline=taskBaseline.get(Number(row.sl));if(baseline)baseline.lead_time=value;
+  entry.row={...row,lead_time:value};
 }
-function renderLeadImportPanel(body){
+function renderLeadImportPanel(body,onSaved=()=>{}){
   const panel=document.createElement('details');panel.className='add-panel';
+  panel.open=leadImportView.open;panel.ontoggle=()=>{leadImportView.open=panel.open;};
   const summary=document.createElement('summary');summary.textContent='Import supplied lead-time list · 98 task names';summary.style.cursor='pointer';panel.appendChild(summary);
   const note=document.createElement('p');note.style.cssText='margin:12px 0;font-size:.8rem';
   note.textContent='Matches task names only (case and repeated spaces ignored). Serial numbers are not used. Different spelling, punctuation, or duplicate names are skipped. No automatic updates on refresh; future Master Tasks edits stay in your control.';
@@ -3157,8 +3166,10 @@ function renderLeadImportPanel(body){
   const apply=document.createElement('button');apply.type='button';apply.className='add-btn';apply.textContent='APPLY MATCHED LEAD TIMES';apply.disabled=true;
   const actions=document.createElement('div');actions.style.cssText='display:flex;flex-wrap:wrap;gap:10px';actions.append(preview,apply);panel.appendChild(actions);
   const status=document.createElement('p');status.setAttribute('role','status');status.style.margin='12px 0';panel.appendChild(status);
+  status.textContent=leadImportView.message;
+  const setMessage=message=>{leadImportView.message=message;status.textContent=message;};
   const results=document.createElement('div');results.style.cssText='overflow:auto;max-height:440px';panel.appendChild(results);body.appendChild(panel);
-  let plan=[];
+  let plan=leadImportView.plan;
   const draw=()=>{
     results.innerHTML='';
     const table=document.createElement('table');table.className='pct-table';table.style.minWidth='650px';
@@ -3173,7 +3184,7 @@ function renderLeadImportPanel(body){
   };
   preview.onclick=async()=>{
     if(masterFormDirty||masterBusy){toast('Save or clear the task form first','info');return;}
-    preview.disabled=true;apply.disabled=true;status.textContent='Reading current task names from Supabase...';
+    preview.disabled=true;apply.disabled=true;setMessage('Reading current task names from Supabase...');
     try{
       // Fetch every page so a truncated task list cannot conceal duplicate names.
       const remote=[];
@@ -3182,11 +3193,11 @@ function renderLeadImportPanel(body){
         if(!Array.isArray(rows))throw new Error('Invalid task list');
         remote.push(...rows);if(rows.length<500)break;
       }
-      plan=buildLeadImportPlan(LEAD_IMPORT_20260919,remote);
+      plan=buildLeadImportPlan(LEAD_IMPORT_20260919,remote);leadImportView.plan=plan;
       const ready=plan.filter(e=>e.status==='Ready').length,correct=plan.filter(e=>e.status==='Already correct').length;
-      status.textContent=ready+' ready · '+correct+' already correct · '+(plan.length-ready-correct)+' skipped. Review the table before applying.';
+      setMessage(ready+' ready · '+correct+' already correct · '+(plan.length-ready-correct)+' skipped. Review the table before applying.');
       draw();apply.disabled=!ready;
-    }catch(e){plan=[];results.innerHTML='';status.textContent='Preview failed: '+e.message;}
+    }catch(e){plan=[];leadImportView.plan=[];results.innerHTML='';setMessage('Preview failed: '+e.message);}
     finally{preview.disabled=false;}
   };
   apply.onclick=async()=>{
@@ -3199,25 +3210,28 @@ function renderLeadImportPanel(body){
     try{
       await queueTaskWrite(async()=>{
         for(const entry of ready){
-          status.textContent='Saving '+(saved+failed+1)+' of '+ready.length+'...';
-          try{await applyLeadImportEntry(entry);entry.status='Saved to Supabase';saved++;}
+          setMessage('Saving '+(saved+failed+1)+' of '+ready.length+'...');
+          try{await applyLeadImportEntry(entry);entry.status='Saved + verified in Supabase';saved++;onSaved();}
           catch(e){entry.status='Not saved: '+e.message;failed++;}
           draw();
         }
         if(saved)await notifySaved();
       });
-      status.textContent=saved+' saved · '+failed+' not saved · '+(plan.length-ready.length)+' unchanged/skipped. Nothing will be reapplied automatically.';
-    }catch(e){status.textContent='Import interrupted: '+e.message+'. Reload preview before retrying.';}
+      setMessage(saved+' saved and verified · '+failed+' not saved · '+(plan.length-ready.length)+' unchanged/skipped. The task list below is updated.');
+      toast(saved+' lead times saved and verified; '+failed+' failed',failed?'error':'success');
+    }catch(e){setMessage('Import interrupted: '+e.message+'. Reload preview before retrying.');}
     finally{
       masterBusy=false;masterFormDirty=false;preview.disabled=false;apply.disabled=true;
     }
   };
+  if(plan.length)draw();
+  apply.disabled=!plan.some(entry=>entry.status==='Ready');
 }
 
 function renderMasterTasks(body){
   if(currentUser!=='admin'){body.textContent='Administrator access required.';return;}
   const heading=document.createElement('h3');heading.textContent='Master Tasks';body.appendChild(heading);
-  renderLeadImportPanel(body);
+  renderLeadImportPanel(body,()=>draw());
   const intro=document.createElement('p');intro.className='s-section-sub';intro.textContent='Add, assign, reassign, rename, set plan date/time and lead minutes, or delete tasks. Save confirms the Supabase update.';body.appendChild(intro);
   const editing=masterEditingId===null?null:tasks.find(t=>t.sl===masterEditingId);
   if(masterEditingId!==null&&!editing){masterEditingId=null;masterDraft=null;masterEditBaseline=null;masterFormDirty=false;}
