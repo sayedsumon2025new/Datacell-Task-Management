@@ -729,7 +729,80 @@ async function sbSyncDoneState(doneRows) {
   return doneRows.length ? await sbUpsert('done_state', doneRows) : true;
 }
 
-async function sbSaveAll() {
+// Serialize task writes and keep an older poll from replacing a saved value.
+let _taskWriteQueue = Promise.resolve();
+let _taskWritesPending = 0;
+let _taskWriteRevision = 0;
+function queueTaskWrite(write) {
+  _taskWritesPending++;
+  _taskWriteRevision++;
+  const result = _taskWriteQueue.then(write);
+  _taskWriteQueue = result.catch(() => {});
+  return result.finally(() => { _taskWritesPending--; });
+}
+
+async function savePlanTime(sl, value, button) {
+  if (!sbConfigured() || !tasks.some(t => t.sl === sl)) {
+    toast('Task unavailable or database not configured', 'error');
+    return false;
+  }
+  if (value && !/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(value)) {
+    toast('Enter a valid plan time', 'error');
+    return false;
+  }
+  const label = button.textContent;
+  button.disabled = true;
+  button.textContent = 'SAVING...';
+  try {
+    return await queueTaskWrite(async () => {
+      setSyncStatus('syncing');
+      const req = sbFetchOptions('PATCH', {
+        headers: sbHeaders({
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
+        }),
+        body: JSON.stringify({plan_time: value})
+      });
+      try {
+        const response = await fetch(
+          SB_URL + '/rest/v1/tasks?sl=eq.' + encodeURIComponent(sl) + '&select=sl,plan_time',
+          req.options
+        );
+        if (!response.ok) throw new Error('Database returned HTTP ' + response.status);
+        const rows = await response.json();
+        if (!Array.isArray(rows) || rows.length !== 1 || Number(rows[0].sl) !== sl ||
+            String(rows[0].plan_time || '').slice(0,5) !== value.slice(0,5)) {
+          throw new Error('Database did not confirm the plan time');
+        }
+        const task = tasks.find(t => t.sl === sl);
+        if (task) task.planTime = rows[0].plan_time || '';
+        // A notification failure must not undo an acknowledged database write.
+        let notified = false;
+        try { notified = await sbBumpVersion(); } catch(e) { console.error(e); }
+        setSyncStatus(notified ? 'live' : 'error');
+        toast(value ? 'Plan time saved for #' + sl + ' → ' + value :
+          'Plan time cleared for #' + sl, 'success');
+        return true;
+      } finally {
+        req.clear();
+      }
+    });
+  } catch(e) {
+    console.error('Plan-time save failed:', e);
+    setSyncStatus('error');
+    toast('Plan time could not be confirmed. Please retry. (' + e.message + ')', 'error');
+    return false;
+  } finally {
+    button.disabled = false;
+    button.textContent = label;
+  }
+}
+
+function sbSaveAll() {
+  return queueTaskWrite(sbSaveAllQueued);
+}
+
+async function sbSaveAllQueued() {
   const taskRows = tasks.map(t => ({
     sl: Number(t.sl), task: t.task || '', person: t.person || '', priority: !!t.priority,
     plan_date: t.planDate || '', plan_time: t.planTime || '',
@@ -801,9 +874,10 @@ async function sbBumpVersion() {
 
 // ── Polling ──────────────────────────────────────────────────────
 async function pollSheets() {
-  if (!currentUser || _isSyncing || !sbConfigured()) return;
+  if (!currentUser || _isSyncing || _taskWritesPending || !sbConfigured()) return;
   _isSyncing = true;
   const pollingUser = currentUser;
+  const writeRevision = _taskWriteRevision;
   try {
     const metaRows = await sbGet('meta');
     if (metaRows === null) return;
@@ -813,7 +887,7 @@ async function pollSheets() {
       const data = await sbFetchAll();
       // Preserve the previous version on failure so the next poll retries.
       if (!data) { setSyncStatus('error'); return; }
-      if (currentUser !== pollingUser) return;
+      if (currentUser !== pollingUser || _taskWritesPending || writeRevision !== _taskWriteRevision) return;
       const changed = applyRemoteData(data);
       _lastVersion = data.version;
       if (changed) renderContent();
@@ -2116,13 +2190,12 @@ function buildPlanTime(c){
     wrap.appendChild(list);
     // save plan time
     wrap.querySelectorAll('.pt-save').forEach(btn=>{
-      btn.onclick=()=>{
+      btn.onclick=async()=>{
         const sl=+btn.dataset.sl;
         const timeEl=document.getElementById('pt-'+sl);
-        const k=tasks.find(t=>t.sl===sl);if(!k)return;
-        k.planTime=timeEl?timeEl.value:'';
-        toast(k.planTime?'Plan time set for #'+sl+' → '+k.planTime:'Plan time cleared for #'+sl,'success');syncToSheets();
-        draw();
+        if(!timeEl || !timeEl.reportValidity())return;
+        const saved=await savePlanTime(sl,timeEl.value,btn);
+        if(saved && wrap.isConnected)draw();
       };
     });
   };
@@ -2898,10 +2971,12 @@ function renderSettingsPlanTime(body){
     if(fil.length>30)list.innerHTML+='<div style="padding:10px;text-align:center;font-family:DM Mono,monospace;font-size:.68rem;color:var(--muted)">Showing 30 of '+fil.length+'. Use search to narrow.</div>';
     wrap.appendChild(list);
     wrap.querySelectorAll('.spt-save').forEach(btn=>{
-      btn.onclick=()=>{
-        const sl=+btn.dataset.sl;const k=tasks.find(t=>t.sl===sl);if(!k)return;
-        k.planTime=document.getElementById('sptt-'+sl)?.value||'';
-        toast('Plan time set for #'+sl+(k.planTime?' · '+k.planTime:''),'success');syncToSheets();
+      btn.onclick=async()=>{
+        const sl=+btn.dataset.sl;
+        const timeEl=document.getElementById('sptt-'+sl);
+        if(!timeEl || !timeEl.reportValidity())return;
+        const saved=await savePlanTime(sl,timeEl.value,btn);
+        if(saved && wrap.isConnected)drawSPT();
       };
     });
   };
