@@ -609,7 +609,7 @@ function applyRemoteData(data) {
     if (n !== c) {
       Object.keys(doneState).forEach(u => delete doneState[u]);
       Object.entries(data.doneState).forEach(([u, sls]) => {
-        doneState[u] = new Set(Array.isArray(sls) ? sls : []);
+        doneState[u] = new Set(Array.isArray(sls) ? sls.map(Number).filter(Number.isFinite) : []);
       });
       changed = true;
     }
@@ -679,8 +679,10 @@ async function sbFetchAll() {
 
 // ── WRITE ────────────────────────────────────────────────────────
 function syncToSheets() {
+  _taskWriteRevision++;
   clearTimeout(_syncDebounce);
   _syncDebounce = setTimeout(async () => {
+    _syncDebounce = null;
     setSyncStatus('syncing');
     const ok = await sbSaveAll();
     if (ok && await sbBumpVersion()) setSyncStatus('live');
@@ -696,6 +698,7 @@ function syncToSheets() {
 // database confirms the write.
 async function syncNow() {
   clearTimeout(_syncDebounce);
+  _syncDebounce = null;
   setSyncStatus('syncing');
   const ok=await sbSaveAll();
   if(ok&&await sbBumpVersion()){
@@ -904,6 +907,7 @@ async function syncWorkingHours() {
   catch(e){console.error('Working-hours local save failed:',e);return false;}
   if(!sbConfigured())return 'local';
   clearTimeout(_syncDebounce);
+  _syncDebounce = null;
   setSyncStatus('syncing');
   const saved=await sbUpsert('meta',[{key:'workingHours',value:JSON.stringify(workingHours)}]);
   if(!saved){setSyncStatus('error');return 'local';}
@@ -926,24 +930,20 @@ async function sbBumpVersion() {
 
 // ── Polling ──────────────────────────────────────────────────────
 async function pollSheets() {
-  if (!currentUser || _isSyncing || _taskWritesPending || !sbConfigured()) return;
+  if (!currentUser || _isSyncing || _taskWritesPending || _syncDebounce || !sbConfigured()) return;
   _isSyncing = true;
   const pollingUser = currentUser;
   const writeRevision = _taskWriteRevision;
   try {
-    const metaRows = await sbGet('meta');
-    if (metaRows === null) return;
-    const remoteVer = String(metaRows.find(r => r.key === 'version')?.value ?? '0');
-    if (remoteVer !== _lastVersion) {
-      setSyncStatus('syncing');
-      const data = await sbFetchAll();
-      // Preserve the previous version on failure so the next poll retries.
-      if (!data) { setSyncStatus('error'); return; }
-      if (currentUser !== pollingUser || _taskWritesPending || writeRevision !== _taskWriteRevision) return;
-      const changed = applyRemoteData(data);
-      _lastVersion = data.version;
-      if (changed) renderContent();
-    }
+    // Read the records on every poll: a successful write can outlive a failed
+    // version notification, and concurrent clients can publish the same version.
+    const data = await sbFetchAll();
+    if (!data) { setSyncStatus('error'); return; }
+    if (currentUser !== pollingUser || _taskWritesPending || _syncDebounce ||
+        writeRevision !== _taskWriteRevision) return;
+    const changed = applyRemoteData(data);
+    _lastVersion = data.version;
+    if (changed) renderContent();
     setSyncStatus('live');
   } catch (e) {
     console.error('Polling error:', e);
@@ -1060,6 +1060,18 @@ function currentTime24(date = new Date()) {
 }
 
 function getDone(u){if(!doneState[u])doneState[u]=new Set();return doneState[u];}
+
+// Reports share one completion rule, including older records whose done_state
+// entry is missing but whose actual completion date and time were persisted.
+function isTaskComplete(task) {
+  if (!task) return false;
+  const owners = [task.person, ...String(task.person || '').split('/').map(p => p.trim())];
+  const explicitlyDone = owners.some(owner => {
+    const done = doneState[owner];
+    return done && (done.has(Number(task.sl)) || done.has(String(task.sl)));
+  });
+  return !!(explicitlyDone || (task.actualDate && task.actualTime));
+}
 
 // ─── HELPERS ───
 function formatDisplayDate(isoDate) {
@@ -1762,10 +1774,10 @@ function renderAdmin(allowedModules = null){
 // ── OVERVIEW ──
 function buildOverview(c){
   const allP=[...new Set(tasks.map(t=>t.person))];
-  const totalDone=allP.reduce((s,p)=>s+tasks.filter(t=>t.person===p&&getDone(p).has(t.sl)).length,0);
+  const totalDone=tasks.filter(isTaskComplete).length;
   const pct=tasks.length?Math.round((totalDone/tasks.length)*100):0;
-  const withActual=tasks.filter(t=>t.actualDate||t.actualTime).length;
-  const lateCount=tasks.filter(t=>timeCmp(t.planDate,t.planTime,t.actualDate,t.actualTime)==='late').length;
+  const withActual=totalDone;
+  const lateCount=tasks.filter(t=>isTaskComplete(t)&&timeCmp(t.planDate,t.planTime,t.actualDate,t.actualTime)==='late').length;
 
   c.insertAdjacentHTML('beforeend',`<div style="font-family:'Syne',sans-serif;font-size:1.5rem;font-weight:800;letter-spacing:-.02em;margin-bottom:16px">Admin <span style="color:#f5c842">Overview</span></div>`);
 
@@ -1790,10 +1802,10 @@ function buildOverview(c){
   const teamLbl=document.createElement('div');teamLbl.className='section-title';teamLbl.textContent='TEAM BREAKDOWN';c.appendChild(teamLbl);
   const grid=document.createElement('div');grid.className='admin-grid';
   allP.forEach(p=>{
-    const t2=th(p),mt=tasks.filter(k=>k.person===p),dn=mt.filter(k=>getDone(p).has(k.sl)).length;
+    const t2=th(p),mt=tasks.filter(k=>k.person===p),dn=mt.filter(isTaskComplete).length;
     const pp=mt.length?Math.round((dn/mt.length)*100):0;
-    const late=mt.filter(k=>timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='late').length;
-    const early=mt.filter(k=>['early','ontime'].includes(timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime))).length;
+    const late=mt.filter(k=>isTaskComplete(k)&&timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='late').length;
+    const early=mt.filter(k=>isTaskComplete(k)&&['early','ontime'].includes(timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime))).length;
     const card=document.createElement('div');card.className='apc';card.style.borderColor=t2.accent+'22';
     card.innerHTML='<div style="position:absolute;top:0;left:0;right:0;height:2px;background:'+t2.accent+'"></div>'
       +'<div class="apc-hd"><div class="apc-av" style="background:'+t2.bg+';color:'+t2.color+'">'+ini(p)+'</div>'
@@ -1829,7 +1841,7 @@ function buildOverview(c){
     // Calendar is based only on actual completion dates.
     const planMap={},actualMap={};
     tasks.forEach(k=>{
-      if(k.actualDate){if(!actualMap[k.actualDate])actualMap[k.actualDate]=[];actualMap[k.actualDate].push(k);}
+      if(k.actualDate&&isTaskComplete(k)){if(!actualMap[k.actualDate])actualMap[k.actualDate]=[];actualMap[k.actualDate].push(k);}
     });
 
     // Header
@@ -2298,13 +2310,13 @@ function buildKPICharts(){
   // TOTAL TASKS always mirrors the ALL TASKS master list. Date/month filters
   // affect only the actual completion and performance figures.
   const total=tasks.length;
-  const completed=filtered.filter(k=>k.actualDate&&k.actualTime).length;
+  const completed=filtered.filter(isTaskComplete).length;
   const withPlan=tasks.filter(k=>k.planTime).length;
   const lateN=filtered.filter(k=>timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='late').length;
   const earlyN=filtered.filter(k=>timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='early').length;
   const ontimeN=filtered.filter(k=>timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='ontime').length;
   const prios=tasks.filter(k=>k.priority);
-  const prioDone=filtered.filter(k=>k.priority&&k.actualDate&&k.actualTime).length;
+  const prioDone=filtered.filter(k=>k.priority&&isTaskComplete(k)).length;
   const onTimeRate=completed>0?Math.round(((earlyN+ontimeN)/completed)*100):0;
   const compRate=total>0?Math.round((completed/total)*100):0;
 
@@ -2378,7 +2390,7 @@ function buildKPICharts(){
     Chart.defaults.color='#505870';
     // Person bar
     const chartPersons=[...new Set([...PERSONS,...tasks.map(k=>k.person)])];
-    const pData=chartPersons.map(p=>{const master=tasks.filter(k=>k.person===p);const dn=filtered.filter(k=>k.person===p&&k.actualDate&&k.actualTime).length;return{n:p,t:master.length,d:dn};}).filter(x=>x.t>0);
+    const pData=chartPersons.map(p=>{const master=tasks.filter(k=>k.person===p);const dn=filtered.filter(k=>k.person===p&&isTaskComplete(k)).length;return{n:p,t:master.length,d:dn};}).filter(x=>x.t>0);
     const pCtx=document.getElementById('chartPerson')?.getContext('2d');
     if(pCtx)new Chart(pCtx,{type:'bar',data:{labels:pData.map(x=>x.n.split('/')[0]),datasets:[{label:'Done',data:pData.map(x=>x.d),backgroundColor:pData.map(x=>th(x.n).accent+'cc'),borderRadius:4},{label:'Pending',data:pData.map(x=>x.t-x.d),backgroundColor:'rgba(80,88,112,0.3)',borderRadius:4}]},options:{...cd,indexAxis:'y',scales:{x:{stacked:true,grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#505870'}},y:{stacked:true,grid:{display:false},ticks:{color:'#dde1ec',font:{size:10}}}}}});
     // Status donut
@@ -2386,7 +2398,7 @@ function buildKPICharts(){
     if(sCtx)new Chart(sCtx,{type:'doughnut',data:{labels:['Early/On-time','Late','Not Started'],datasets:[{data:[earlyN+ontimeN,lateN,total-completed],backgroundColor:['rgba(62,240,176,.7)','rgba(248,113,113,.7)','rgba(80,88,112,.3)'],borderColor:['#3ef0b0','#f87171','#505870'],borderWidth:1,hoverOffset:8}]},options:{...cd,cutout:'65%',plugins:{...cd.plugins,legend:{position:'bottom',labels:{color:'#505870',font:{size:9},padding:10}}}}});
     // Priority
     const prCtx=document.getElementById('chartPrio')?.getContext('2d');
-    const nPrios=tasks.filter(k=>!k.priority);const nDone=filtered.filter(k=>!k.priority&&k.actualDate&&k.actualTime).length;
+    const nPrios=tasks.filter(k=>!k.priority);const nDone=filtered.filter(k=>!k.priority&&isTaskComplete(k)).length;
     if(prCtx)new Chart(prCtx,{type:'bar',data:{labels:['Priority ★','Normal'],datasets:[{label:'Done',data:[prioDone,nDone],backgroundColor:['rgba(232,121,249,.7)','rgba(62,240,176,.6)'],borderRadius:6},{label:'Pending',data:[prios.length-prioDone,nPrios.length-nDone],backgroundColor:['rgba(232,121,249,.2)','rgba(62,240,176,.15)'],borderRadius:6}]},options:{...cd,scales:{x:{grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#dde1ec'}},y:{grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#505870'}}}}});
     // Timeline
     const tlCtx=document.getElementById('chartTimeline')?.getContext('2d');
@@ -2444,7 +2456,7 @@ function buildKPICharts(){
     const ltPersonData=leadTimePersons.map(p=>{
       const pt=leadTimeSource.filter(k=>k.person===p&&k.leadTime);
       const totalHrs=pt.reduce((s,k)=>s+parseLT(k.leadTime),0);
-      const doneHrs=pt.filter(k=>k.actualDate||k.actualTime).reduce((s,k)=>s+parseLT(k.leadTime),0);
+      const doneHrs=pt.filter(isTaskComplete).reduce((s,k)=>s+parseLT(k.leadTime),0);
       const pendHrs=totalHrs-doneHrs;
       return{name:p,total:+totalHrs.toFixed(1),done:+doneHrs.toFixed(1),pend:+pendHrs.toFixed(1),count:pt.length};
     }).filter(x=>x.total>0).sort((a,b)=>b.total-a.total);
@@ -2532,7 +2544,7 @@ function buildKPICharts(){
 
     // ── LEAD TIME CHART 2: BY TASK (top 20) ──
     const ltTaskData=leadTimeSource.filter(k=>k.leadTime)
-      .map(k=>({task:k.task.length>28?k.task.slice(0,28)+'…':k.task,hrs:parseLT(k.leadTime),person:k.person,done:!!(k.actualDate||k.actualTime),priority:k.priority}))
+      .map(k=>({task:k.task.length>28?k.task.slice(0,28)+'…':k.task,hrs:parseLT(k.leadTime),person:k.person,done:isTaskComplete(k),priority:k.priority}))
       .sort((a,b)=>b.hrs-a.hrs)
       .slice(0,20);
 
@@ -2631,7 +2643,7 @@ function buildAllTasks(c){
   list.appendChild(hdr);
   const rows=document.createElement('div');
   tasks.forEach((k,i)=>{
-    const t2=th(k.person);const isDone=getDone(k.person).has(k.sl);
+    const t2=th(k.person);const isDone=isTaskComplete(k);
     const row=document.createElement('div');
     row.style.cssText=`display:grid;grid-template-columns:${cols};align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);gap:8px;font-size:0.84rem;transition:background 0.15s;animation:rowIn 0.2s ease ${i*0.005}s both;${k.priority?'border-left:3px solid '+t2.accent+';':''}${isDone?'opacity:0.42;':''}`;
     row.innerHTML=`<span style="font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--muted)">${k.sl}</span>
