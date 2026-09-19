@@ -3107,9 +3107,117 @@ function renderSettingsPlanTime(body){
 
 // ── SECTION 5: WORKING HOURS ──────────────────────
 
+
+// User-provided lead times, transcribed from the supplied task-name table.
+// Never applied automatically: the administrator previews and applies matches.
+const LEAD_IMPORT_20260919 = [["Cutting Efficiency",30],["RIB Cut Pannel Inspection report",65],["Embroidery Efficiency Report",30],["Quality Printing-DHU Audit Pass Report.",85],["Quality Embroidery- DHU Audit Pass Report.",85],["Finishing Efficiency Report",15],["Pack Carton Update in ERP",120],["Line Wise attendance 45 Team Excel",35],["Attendance In ERP (HRMS)",15],["NPT Collect-Level-04",15],["Line Behind Report",15],["Teams Report",15],["RMG Line Status (Idle status Report)",5],["QCO 1st Five Days Efficiency Report",58],["QCO Actual Feeding Report.",30],["Line Feeding Status Pending Summary",10],["Daily loss Hour update in ERP",20],["Daily NPT Update in ERP",20],["FR Plan Update Line Wise In ERP",35],["Style Wise Machine Update In ERP",20],["Daily NPT variance report",15],["Auto Motion Report Update",50],["Daily 1st Ten Hour Report",50],["Hourly CTPAT Report",50],["Night & Day Final SAH",20],["NPT Sheet Collect-Level-03",15],["ERP Manpower Realised",20],["Idle & Partial Loss SAH Analysis",50],["QCO Activity",120],["Daily Line wise plan vs Actual Summary with behind Reason( COO SIR)",10],["IE wise & GL Wise dashboard",10],["TM Release summary",10],["Daily Head count Report",10],["Plan VS Actual Feeding status",35],["Feeding GAP report",15],["Daily sewing Capacity Utilization Report",10],["FR Plan Update In Forecast File",25],["Actual Feeding Gantt Chart",30],["Plan VS Actual Working Hour Status In ERP",15],["Buyer Wise Efficiency Dashboard",15],["Hourly Production Collect & Update In ERP-Level-04",15],["Wash output Data Update",15],["Daily Sewing Event Closed",15],["Individual iron efficiency report",45],["Hourly Excel 47 Line Production report",225],["Hourly Production Collect & Update In ERP-Level-03",420],["Forecast vs Actual Dashboard",15],["Forecast summary",35],["Sewing Reject Update in ERP",45],["Andon Report",10],["Target Vs Actual Efficiency Behind Reason Summary",35],["Work Hour Approval report",35],["ERP Sewing Input Allocation (47 Line)",340],["Forecast File Actual Output",25],["Inventory",30],["Sudden Plan Summary",15],["Upcoming Style Status",15],["Order Closing Analysis",180],["Sewing Rejection Update Tracking",15],["Printing Efficiency Report",30],["TQM Board Update (level-04)",15],["TQM Board Update (level-03)",15],["1st Output Audit Report",30],["Finishing Rejection Update Tracking",15],["Section Wise Efficiency Chart",15],["OT Cost Analysis",45],["GPQ Po Wise Inspection Update",15],["Line Wise Spot Report",38],["Cut panel audit report",140],["Daily Basis Line Wise Oil Report Summary",15],["Finishing Rejection Update in ERP",45],["Sub department wise quality NPT Update (Excel)",20],["CPI Inspection Update In ERP",104],["Daily Touchup report",15],["Daily Red dot report",46],["Contamination report",15],["DHU Report- End Line",60],["DHU Report- Finishing",60],["DHU Report- Inline",52],["Hourly Audite report",30],["Garments Rejection",72],["Rejection Hard copy file up",30],["DHU Audit report",50],["Quality Accessories DHU Report",15],["Collar And Cuff Report",64],["Size Set Production report",15],["Operation Dashboard",20],["Sewing Efficiency Email",20],["Block wise summary",45],["Feeding & EWO Spilt Status",15],["Sample MRS Update & ERP Update",32],["QCO Summary Dashboard",30],["Target Vs Actual Day Wise Pcs Summary",15],["EKWL-HW Day Wise SAH & Efficiency Drop Summary With Reason",15],["Less Eff & Opportunity Loss",15],["Sample Display update (Level-3)",20],["Embellishment Out side",45],["Sample Display update (Level-4)",20]];
+
+function leadImportName(name){return String(name||'').normalize('NFKC').trim().replace(/\s+/g,' ').toLowerCase();}
+function buildLeadImportPlan(source,remote){
+  const sourceCounts=new Map(),byName=new Map();
+  source.forEach(([name])=>{const key=leadImportName(name);sourceCounts.set(key,(sourceCounts.get(key)||0)+1);});
+  remote.forEach(row=>{const key=leadImportName(row.task);if(!byName.has(key))byName.set(key,[]);byName.get(key).push(row);});
+  return source.map(([name,minutes])=>{
+    const key=leadImportName(name),matches=byName.get(key)||[];
+    const entry={name,minutes};
+    if(sourceCounts.get(key)!==1)return {...entry,status:'Duplicate source name — skipped'};
+    if(!Number.isFinite(minutes)||minutes<0)return {...entry,status:'Invalid minutes — skipped'};
+    if(matches.length===0)return {...entry,status:'No exact name match — skipped'};
+    if(matches.length!==1)return {...entry,status:'Duplicate database name — skipped'};
+    const row=matches[0];
+    if(!Number.isSafeInteger(Number(row.sl)))return {...entry,status:'Invalid task ID — skipped'};
+    return {...entry,row,status:row.lead_time!==null&&row.lead_time!==''&&leadMinutes(row.lead_time)===minutes?'Already correct':'Ready'};
+  });
+}
+function postgrestText(value){
+  return encodeURIComponent('"'+String(value).replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"');
+}
+async function applyLeadImportEntry(entry){
+  const row=entry.row,value=entry.minutes+'min';
+  // Match exact database name and previous lead time as well as ID. A rename
+  // or manual edit after preview must cause a conflict, not an overwrite.
+  const query='sl=eq.'+encodeURIComponent(row.sl)+'&task=eq.'+postgrestText(row.task)
+    +'&lead_time='+(row.lead_time===null?'is.null':'eq.'+postgrestText(row.lead_time||''));
+  const saved=await dbRequest('tasks','PATCH',query,{lead_time:value});
+  if(!Array.isArray(saved)||saved.length!==1||Number(saved[0].sl)!==Number(row.sl)||
+      saved[0].task!==row.task||saved[0].lead_time!==value){
+    throw new Error('Task changed since preview or save was not confirmed; reload preview.');
+  }
+  const task=tasks.find(t=>t.sl===Number(row.sl));
+  if(task)task.leadTime=value;
+  const baseline=taskBaseline.get(Number(row.sl));if(baseline)baseline.lead_time=value;
+}
+function renderLeadImportPanel(body){
+  const panel=document.createElement('details');panel.className='add-panel';
+  const summary=document.createElement('summary');summary.textContent='Import supplied lead-time list · 98 task names';summary.style.cursor='pointer';panel.appendChild(summary);
+  const note=document.createElement('p');note.style.cssText='margin:12px 0;font-size:.8rem';
+  note.textContent='Matches task names only (case and repeated spaces ignored). Serial numbers are not used. Different spelling, punctuation, or duplicate names are skipped. No automatic updates on refresh; future Master Tasks edits stay in your control.';
+  panel.appendChild(note);
+  const preview=document.createElement('button');preview.type='button';preview.className='fbtn';preview.textContent='PREVIEW MATCHES';
+  const apply=document.createElement('button');apply.type='button';apply.className='add-btn';apply.textContent='APPLY MATCHED LEAD TIMES';apply.disabled=true;
+  const actions=document.createElement('div');actions.style.cssText='display:flex;flex-wrap:wrap;gap:10px';actions.append(preview,apply);panel.appendChild(actions);
+  const status=document.createElement('p');status.setAttribute('role','status');status.style.margin='12px 0';panel.appendChild(status);
+  const results=document.createElement('div');results.style.cssText='overflow:auto;max-height:440px';panel.appendChild(results);body.appendChild(panel);
+  let plan=[];
+  const draw=()=>{
+    results.innerHTML='';
+    const table=document.createElement('table');table.className='pct-table';table.style.minWidth='650px';
+    table.innerHTML='<thead><tr><th>Source task name</th><th>Matched database task</th><th>Current minutes</th><th>New minutes</th><th>Result</th></tr></thead>';
+    const tbody=document.createElement('tbody');
+    plan.forEach(entry=>{
+      const row=document.createElement('tr');
+      [entry.name,entry.row?entry.row.task:'—',entry.row&&entry.row.lead_time?leadMinutes(entry.row.lead_time):'—',entry.minutes,entry.status].forEach(value=>{const td=document.createElement('td');td.textContent=value;row.appendChild(td);});
+      tbody.appendChild(row);
+    });
+    table.appendChild(tbody);results.appendChild(table);
+  };
+  preview.onclick=async()=>{
+    if(masterFormDirty||masterBusy){toast('Save or clear the task form first','info');return;}
+    preview.disabled=true;apply.disabled=true;status.textContent='Reading current task names from Supabase...';
+    try{
+      // Fetch every page so a truncated task list cannot conceal duplicate names.
+      const remote=[];
+      for(let offset=0;;offset+=500){
+        const rows=await dbRequest('tasks','GET','select=sl,task,lead_time&order=sl.asc&limit=500&offset='+offset);
+        if(!Array.isArray(rows))throw new Error('Invalid task list');
+        remote.push(...rows);if(rows.length<500)break;
+      }
+      plan=buildLeadImportPlan(LEAD_IMPORT_20260919,remote);
+      const ready=plan.filter(e=>e.status==='Ready').length,correct=plan.filter(e=>e.status==='Already correct').length;
+      status.textContent=ready+' ready · '+correct+' already correct · '+(plan.length-ready-correct)+' skipped. Review the table before applying.';
+      draw();apply.disabled=!ready;
+    }catch(e){plan=[];results.innerHTML='';status.textContent='Preview failed: '+e.message;}
+    finally{preview.disabled=false;}
+  };
+  apply.onclick=async()=>{
+    if(masterFormDirty||masterBusy){toast('Save or clear the task form first','info');return;}
+    const ready=plan.filter(e=>e.status==='Ready');if(!ready.length)return;
+    apply.disabled=true;preview.disabled=true;masterBusy=true;
+    // Keep live rerenders from removing the progress/results panel mid-import.
+    masterFormDirty=true;
+    let saved=0,failed=0;
+    try{
+      await queueTaskWrite(async()=>{
+        for(const entry of ready){
+          status.textContent='Saving '+(saved+failed+1)+' of '+ready.length+'...';
+          try{await applyLeadImportEntry(entry);entry.status='Saved to Supabase';saved++;}
+          catch(e){entry.status='Not saved: '+e.message;failed++;}
+          draw();
+        }
+        if(saved)await notifySaved();
+      });
+      status.textContent=saved+' saved · '+failed+' not saved · '+(plan.length-ready.length)+' unchanged/skipped. Nothing will be reapplied automatically.';
+    }catch(e){status.textContent='Import interrupted: '+e.message+'. Reload preview before retrying.';}
+    finally{
+      masterBusy=false;masterFormDirty=false;preview.disabled=false;apply.disabled=true;
+    }
+  };
+}
+
 function renderMasterTasks(body){
   if(currentUser!=='admin'){body.textContent='Administrator access required.';return;}
   const heading=document.createElement('h3');heading.textContent='Master Tasks';body.appendChild(heading);
+  renderLeadImportPanel(body);
   const intro=document.createElement('p');intro.className='s-section-sub';intro.textContent='Add, assign, reassign, rename, set plan date/time and lead minutes, or delete tasks. Save confirms the Supabase update.';body.appendChild(intro);
   const editing=masterEditingId===null?null:tasks.find(t=>t.sl===masterEditingId);
   if(masterEditingId!==null&&!editing){masterEditingId=null;masterDraft=null;masterEditBaseline=null;masterFormDirty=false;}
