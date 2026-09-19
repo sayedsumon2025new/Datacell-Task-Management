@@ -3139,7 +3139,15 @@ async function applyLeadImportEntry(entry){
   // or manual edit after preview must cause a conflict, not an overwrite.
   const query='sl=eq.'+encodeURIComponent(row.sl)+'&task=eq.'+postgrestText(row.task)
     +'&lead_time='+(row.lead_time===null?'is.null':'eq.'+postgrestText(row.lead_time||''));
+  const matching=await dbRequest('tasks','GET',query+'&select=sl,task,lead_time');
+  if(!Array.isArray(matching)||matching.length!==1){
+    throw new Error('Preview filter no longer matches one readable task. Preview again.');
+  }
   const saved=await dbRequest('tasks','PATCH',query,{lead_time:value});
+  if(Array.isArray(saved)&&saved.length===0){
+    const error=new Error('Supabase returned zero updated rows for a readable match. Check tasks UPDATE RLS policies or database triggers; no save confirmed.');
+    error.stopImport=true;throw error;
+  }
   if(!Array.isArray(saved)||saved.length!==1||Number(saved[0].sl)!==Number(row.sl)||
       saved[0].task!==row.task||saved[0].lead_time!==value){
     throw new Error('Task changed since preview or save was not confirmed; reload preview.');
@@ -3212,12 +3220,12 @@ function renderLeadImportPanel(body,onSaved=()=>{}){
         for(const entry of ready){
           setMessage('Saving '+(saved+failed+1)+' of '+ready.length+'...');
           try{await applyLeadImportEntry(entry);entry.status='Saved + verified in Supabase';saved++;onSaved();}
-          catch(e){entry.status='Not saved: '+e.message;failed++;}
+          catch(e){entry.status='Not saved: '+e.message;failed++;if(e.stopImport){draw();throw e;}}
           draw();
         }
         if(saved)await notifySaved();
       });
-      setMessage(saved+' saved and verified · '+failed+' not saved · '+(plan.length-ready.length)+' unchanged/skipped. The task list below is updated.');
+      setMessage(saved+' saved and verified · '+failed+' not saved · '+(plan.length-ready.length)+' unchanged/skipped.'+(saved?' The task list below is updated.':' No lead times were saved.'));
       toast(saved+' lead times saved and verified; '+failed+' failed',failed?'error':'success');
     }catch(e){setMessage('Import interrupted: '+e.message+'. Reload preview before retrying.');}
     finally{
