@@ -798,6 +798,58 @@ async function savePlanTime(sl, value, button) {
   }
 }
 
+async function saveLeadTimes(selected, value, button) {
+  const ids = [...new Set(selected.map(t => Number(t.sl)))];
+  if (!ids.length) { toast('No tasks match the filter','info'); return false; }
+  if (!sbConfigured() || ids.some(id => !Number.isSafeInteger(id))) {
+    toast('Database unavailable or invalid task ID','error'); return false;
+  }
+  const label=button.textContent;
+  button.disabled=true;button.textContent='SAVING...';
+  try {
+    return await queueTaskWrite(async()=>{
+      setSyncStatus('syncing');
+      // Only change lead_time on the selected tasks, not unrelated tables.
+      const req=sbFetchOptions('PATCH',{
+        headers:sbHeaders({'Content-Type':'application/json','Prefer':'return=representation'}),
+        body:JSON.stringify({lead_time:value})
+      });
+      try {
+        const res=await fetch(SB_URL+'/rest/v1/tasks?sl=in.('+ids.join(',')+')&select=sl,lead_time',req.options);
+        if(!res.ok)throw new Error('Database returned HTTP '+res.status);
+        const rows=await res.json();
+        if(!Array.isArray(rows))throw new Error('Invalid database response');
+        const confirmed=new Set();
+        rows.forEach(row=>{
+          const id=Number(row.sl);
+          if(ids.includes(id)&&String(row.lead_time||'')===value){
+            confirmed.add(id);
+            const task=tasks.find(t=>t.sl===id);
+            if(task)task.leadTime=value;
+          }
+        });
+        let notified=false;
+        if(confirmed.size){
+          try{notified=await sbBumpVersion();}catch(e){console.error(e);}
+        }
+        if(confirmed.size!==ids.length){
+          throw new Error('Confirmed '+confirmed.size+' of '+ids.length+' tasks; refresh and retry');
+        }
+        setSyncStatus(notified?'live':'error');
+        toast('Lead time '+(value?'saved':'cleared')+' for '+ids.length+' task(s)','success');
+        return true;
+      }finally{req.clear();}
+    });
+  }catch(e){
+    console.error('Lead-time save failed:',e);
+    setSyncStatus('error');
+    toast('Lead time could not be confirmed. '+e.message,'error');
+    return false;
+  }finally{
+    button.disabled=false;button.textContent=label;
+  }
+}
+
 function sbSaveAll() {
   return queueTaskWrite(sbSaveAllQueued);
 }
@@ -3052,7 +3104,7 @@ function renderSettingsWorkingHours(body){
 function renderSettingsLeadTime(body){
   body.insertAdjacentHTML('beforeend',
     '<div class="s-section-title">⏱ Lead Time</div>'
-    +'<div class="s-section-sub">// SET ESTIMATED HOURS ALLOCATED PER TASK · SHOWN AS TIME BUDGET</div>'
+    +'<div class="s-section-sub">// SET ESTIMATED MINUTES ALLOCATED PER TASK · SHOWN AS TIME BUDGET</div>'
   );
   // Summary strip
   const withLead=tasks.filter(t=>t.leadTime).length;
@@ -3081,7 +3133,7 @@ function renderSettingsLeadTime(body){
     +'<button class="fbtn" id="lt-clear-all" style="font-size:.65rem">Clear All Lead Times</button>';
   body.appendChild(bulk);
 
-  const wrap2=document.createElement('div');body.appendChild(wrap2);
+  const wrap2=document.createElement('div');wrap2.style.overflowX='auto';body.appendChild(wrap2);
   let ltShowUnset=false;
 
   const drawLT=()=>{
@@ -3094,12 +3146,12 @@ function renderSettingsLeadTime(body){
       return true;
     });
     wrap2.innerHTML='';
-    const list=document.createElement('div');list.className='task-list';
-    const cols='30px 1fr 100px 100px 90px';
+    const list=document.createElement('div');list.className='task-list';list.style.minWidth='660px';
+    const cols='30px minmax(150px,1fr) 100px 90px 160px';
     const hdr=document.createElement('div');hdr.className='tlh';hdr.style.gridTemplateColumns=cols;
     hdr.innerHTML='<span>#</span><span>Task</span><span>Person</span><span>Lead Time</span><span></span>';
     list.appendChild(hdr);
-    if(!fil.length){list.innerHTML+='<div class="empty-msg">No tasks found</div>';wrap2.appendChild(list);return;}
+    if(!fil.length){list.innerHTML+='<div class="empty-msg">No tasks found</div>';}
     fil.forEach((k,i)=>{
       const t2=th(k.person);const row=document.createElement('div');
       row.style.cssText='display:grid;grid-template-columns:'+cols+';align-items:center;padding:9px 14px;border-bottom:1px solid var(--border);gap:8px;font-size:.82rem;animation:rowIn .18s ease '+i*0.008+'s both;'+(k.priority?'border-left:3px solid '+t2.accent+';':'');
@@ -3108,7 +3160,7 @@ function renderSettingsLeadTime(body){
         +'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.8rem">'+k.task+(k.priority?' <span style="color:'+t2.accent+'">★</span>':'')+'</span>'
         +'<span style="color:'+t2.color+';font-size:.74rem">'+k.person.split('/')[0]+'</span>'
         +'<div style="display:flex;align-items:center;gap:5px">'+(k.leadTime?'<span class="lead-badge">'+k.leadTime+'</span>':'<span style="font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted)">—</span>')+'</div>'
-        +'<div style="display:flex;align-items:center;gap:5px"><input type="number" class="lead-inp lt-inp" id="lt-'+k.sl+'" value="'+curHrs+'" placeholder="min" min="0" step="1"><button class="lead-save lt-save" data-sl="'+k.sl+'">'+(k.leadTime?'EDIT':'SAVE')+'</button></div>';
+        +'<div style="display:flex;align-items:center;gap:5px"><input type="number" class="lead-inp lt-inp" style="width:80px;min-width:0" id="lt-'+k.sl+'" value="'+curHrs+'" placeholder="min" min="0" step="1"><button class="lead-save lt-save" data-sl="'+k.sl+'">'+(k.leadTime?'EDIT':'SAVE')+'</button></div>';
       list.appendChild(row);
     });
     wrap2.appendChild(list);
@@ -3117,44 +3169,23 @@ function renderSettingsLeadTime(body){
         const sl=+btn.dataset.sl;const k=tasks.find(t=>t.sl===sl);if(!k)return;
         const val=document.getElementById('lt-'+sl)?.value;
         if(val===''||!Number.isFinite(Number(val))||Number(val)<0){toast('Enter valid minutes','error');return;}
-        const previous=k.leadTime;
-        k.leadTime=parseFloat(val)+'min';
-        btn.disabled=true;btn.textContent='SAVING...';
-        const ok=await syncNow();
-        if(!ok)k.leadTime=previous;
-        else toast('Lead time permanently saved: '+k.task+' → '+k.leadTime,'success');
-        drawLT();
+        await saveLeadTimes([k],parseFloat(val)+'min',btn);
+        if(wrap2.isConnected)drawLT();
       };
     });
     // Bulk
     document.getElementById('lt-bulk-btn').onclick=async()=>{
       const val=document.getElementById('lt-bulk-val')?.value;
       if(val===''||!Number.isFinite(Number(val))||Number(val)<0){toast('Enter valid minutes','error');return;}
-      const previous=fil.map(k=>[k,k.leadTime]);
-      fil.forEach(k=>{k.leadTime=parseFloat(val)+'min';});
-      const bulkBtn=document.getElementById('lt-bulk-btn');bulkBtn.disabled=true;bulkBtn.textContent='SAVING...';
-      try {
-        const ok=await syncNow();
-        if(!ok)previous.forEach(([k,old])=>{k.leadTime=old;});
-        else toast('Lead time permanently saved for '+fil.length+' tasks','success');
-      } catch(e) {
-        previous.forEach(([k,old])=>{k.leadTime=old;});
-        console.error('Bulk lead-time save failed:',e);
-        toast('Lead-time save failed. Please retry.','error');
-      } finally {
-        bulkBtn.disabled=false;
-        bulkBtn.textContent='Apply to Filtered';
-        drawLT();
-      }
+      const bulkBtn=document.getElementById('lt-bulk-btn');
+      await saveLeadTimes(fil,parseFloat(val)+'min',bulkBtn);
+      if(wrap2.isConnected)drawLT();
     };
     document.getElementById('lt-clear-all').onclick=()=>{
       confirm2('Clear All Lead Times?','This will remove lead time from ALL tasks.',async()=>{
-        const previous=tasks.map(t=>[t,t.leadTime]);
-        tasks.forEach(t=>{t.leadTime='';});
-        const ok=await syncNow();
-        if(!ok)previous.forEach(([t,old])=>{t.leadTime=old;});
-        else toast('All lead times permanently cleared','info');
-        drawLT();
+        const clearBtn=document.getElementById('lt-clear-all');
+        await saveLeadTimes(tasks.slice(),'',clearBtn);
+        if(wrap2.isConnected)drawLT();
       });
     };
   };
