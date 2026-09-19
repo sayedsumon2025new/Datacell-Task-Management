@@ -590,12 +590,132 @@ function doneStateToObj() {
 }
 
 // ── Apply data from Supabase into local state ────────────────────
+
+// Task persistence: send only changed fields; never infer deletion from a stale list.
+let taskBaseline = new Map();
+let doneBaseline = {};
+let dailyWorkingHours = {};
+let workingHoursDate = localISODate();
+let workloadDate = localISODate();
+let masterEditingId = null;
+let masterSearch = '';
+let masterPerson = '';
+let masterDraft = null;
+let masterEditBaseline = null;
+let masterBusy = false;
+let masterFormDirty = false;
+const TASK_FIELDS = {task:'task',person:'person',priority:'priority',planDate:'plan_date',planTime:'plan_time',actualDate:'actual_date',actualTime:'actual_time',leadTime:'lead_time'};
+function taskToRow(t){
+  const r={sl:Number(t.sl)};
+  Object.entries(TASK_FIELDS).forEach(([local,db])=>r[db]=local==='priority'?!!t[local]:(t[local]||''));
+  return r;
+}
+function rowToTask(r){
+  const t={sl:Number(r.sl)};
+  Object.entries(TASK_FIELDS).forEach(([local,db])=>t[local]=local==='priority'?!!r[db]:(r[db]||''));
+  return t;
+}
+function rememberTask(task){taskBaseline.set(Number(task.sl),taskToRow(task));}
+function leadMinutes(value){
+  const text=String(value||'').trim().toLowerCase();
+  const n=parseFloat(text);
+  return Number.isFinite(n)&&n>=0?n*(/h(?:ours?)?$/.test(text)?60:1):0;
+}
+function teamPersons(){return [...new Set([...PERSONS,...userRegistry.filter(u=>u.name!=='admin').map(u=>u.name),...tasks.map(t=>t.person)].filter(Boolean))].sort();}
+async function dbRequest(table,method,query='',body,prefer='return=representation'){
+  if(!sbConfigured())throw new Error('Supabase is not configured');
+  const req=sbFetchOptions(method,{headers:sbHeaders({'Content-Type':'application/json','Prefer':prefer}),...(body===undefined?{}:{body:JSON.stringify(body)})});
+  try{
+    const res=await fetch(SB_URL+'/rest/v1/'+table+(query?'?'+query:''),req.options);
+    if(!res.ok){
+      let detail={};try{detail=await res.json();}catch(e){}
+      const error=new Error(detail.message||('Database returned HTTP '+res.status));
+      error.status=res.status;error.code=detail.code;throw error;
+    }
+    if(res.status===204)return [];
+    return await res.json();
+  }finally{req.clear();}
+}
+async function notifySaved(){
+  try{await sbBumpVersion();}catch(e){console.error('Version notification:',e);}
+  setSyncStatus('live');
+}
+async function patchTaskRecord(sl,changes){
+  const rows=await dbRequest('tasks','PATCH','sl=eq.'+encodeURIComponent(sl),changes);
+  if(!Array.isArray(rows)||rows.length!==1||Number(rows[0].sl)!==Number(sl))throw new Error('Task update was not confirmed. Refresh and retry.');
+  const row=rows[0];
+  for(const [key,value] of Object.entries(changes)){
+    const actual=row[key];
+    const same=key.endsWith('_time')&&key!=='lead_time'
+      ?String(actual||'').slice(0,5)===String(value||'').slice(0,5)
+      :String(actual??'')===String(value??'');
+    if(!same)throw new Error('Database did not retain '+key);
+  }
+  const updated=rowToTask(row),existing=tasks.find(t=>t.sl===Number(sl));
+  if(existing)Object.assign(existing,updated);else tasks.push(updated);
+  rememberTask(updated);
+  return updated;
+}
+async function createTaskRecord(fields){
+  for(let attempt=0;attempt<4;attempt++){
+    const latest=await dbRequest('tasks','GET','select=sl&order=sl.desc&limit=1');
+    const sl=Math.max(1,Number(latest[0]?.sl||0)+1,nextSl);
+    try{
+      const rows=await dbRequest('tasks','POST','',{sl,...fields});
+      if(!Array.isArray(rows)||rows.length!==1||Number(rows[0].sl)!==sl)throw new Error('New task was not confirmed. Refresh before retrying.');
+      const task=rowToTask(rows[0]);
+      tasks.push(task);tasks.sort((a,b)=>a.sl-b.sl);rememberTask(task);nextSl=sl+1;
+      return task;
+    }catch(e){if(e.status===409&&e.code==='23505')continue;throw e;}
+  }
+  throw new Error('Another user is adding tasks. Please retry.');
+}
+async function saveMasterTask(sl,fields,button){
+  const label=button.textContent;button.disabled=true;button.textContent='SAVING...';masterBusy=true;
+  try{
+    await queueTaskWrite(async()=>{
+      setSyncStatus('syncing');
+      if(sl===null)await createTaskRecord(fields);else await patchTaskRecord(sl,fields);
+      await notifySaved();
+    });
+    toast(sl===null?'Task added and saved to Supabase':'Task changes saved to Supabase','success');
+    return true;
+  }catch(e){setSyncStatus('error');toast('Save failed: '+e.message,'error');return false;}
+  finally{button.disabled=false;button.textContent=label;masterBusy=false;}
+}
+function dailyHoursKey(date,person){return 'workingHoursDaily:'+date+':'+encodeURIComponent(person);}
+function dailyMinutes(person,date){
+  const value=dailyWorkingHours[dailyHoursKey(date,person)];
+  if(Number.isFinite(value)&&value>=0)return value;
+  const legacy=Number(workingHours[person]);
+  return Number.isFinite(legacy)&&legacy>0?Math.round(legacy*60):480;
+}
+async function saveDailyHours(person,date,hours,button){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(hours)||hours<0||hours>24){
+    toast('Choose a date and enter hours from 0 to 24','error');return false;
+  }
+  const key=dailyHoursKey(date,person),minutes=Math.round(hours*60),label=button.textContent;
+  button.disabled=true;button.textContent='SAVING...';
+  try{
+    await queueTaskWrite(async()=>{
+      setSyncStatus('syncing');
+      const rows=await dbRequest('meta','POST','on_conflict=key',[{key,value:String(minutes)}],'resolution=merge-duplicates,return=representation');
+      if(!Array.isArray(rows)||!rows.some(r=>r.key===key&&Number(r.value)===minutes))throw new Error('Working hours were not confirmed');
+      dailyWorkingHours[key]=minutes;
+      await notifySaved();
+    });
+    toast('Saved '+minutes+' minutes for '+person+' on '+date,'success');return true;
+  }catch(e){setSyncStatus('error');toast('Working hours not saved: '+e.message,'error');return false;}
+  finally{button.disabled=false;button.textContent=label;}
+}
+
 function applyRemoteData(data) {
   if (!data) return false;
   let changed = false;
 
   // Empty remote arrays are valid and must clear stale local/demo data.
   if (Array.isArray(data.tasks)) {
+    taskBaseline=new Map(data.tasks.map(t=>[Number(t.sl),taskToRow(t)]));
     const n = JSON.stringify(data.tasks), c = JSON.stringify(tasks);
     if (n !== c) { tasks = data.tasks; changed = true; }
   }
@@ -605,6 +725,7 @@ function applyRemoteData(data) {
   }
 
   if (data.doneState) {
+    doneBaseline=JSON.parse(JSON.stringify(data.doneState));
     const n = JSON.stringify(data.doneState), c = JSON.stringify(doneStateToObj());
     if (n !== c) {
       Object.keys(doneState).forEach(u => delete doneState[u]);
@@ -620,9 +741,13 @@ function applyRemoteData(data) {
     const n = JSON.stringify(regularUsers), c = JSON.stringify(userRegistry);
     if (n !== c) { userRegistry = regularUsers; changed = true; }
     data.users.forEach(u => { CREDS[u.name] = u.password; });
+    PERSONS=regularUsers.map(u=>u.name);
   }
   if (data.moduleAccess) moduleAccess = data.moduleAccess;
-  if (data.workingHours&&Object.keys(data.workingHours).length) {
+  if (data.dailyWorkingHours) {
+    if(JSON.stringify(dailyWorkingHours)!==JSON.stringify(data.dailyWorkingHours)){dailyWorkingHours=data.dailyWorkingHours;changed=true;}
+  }
+  if (data.workingHours) {
     const n=JSON.stringify(data.workingHours),c=JSON.stringify(workingHours);
     if(n!==c){workingHours=data.workingHours;changed=true;}
     try{localStorage.setItem('fts_working_hours',JSON.stringify(workingHours));}catch(e){}
@@ -672,7 +797,8 @@ async function sbFetchAll() {
   return {
     tasks: fetchedTasks, doneState: fetchedDone, users: fetchedUsers, moduleAccess: fetchedAccess,
     workingHours: fetchedWorkingHours,
-    nextSl: Number.isFinite(fetchedNextSl) && fetchedNextSl >= 1 ? fetchedNextSl : 1,
+    dailyWorkingHours:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('workingHoursDaily:')&&r.value!==''&&Number.isFinite(Number(r.value))&&Number(r.value)>=0&&Number(r.value)<=1440).map(r=>[r.key,Number(r.value)])),
+    nextSl: Math.max(1,...fetchedTasks.map(t=>t.sl+1),Number.isFinite(fetchedNextSl)?fetchedNextSl:1),
     version: metaVer ? String(metaVer.value) : '0'
   };
 }
@@ -710,26 +836,45 @@ async function syncNow() {
   return false;
 }
 
-// Safe task sync: upsert current rows and delete only removed SLs.
-// This avoids clearing the whole table before a potentially failed insert.
+// Save local field changes against the last loaded snapshot.
 async function sbSyncTasks(taskRows) {
-  const remote = await sbGet('tasks');
-  if (remote === null) return false;
-  const localSls = new Set(taskRows.map(r => Number(r.sl)));
-  for (const row of remote) {
-    if (!localSls.has(Number(row.sl)) && !await sbDelete('tasks', 'sl', row.sl)) return false;
-  }
-  return taskRows.length ? await sbUpsert('tasks', taskRows) : true;
+  try{
+    const localSls=new Set(taskRows.map(r=>Number(r.sl)));
+    for(const row of taskRows){
+      const previous=taskBaseline.get(Number(row.sl));
+      if(!previous)throw new Error('Unsaved task found. Add tasks through Master Tasks.');
+      const changes={};
+      for(const key of Object.keys(TASK_FIELDS).map(k=>TASK_FIELDS[k])){
+        if(JSON.stringify(row[key])!==JSON.stringify(previous[key]))changes[key]=row[key];
+      }
+      if(Object.keys(changes).length)await patchTaskRecord(row.sl,changes);
+    }
+    // Only explicitly removed rows from this client's known snapshot are deleted.
+    for(const sl of [...taskBaseline.keys()]){
+      if(!localSls.has(sl)){
+        await dbRequest('tasks','DELETE','sl=eq.'+sl);
+        taskBaseline.delete(sl);
+      }
+    }
+    return true;
+  }catch(e){toast('Task sync failed: '+e.message,'error');return false;}
 }
-
 async function sbSyncDoneState(doneRows) {
-  const remote = await sbGet('done_state');
-  if (remote === null) return false;
-  const localUsers = new Set(doneRows.map(r => String(r.username)));
-  for (const row of remote) {
-    if (!localUsers.has(String(row.username)) && !await sbDelete('done_state', 'username', row.username)) return false;
-  }
-  return doneRows.length ? await sbUpsert('done_state', doneRows) : true;
+  try{
+    for(const row of doneRows){
+      const desired=new Set(row.done_sls?row.done_sls.split(',').map(Number):[]);
+      const before=new Set((doneBaseline[row.username]||[]).map(Number));
+      const added=[...desired].filter(id=>!before.has(id));
+      const removed=[...before].filter(id=>!desired.has(id));
+      if(!added.length&&!removed.length)continue;
+      const remote=await dbRequest('done_state','GET','username=eq.'+encodeURIComponent(row.username));
+      const merged=new Set(remote[0]?.done_sls?String(remote[0].done_sls).split(',').map(Number):[]);
+      added.forEach(id=>merged.add(id));removed.forEach(id=>merged.delete(id));
+      await dbRequest('done_state','POST','on_conflict=username',[{username:row.username,done_sls:[...merged].join(',')}],'resolution=merge-duplicates,return=representation');
+      doneState[row.username]=merged;doneBaseline[row.username]=[...merged];
+    }
+    return true;
+  }catch(e){toast('Status sync failed: '+e.message,'error');return false;}
 }
 
 // Serialize task writes and keep an older poll from replacing a saved value.
@@ -778,7 +923,7 @@ async function savePlanTime(sl, value, button) {
           throw new Error('Database did not confirm the plan time');
         }
         const task = tasks.find(t => t.sl === sl);
-        if (task) task.planTime = rows[0].plan_time || '';
+        if (task) { task.planTime = rows[0].plan_time || ''; const baseline=taskBaseline.get(sl);if(baseline)baseline.plan_time=task.planTime; }
         // A notification failure must not undo an acknowledged database write.
         let notified = false;
         try { notified = await sbBumpVersion(); } catch(e) { console.error(e); }
@@ -828,7 +973,7 @@ async function saveLeadTimes(selected, value, button) {
           if(ids.includes(id)&&String(row.lead_time||'')===value){
             confirmed.add(id);
             const task=tasks.find(t=>t.sl===id);
-            if(task)task.leadTime=value;
+            if(task){task.leadTime=value;const baseline=taskBaseline.get(id);if(baseline)baseline.lead_time=value;}
           }
         });
         let notified=false;
@@ -869,10 +1014,7 @@ async function sbSaveAllQueued() {
     username: user, done_sls: sls.join(',')
   }));
   if (!await sbSyncDoneState(doneRows)) return false;
-  return await sbUpsert('meta', [
-    { key: 'nextSl', value: String(nextSl) },
-    { key: 'workingHours', value: JSON.stringify(workingHours) }
-  ]);
+  return true;
 }
 
 // ── WRITE: users ────────────────────────────────────────────────
@@ -902,22 +1044,6 @@ async function syncModuleAccess() {
 }
 
 // ── WRITE: person-wise working hours ───────────────────────────
-async function syncWorkingHours() {
-  try{localStorage.setItem('fts_working_hours',JSON.stringify(workingHours));}
-  catch(e){console.error('Working-hours local save failed:',e);return false;}
-  if(!sbConfigured())return 'local';
-  clearTimeout(_syncDebounce);
-  _syncDebounce = null;
-  setSyncStatus('syncing');
-  const saved=await sbUpsert('meta',[{key:'workingHours',value:JSON.stringify(workingHours)}]);
-  if(!saved){setSyncStatus('error');return 'local';}
-  // The working-hours record is already permanent at this point. Version
-  // notification is best-effort and must not roll back a successful save.
-  sbBumpVersion().catch(e=>console.error('Working-hours version notification failed:',e));
-  setSyncStatus('live');
-  return 'cloud';
-}
-
 // ── Version management ──────────────────────────────────────────
 async function sbBumpVersion() {
   if (!sbConfigured()) return false;
@@ -943,7 +1069,7 @@ async function pollSheets() {
         writeRevision !== _taskWriteRevision) return;
     const changed = applyRemoteData(data);
     _lastVersion = data.version;
-    if (changed) renderContent();
+    if (changed && !masterFormDirty && !document.querySelector('#mainContent input:focus, #mainContent select:focus')) renderContent();
     setSyncStatus('live');
   } catch (e) {
     console.error('Polling error:', e);
@@ -999,7 +1125,7 @@ let workingHours = (()=>{
     return saved&&typeof saved==='object'&&!Array.isArray(saved)?saved:{};
   }catch(e){return {};}
 })(); // person → daily working hours
-let kpiDate='',kpiMonth='';
+let kpiDate=localISODate(),kpiMonth='';
 let overviewDate=localISODate();
 let calYear=new Date().getFullYear(),calMonth=new Date().getMonth(),calSelectedDate='';
 let ovCalYear=new Date().getFullYear(),ovCalMonth=new Date().getMonth(),ovCalSelected='';
@@ -1231,7 +1357,7 @@ function openApp(){startPolling();
   av.style.background=t.bg;av.style.color=t.color;
   document.getElementById('ucNm').textContent=currentUser==='admin'?'Administrator':currentUser;
   document.getElementById('adminBadge').style.display=currentUser==='admin'?'inline':'none';
-  taskFilter='all';searchQ='';adminTab='overview';userView='list';personalActualDate=localISODate();kpiDate='';kpiMonth='';
+  taskFilter='all';searchQ='';adminTab='overview';userView='list';personalActualDate=localISODate();kpiDate=localISODate();kpiMonth='';
   calYear=new Date().getFullYear();calMonth=new Date().getMonth();calSelectedDate='';
   ovCalYear=new Date().getFullYear();ovCalMonth=new Date().getMonth();ovCalSelected='';
   renderContent();
@@ -1250,7 +1376,7 @@ document.getElementById('logoutBtn').onclick=()=>{
 function toast(msg,type='info'){
   document.querySelectorAll('.toast').forEach(t=>t.remove());
   const el=document.createElement('div');el.className='toast '+type;
-  el.innerHTML=`<span>${{success:'✓',error:'✕',info:'✦'}[type]}</span><span>${msg}</span>`;
+  el.textContent=({success:'✓',error:'✕',info:'✦'}[type]||'')+' '+msg;
   document.body.appendChild(el);
   setTimeout(()=>{el.style.transition='all 0.3s';el.style.opacity='0';el.style.transform='translateY(12px)';setTimeout(()=>el.remove(),300);},2800);
 }
@@ -1267,6 +1393,7 @@ function confirm2(title,msg,onOk){
 
 // ─── MAIN RENDER ───
 function renderContent(){
+  if(typeof Chart!=='undefined')Object.values(Chart.instances||{}).forEach(chart=>chart.destroy());
   document.getElementById('mainContent').innerHTML='';
   if (currentUser === 'admin') {
     renderAdmin();
@@ -1716,9 +1843,8 @@ function renderAdmin(allowedModules = null){
   // If allowedModules is provided, only show those tabs (for non-admin users with permissions)
   const allTabDefs=[
     {id:'overview',label:'OVERVIEW',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>'},
-    {id:'add',label:'ADD TASK',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>'},
+    {id:'master',label:'MASTER TASKS',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>'},
     {id:'delete',label:'DELETE',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M9 6V4h6v2"/></svg>'},
-    {id:'assign',label:'ASSIGN',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>'},
     {id:'kpi',label:'KPI',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>'},
     {id:'plantime',label:'PLAN TIME',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'},
     {id:'all',label:'ALL TASKS',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><polyline points="3 6 4 7 6 5"/><polyline points="3 12 4 13 6 11"/></svg>'},
@@ -1749,7 +1875,7 @@ function renderAdmin(allowedModules = null){
     const btn=document.createElement('button');
     btn.className='atab'+(adminTab===d.id?' active':'');
     btn.innerHTML=d.icon+d.label;
-    btn.onclick=()=>{adminTab=d.id;renderContent();};
+    btn.onclick=()=>{masterFormDirty=false;adminTab=d.id;renderContent();};
     tabs.appendChild(btn);
   });
   c.appendChild(tabs);
@@ -1763,9 +1889,9 @@ function renderAdmin(allowedModules = null){
   }
 
   if(adminTab==='overview')buildOverview(c);
-  else if(adminTab==='add')buildAdd(c);
+  else if(adminTab==='master')renderMasterTasks(c);
   else if(adminTab==='delete')buildDelete(c);
-  else if(adminTab==='assign')buildAssign(c);
+  
   else if(adminTab==='kpi')buildKPI(c);
   else if(adminTab==='plantime')buildPlanTime(c);
   else if(adminTab==='settings')buildSettings(c);
@@ -2064,38 +2190,7 @@ function buildOverview(c){
 }
 
 // ── ADD TASK ──
-function buildAdd(c){
-  const pOpts=PERSONS.map(p=>`<option value="${p}">${p}</option>`).join('');
-  const panel=document.createElement('div');panel.className='add-panel';
-  panel.innerHTML=`
-    <h3><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>Add New Task</h3>
-    <div class="add-grid">
-      <div class="fg"><label>TASK NAME</label><input type="text" class="fi" id="nName" placeholder="Enter task name..."></div>
-      <div class="fg"><label>ASSIGN TO</label><select class="fi-sel" id="nPerson"><option value="">-- Select --</option>${pOpts}</select></div>
-      <div class="fg"><label>PLAN TIME (HH:MM)</label><input type="time" class="fi" id="nPlanTime"></div>
-      <button class="add-btn" id="addBtn"><svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>ADD</button>
-    </div>
-    <div class="prio-row"><input type="checkbox" class="prio-ck" id="nPrio"><label class="prio-lbl" for="nPrio">Mark as Priority ★</label></div>`;
-  c.appendChild(panel);
-
-  const rWrap=document.createElement('div');
-  const rLabel=document.createElement('div');rLabel.className='section-title';rLabel.textContent='RECENTLY ADDED';c.appendChild(rLabel);c.appendChild(rWrap);
-  buildRecentList(rWrap);
-
-  document.getElementById('addBtn').onclick=()=>{
-    const name=document.getElementById('nName').value.trim();
-    const person=document.getElementById('nPerson').value;
-    const planTime=document.getElementById('nPlanTime').value;
-    const priority=document.getElementById('nPrio').checked;
-    if(!name){toast('Please enter a task name','error');return;}
-    if(!person){toast('Please assign to a person','error');return;}
-    tasks.push({sl:nextSl++,task:name,person,priority,planTime,actualTime:''});
-    document.getElementById('nName').value='';document.getElementById('nPerson').value='';
-    document.getElementById('nPlanTime').value='';document.getElementById('nPrio').checked=false;
-    toast(`Task added → ${person}${planTime?' | Plan: '+planTime:''}`, 'success');syncToSheets();
-    buildRecentList(rWrap);
-  };
-}
+function buildAdd(c){renderMasterTasks(c);}
 
 function buildRecentList(wrap){
   wrap.innerHTML='';
@@ -2168,47 +2263,7 @@ function buildDelete(c){
 }
 
 // ── ASSIGN ──
-function buildAssign(c){
-  c.insertAdjacentHTML('beforeend',`<div style="font-family:'Syne',sans-serif;font-size:1.1rem;font-weight:700;margin-bottom:4px">Task <span style="color:#f5c842">Assignment</span></div>
-    <div style="font-size:0.72rem;font-family:'DM Mono',monospace;color:var(--muted);margin-bottom:18px">// REASSIGN TASKS & TOGGLE PRIORITY</div>`);
-  const pOpts='<option value="">All</option>'+PERSONS.map(p=>`<option value="${p}">${p}</option>`).join('');
-  const fr=document.createElement('div');fr.className='filter-row';
-  fr.innerHTML=`<div class="search-wrap"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><input type="text" id="asQ" placeholder="Search..."></div>
-    <select class="field-select" id="asPF">${pOpts}</select>`;
-  c.appendChild(fr);
-  const wrap=document.createElement('div');c.appendChild(wrap);
-  const draw=()=>{
-    const q=(document.getElementById('asQ')?.value||'').toLowerCase();
-    const pf=document.getElementById('asPF')?.value||'';
-    const fil=tasks.filter(k=>{if(q&&!k.task.toLowerCase().includes(q)&&!k.person.toLowerCase().includes(q))return false;if(pf&&k.person!==pf)return false;return true;});
-    wrap.innerHTML='';
-    const list=document.createElement('div');list.className='task-list';
-    const cols='36px 1fr 170px 54px';
-    const hdr=document.createElement('div');hdr.className='tlh';hdr.style.gridTemplateColumns=cols;
-    hdr.innerHTML='<span>#</span><span>Task</span><span>Assign To</span><span style="text-align:center">Prio</span>';
-    list.appendChild(hdr);
-    if(!fil.length){list.innerHTML+='<div class="empty-msg">NO TASKS FOUND</div>';wrap.appendChild(list);return;}
-    fil.forEach((k,i)=>{
-      const t2=th(k.person);const row=document.createElement('div');
-      row.className='trow'+(k.priority?' priority':'');
-      row.style.gridTemplateColumns=cols;row.style.animationDelay=i*0.01+'s';
-      if(k.priority)row.style.borderLeftColor=t2.accent;
-      row.innerHTML=`<span class="tsl">${k.sl}</span>
-        <span class="tname" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${k.task}</span>
-        <div><select class="person-sel" data-sl="${k.sl}" style="color:${t2.color};border-color:${t2.accent}33">
-          ${PERSONS.map(p=>`<option value="${p}"${p===k.person?' selected':''}>${p}</option>`).join('')}
-        </select></div>
-        <div style="text-align:center"><button class="star-btn${k.priority?' on':''}" data-sl="${k.sl}">★</button></div>`;
-      list.appendChild(row);
-    });
-    wrap.appendChild(list);
-    wrap.querySelectorAll('.person-sel').forEach(sel=>{sel.onchange=()=>{const sl=+sel.dataset.sl,k=tasks.find(t=>t.sl===sl);if(!k)return;const old=k.person;k.person=sel.value;const t2=th(k.person);sel.style.color=t2.color;sel.style.borderColor=t2.accent+'33';if(k.priority)sel.closest('.trow').style.borderLeftColor=t2.accent;toast(`#${k.sl} reassigned: ${old} → ${k.person}`,'info');syncToSheets();};});
-    wrap.querySelectorAll('.star-btn').forEach(btn=>{btn.onclick=()=>{const sl=+btn.dataset.sl,k=tasks.find(t=>t.sl===sl);if(!k)return;k.priority=!k.priority;btn.classList.toggle('on',k.priority);const row=btn.closest('.trow');row.classList.toggle('priority',k.priority);if(k.priority){row.style.borderLeft='3px solid '+th(k.person).accent;}else{row.style.borderLeft='';}toast(k.priority?`"${k.task}" → ★ priority`:`"${k.task}" priority removed`,'info');syncToSheets();};});
-  };
-  draw();
-  document.getElementById('asQ').oninput=draw;
-  document.getElementById('asPF').onchange=draw;
-}
+function buildAssign(c){renderMasterTasks(c);}
 
 // ── PLAN TIME (Admin only) ──
 function buildPlanTime(c){
@@ -2314,7 +2369,7 @@ function buildKPI(c){
     +'</select><button class="dr-clear" id="kpiClear">Clear</button>';
   c.appendChild(fb);
   const wrap=document.createElement('div');wrap.id='kpi-wrap';c.appendChild(wrap);
-  document.getElementById('kpiDate').onchange=e=>{kpiDate=e.target.value;kpiMonth='';document.getElementById('kpiMonth').value='';buildKPICharts();};
+  document.getElementById('kpiDate').onchange=e=>{kpiDate=e.target.value;if(kpiDate)workloadDate=kpiDate;kpiMonth='';document.getElementById('kpiMonth').value='';buildKPICharts();};
   document.getElementById('kpiMonth').onchange=e=>{kpiMonth=e.target.value;kpiDate='';document.getElementById('kpiDate').value='';buildKPICharts();};
   document.getElementById('kpiClear').onclick=()=>{kpiDate='';kpiMonth='';document.getElementById('kpiDate').value='';document.getElementById('kpiMonth').value='';buildKPICharts();};
   buildKPICharts();
@@ -2330,6 +2385,7 @@ function getKPITasks(){
 }
 
 function buildKPICharts(){
+  const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
   const wrap=document.getElementById('kpi-wrap');if(!wrap)return;
   try{Object.values(Chart.instances||{}).forEach(ch=>ch.destroy());}catch(e){}
   wrap.innerHTML='';
@@ -2407,35 +2463,40 @@ function buildKPICharts(){
   ltSection.appendChild(ltChartGrid);
 
   // Lead time balancing table
-  const ltTableBox=document.createElement('div');ltTableBox.className='chart-full';
-  ltTableBox.innerHTML='<h4 style="font-family:Syne,sans-serif;font-size:.9rem;font-weight:700;margin-bottom:12px">⏱ Workload Balancing Table <span style="font-family:DM Mono,monospace;font-size:.62rem;font-weight:400;color:var(--muted)">· lead time per person vs team average</span></h4>'
+  const capacityFilter=document.createElement('div');capacityFilter.className='filter-row';
+  const capacityLabel=document.createElement('label');capacityLabel.textContent='Workload / working-hours date';capacityLabel.htmlFor='workload-date';
+  const capacityDate=document.createElement('input');capacityDate.type='date';capacityDate.id='workload-date';capacityDate.className='fi';capacityDate.style.width='180px';capacityDate.value=workloadDate;
+  capacityDate.onchange=()=>{if(capacityDate.value){workloadDate=capacityDate.value;renderContent();}};
+  capacityFilter.append(capacityLabel,capacityDate);ltSection.appendChild(capacityFilter);
+  const ltTableBox=document.createElement('div');ltTableBox.className='chart-full';ltTableBox.style.overflowX='auto';
+  ltTableBox.innerHTML='<h4 style="font-family:Syne,sans-serif;font-size:.9rem;font-weight:700;margin-bottom:12px">⏱ Workload Balancing Table <span style="font-family:DM Mono,monospace;font-size:.62rem;font-weight:400;color:var(--muted)">· working minutes for selected date; current task plan vs team average</span></h4>'
     +'<table class="pct-table"><thead><tr>'
-    +'<th>PERSON</th><th>TASKS W/ LEAD</th><th>TOTAL MIN</th><th>AVG PER TASK</th><th>COMPLETED MIN</th><th>REMAINING MIN</th><th>VS AVERAGE</th>'
+    +'<th>PERSON</th><th>TASKS W/ LEAD</th><th>WORKING MINUTES</th><th>TOTAL TASK MINUTES</th><th>AVG PER TASK</th><th>COMPLETED MIN</th><th>REMAINING MIN</th><th>VS AVERAGE</th>'
     +'</tr></thead><tbody id="ltTableBody"></tbody></table>';
   ltSection.appendChild(ltTableBox);
   wrap.appendChild(ltSection);
 
   requestAnimationFrame(()=>{
     const cd={plugins:{legend:{labels:{color:'#505870',font:{size:9}}},tooltip:{backgroundColor:'#12151d',borderColor:'#1f2535',borderWidth:1,titleColor:'#dde1ec',bodyColor:'#505870'}}};
-    Chart.defaults.color='#505870';
+    if(typeof Chart!=='undefined')Chart.defaults.color='#505870';
     // Person bar
     const chartPersons=[...new Set([...PERSONS,...tasks.map(k=>k.person)])];
     const pData=chartPersons.map(p=>{const master=tasks.filter(k=>k.person===p);const dn=filtered.filter(k=>k.person===p&&isTaskComplete(k)).length;return{n:p,t:master.length,d:dn};}).filter(x=>x.t>0);
     const pCtx=document.getElementById('chartPerson')?.getContext('2d');
-    if(pCtx)new Chart(pCtx,{type:'bar',data:{labels:pData.map(x=>x.n.split('/')[0]),datasets:[{label:'Done',data:pData.map(x=>x.d),backgroundColor:pData.map(x=>th(x.n).accent+'cc'),borderRadius:4},{label:'Pending',data:pData.map(x=>x.t-x.d),backgroundColor:'rgba(80,88,112,0.3)',borderRadius:4}]},options:{...cd,indexAxis:'y',scales:{x:{stacked:true,grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#505870'}},y:{stacked:true,grid:{display:false},ticks:{color:'#dde1ec',font:{size:10}}}}}});
+    if(pCtx&&typeof Chart!=='undefined')new Chart(pCtx,{type:'bar',data:{labels:pData.map(x=>x.n.split('/')[0]),datasets:[{label:'Done',data:pData.map(x=>x.d),backgroundColor:pData.map(x=>th(x.n).accent+'cc'),borderRadius:4},{label:'Pending',data:pData.map(x=>x.t-x.d),backgroundColor:'rgba(80,88,112,0.3)',borderRadius:4}]},options:{...cd,indexAxis:'y',scales:{x:{stacked:true,grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#505870'}},y:{stacked:true,grid:{display:false},ticks:{color:'#dde1ec',font:{size:10}}}}}});
     // Status donut
     const sCtx=document.getElementById('chartStatus')?.getContext('2d');
-    if(sCtx)new Chart(sCtx,{type:'doughnut',data:{labels:['Early/On-time','Late','Not Started'],datasets:[{data:[earlyN+ontimeN,lateN,total-completed],backgroundColor:['rgba(62,240,176,.7)','rgba(248,113,113,.7)','rgba(80,88,112,.3)'],borderColor:['#3ef0b0','#f87171','#505870'],borderWidth:1,hoverOffset:8}]},options:{...cd,cutout:'65%',plugins:{...cd.plugins,legend:{position:'bottom',labels:{color:'#505870',font:{size:9},padding:10}}}}});
+    if(sCtx&&typeof Chart!=='undefined')new Chart(sCtx,{type:'doughnut',data:{labels:['Early/On-time','Late','Not Started'],datasets:[{data:[earlyN+ontimeN,lateN,total-completed],backgroundColor:['rgba(62,240,176,.7)','rgba(248,113,113,.7)','rgba(80,88,112,.3)'],borderColor:['#3ef0b0','#f87171','#505870'],borderWidth:1,hoverOffset:8}]},options:{...cd,cutout:'65%',plugins:{...cd.plugins,legend:{position:'bottom',labels:{color:'#505870',font:{size:9},padding:10}}}}});
     // Priority
     const prCtx=document.getElementById('chartPrio')?.getContext('2d');
     const nPrios=tasks.filter(k=>!k.priority);const nDone=filtered.filter(k=>!k.priority&&isTaskComplete(k)).length;
-    if(prCtx)new Chart(prCtx,{type:'bar',data:{labels:['Priority ★','Normal'],datasets:[{label:'Done',data:[prioDone,nDone],backgroundColor:['rgba(232,121,249,.7)','rgba(62,240,176,.6)'],borderRadius:6},{label:'Pending',data:[prios.length-prioDone,nPrios.length-nDone],backgroundColor:['rgba(232,121,249,.2)','rgba(62,240,176,.15)'],borderRadius:6}]},options:{...cd,scales:{x:{grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#dde1ec'}},y:{grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#505870'}}}}});
+    if(prCtx&&typeof Chart!=='undefined')new Chart(prCtx,{type:'bar',data:{labels:['Priority ★','Normal'],datasets:[{label:'Done',data:[prioDone,nDone],backgroundColor:['rgba(232,121,249,.7)','rgba(62,240,176,.6)'],borderRadius:6},{label:'Pending',data:[prios.length-prioDone,nPrios.length-nDone],backgroundColor:['rgba(232,121,249,.2)','rgba(62,240,176,.15)'],borderRadius:6}]},options:{...cd,scales:{x:{grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#dde1ec'}},y:{grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#505870'}}}}});
     // Timeline
     const tlCtx=document.getElementById('chartTimeline')?.getContext('2d');
     const withDates=filtered.filter(k=>k.actualDate);
     const dateMap={};withDates.forEach(k=>{if(!dateMap[k.actualDate])dateMap[k.actualDate]={on:0,late:0};const cmp=timeCmp('',k.planTime,k.actualDate,k.actualTime);if(cmp==='late')dateMap[k.actualDate].late++;else dateMap[k.actualDate].on++;});
     const sortedD=Object.keys(dateMap).sort();
-    if(tlCtx){
+    if(tlCtx&&typeof Chart!=='undefined'){
       if(sortedD.length)new Chart(tlCtx,{type:'bar',data:{labels:sortedD.map(d=>fmtDate(d)),datasets:[{label:'On-Time',data:sortedD.map(d=>dateMap[d].on),backgroundColor:'rgba(62,240,176,.65)',borderRadius:4},{label:'Late',data:sortedD.map(d=>dateMap[d].late),backgroundColor:'rgba(248,113,113,.65)',borderRadius:4}]},options:{...cd,scales:{x:{stacked:true,grid:{display:false},ticks:{color:'#505870',maxRotation:35}},y:{stacked:true,grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#505870'}}}}});
       else tlCtx.canvas.closest('.chart-box').insertAdjacentHTML('beforeend','<p style="font-size:.75rem;color:var(--muted);text-align:center;padding:30px;font-family:DM Mono,monospace">No completed data for the selected date.</p>');
     }
@@ -2476,7 +2537,7 @@ function buildKPICharts(){
     }
 
     // ── LEAD TIME CHART 1: BY PERSON ──
-    const parseLT=h=>h?parseFloat(h.replace('h','')):0;
+    const parseLT=leadMinutes;
 
     // Per-person lead time aggregation
     // Lead-time analysis is a permanent master-task view. KPI date/month
@@ -2486,10 +2547,10 @@ function buildKPICharts(){
     const ltPersonData=leadTimePersons.map(p=>{
       const pt=leadTimeSource.filter(k=>k.person===p&&k.leadTime);
       const totalHrs=pt.reduce((s,k)=>s+parseLT(k.leadTime),0);
-      const doneHrs=pt.filter(isTaskComplete).reduce((s,k)=>s+parseLT(k.leadTime),0);
+      const doneHrs=pt.filter(k=>isTaskComplete(k)&&k.actualDate===workloadDate).reduce((s,k)=>s+parseLT(k.leadTime),0);
       const pendHrs=totalHrs-doneHrs;
       return{name:p,total:+totalHrs.toFixed(1),done:+doneHrs.toFixed(1),pend:+pendHrs.toFixed(1),count:pt.length};
-    }).filter(x=>x.total>0).sort((a,b)=>b.total-a.total);
+    }).sort((a,b)=>b.total-a.total);
 
     const totalLeadHrs=ltPersonData.reduce((s,x)=>s+x.total,0);
     const avgHrs=ltPersonData.length?+(totalLeadHrs/ltPersonData.length).toFixed(1):0;
@@ -2513,7 +2574,7 @@ function buildKPICharts(){
     }
 
     const ltCtx1=document.getElementById('chartLtUser')?.getContext('2d');
-    if(ltCtx1){
+    if(ltCtx1&&typeof Chart!=='undefined'){
       if(ltPersonData.length){
         new Chart(ltCtx1,{
           type:'bar',
@@ -2579,7 +2640,7 @@ function buildKPICharts(){
       .slice(0,20);
 
     const ltCtx2=document.getElementById('chartLtTask')?.getContext('2d');
-    if(ltCtx2){
+    if(ltCtx2&&typeof Chart!=='undefined'){
       if(ltTaskData.length){
         new Chart(ltCtx2,{
           type:'bar',
@@ -2637,6 +2698,7 @@ function buildKPICharts(){
             +'<span style="width:22px;height:22px;border-radius:6px;background:'+t2.bg+';color:'+t2.color+';display:inline-flex;align-items:center;justify-content:center;font-size:.55rem;font-weight:700;font-family:Syne,sans-serif">'+ini(x.name)+'</span>'
             +'<span style="color:'+t2.color+'">'+x.name+'</span></span></td>'
             +'<td style="font-family:DM Mono,monospace;font-size:.8rem">'+x.count+'</td>'
+            +'<td style="font-family:DM Mono,monospace;color:#60a5fa">'+dailyMinutes(x.name,workloadDate)+'m</td>'
             +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:#a3e635;font-weight:600">'+x.total+'m</td>'
             +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:var(--muted)">'+(x.count?+(x.total/x.count).toFixed(1)+'m':'—')+'</td>'
             +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:#3ef0b0">'+x.done+'m</td>'
@@ -2651,12 +2713,13 @@ function buildKPICharts(){
         const avgTr=document.createElement('tr');
         avgTr.style.cssText='background:rgba(245,200,66,.04);border-top:1px solid rgba(245,200,66,.15)';
         avgTr.innerHTML='<td style="font-family:DM Mono,monospace;font-size:.72rem;color:#f5c842;letter-spacing:.06em" colspan="2">TEAM AVERAGE</td>'
+          +'<td style="color:#60a5fa">'+(ltPersonData.length?Math.round(ltPersonData.reduce((sum,x)=>sum+dailyMinutes(x.name,workloadDate),0)/ltPersonData.length):0)+'m / person</td>'
           +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:#f5c842;font-weight:600">'+totalLeadHrs.toFixed(1)+'m total</td>'
           +'<td style="font-family:DM Mono,monospace;font-size:.8rem;color:#f5c842">'+avgHrs+'m / person</td>'
           +'<td colspan="3" style="font-family:DM Mono,monospace;font-size:.7rem;color:var(--muted)">'+tasksWithLead+' tasks with lead time · '+tasksNoLead+' without</td>';
         ltTbody.appendChild(avgTr);
       } else {
-        ltTbody.innerHTML='<tr><td colspan="7" style="text-align:center;padding:28px;font-family:DM Mono,monospace;font-size:.8rem;color:var(--muted)">No lead times set. Go to Settings → Lead Time to add workload minutes.</td></tr>';
+        ltTbody.innerHTML='<tr><td colspan="8" style="text-align:center;padding:28px;font-family:DM Mono,monospace;font-size:.8rem;color:var(--muted)">No team members found. Add users, then manage tasks in Master Tasks.</td></tr>';
       }
     }
   });
@@ -2705,7 +2768,7 @@ function buildSettings(c){
   const navItems=[
     {id:'users',icon:'👤',label:'USER MANAGEMENT'},
     {id:'access',icon:'🔐',label:'MODULE ACCESS'},
-    {id:'tasksetup',icon:'📋',label:'TASK SETUP'},
+    {id:'master',icon:'📋',label:'MASTER TASKS'},
     {id:'plantime2',icon:'📅',label:'PLAN TIME'},
     {id:'leadtime',icon:'⏱',label:'LEAD TIME'},
     {id:'workinghours',icon:'🕒',label:'WORKING HOURS'},
@@ -2714,7 +2777,7 @@ function buildSettings(c){
     if(i===2){const sep=document.createElement('div');sep.className='snav-sep';nav.appendChild(sep);}
     const btn=document.createElement('button');btn.className='snav-btn'+(settingsTab===item.id?' active':'');
     btn.innerHTML=`<span style="font-size:.9rem">${item.icon}</span>${item.label}`;
-    btn.onclick=()=>{settingsTab=item.id;renderSettingsBody(body);};
+    btn.onclick=()=>{masterFormDirty=false;settingsTab=item.id;renderSettingsBody(body);};
     nav.appendChild(btn);
   });
 
@@ -2730,12 +2793,12 @@ function renderSettingsBody(body){
   // Re-mark active nav
   document.querySelectorAll('.snav-btn').forEach(btn=>{
     const lbl=btn.textContent.trim();
-    const map={users:'USER MANAGEMENT',access:'MODULE ACCESS',tasksetup:'TASK SETUP',plantime2:'PLAN TIME',leadtime:'LEAD TIME',workinghours:'WORKING HOURS'};
+    const map={users:'USER MANAGEMENT',access:'MODULE ACCESS',master:'MASTER TASKS',plantime2:'PLAN TIME',leadtime:'LEAD TIME',workinghours:'WORKING HOURS'};
     btn.classList.toggle('active',map[settingsTab]===lbl);
   });
   if(settingsTab==='users')renderSettingsUsers(body);
   else if(settingsTab==='access')renderSettingsAccess(body);
-  else if(settingsTab==='tasksetup')renderSettingsTaskSetup(body);
+  else if(settingsTab==='master')renderMasterTasks(body);
   else if(settingsTab==='plantime2')renderSettingsPlanTime(body);
   else if(settingsTab==='leadtime')renderSettingsLeadTime(body);
   else if(settingsTab==='workinghours')renderSettingsWorkingHours(body);
@@ -2965,44 +3028,7 @@ function renderSettingsAccess(body){
 }
 
 // ── SECTION 3: TASK SETUP ────────────────────────
-function renderSettingsTaskSetup(body){
-  body.insertAdjacentHTML('beforeend',
-    '<div class="s-section-title">📋 Task Setup</div>'
-    +'<div class="s-section-sub">// ADD NEW TASKS WITH FULL DETAILS IN ONE PLACE</div>'
-  );
-  const pOpts=PERSONS.map(p=>`<option value="${p}">${p}</option>`).join('');
-  const panel=document.createElement('div');panel.style.cssText='background:rgba(245,200,66,.03);border:1px solid rgba(245,200,66,.12);border-radius:12px;padding:18px 20px;margin-bottom:20px';
-  panel.innerHTML='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">'
-    +'<div class="fg" style="grid-column:1/-1"><label>TASK NAME *</label><input type="text" class="fi" id="sts-name" placeholder="Enter task name..." style="padding:9px 12px;font-size:.85rem"></div>'
-    +'<div class="fg"><label>ASSIGN TO *</label><select class="fi-sel" id="sts-person" style="padding:9px 12px;font-size:.85rem"><option value="">-- Select Person --</option>'+pOpts+'</select></div>'
-    +'<div class="fg"><label>LEAD TIME (minutes)</label><input type="number" class="fi" id="sts-lead" placeholder="e.g. 30" min="0" step="1" style="padding:9px 12px;font-size:.85rem"></div>'
-    +'<div class="fg"><label>PLAN TIME (deadline)</label><input type="time" class="fi" id="sts-plantime" style="padding:9px 12px;font-size:.85rem;color-scheme:dark"></div>'
-    +'</div>'
-    +'<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">'
-    +'<label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="sts-prio" style="accent-color:#f5c842;width:15px;height:15px"><span style="font-size:.82rem;color:var(--muted)">Mark as Priority ★</span></label>'
-    +'<button class="add-btn" id="sts-add" style="margin-left:auto">+ ADD TASK</button>'
-    +'</div>';
-  body.appendChild(panel);
-
-  document.getElementById('sts-add').onclick=()=>{
-    const name=document.getElementById('sts-name').value.trim();
-    const person=document.getElementById('sts-person').value;
-    const leadRaw=document.getElementById('sts-lead').value;
-    const planTime=document.getElementById('sts-plantime').value;
-    const priority=document.getElementById('sts-prio').checked;
-    if(!name){toast('Task name required','error');return;}
-    if(!person){toast('Please assign to a person','error');return;}
-    const leadTime=leadRaw?parseFloat(leadRaw)+'min':'';
-    tasks.push({sl:nextSl++,task:name,person,priority,planDate:'',planTime,actualDate:'',actualTime:'',leadTime});
-    syncToSheets();
-    toast('Task #'+(nextSl-1)+' added → '+person,'success');
-    document.getElementById('sts-name').value='';document.getElementById('sts-person').value='';
-    document.getElementById('sts-lead').value='';
-    document.getElementById('sts-plantime').value='';document.getElementById('sts-prio').checked=false;
-    renderRecentSetup(body);
-  };
-  renderRecentSetup(body);
-}
+function renderSettingsTaskSetup(body){renderMasterTasks(body);}
 
 function renderRecentSetup(body){
   let old=document.getElementById('sts-recent');if(old)old.remove();
@@ -3080,66 +3106,123 @@ function renderSettingsPlanTime(body){
 }
 
 // ── SECTION 5: WORKING HOURS ──────────────────────
-function renderSettingsWorkingHours(body){
-  body.insertAdjacentHTML('beforeend',
-    '<div class="s-section-title">🕒 Team Working Hours</div>'
-    +'<div class="s-section-sub">// DEFAULT 8 HOURS · EDIT PERSON-WISE BASED ON DAILY WORKLOAD</div>'
-  );
-  const persons=[...new Set([...PERSONS,...userRegistry.filter(u=>u.name!=='admin').map(u=>u.name),...tasks.map(t=>t.person)].filter(Boolean))];
-  const customCount=persons.filter(p=>Number(workingHours[p])>0&&Number(workingHours[p])!==8).length;
-  body.insertAdjacentHTML('beforeend',
-    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">'
-    +'<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px"><span style="font-family:Syne,sans-serif;font-size:1.3rem;font-weight:800;color:#60a5fa">'+persons.length+'</span><span style="margin-left:9px;font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted)">TEAM PERSONS</span></div>'
-    +'<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px"><span style="font-family:Syne,sans-serif;font-size:1.3rem;font-weight:800;color:#3ef0b0">8h</span><span style="margin-left:9px;font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted)">DEFAULT HOURS</span></div>'
-    +'<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 16px"><span style="font-family:Syne,sans-serif;font-size:1.3rem;font-weight:800;color:#f5c842">'+customCount+'</span><span style="margin-left:9px;font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted)">CUSTOMIZED</span></div>'
-    +'</div>'
-  );
-  const list=document.createElement('div');list.className='task-list';
-  const cols='45px 1fr 130px 190px';
-  const hdr=document.createElement('div');hdr.className='tlh';hdr.style.gridTemplateColumns=cols;
-  hdr.innerHTML='<span>#</span><span>Person</span><span>Current Hours</span><span>Set / Edit Daily Hours</span>';
-  list.appendChild(hdr);
-  if(!persons.length){list.innerHTML+='<div class="empty-msg">No team persons found</div>';body.appendChild(list);return;}
-  persons.forEach((person,i)=>{
-    const hasSaved=Number(workingHours[person])>0;
-    const t2=th(person),current=hasSaved?Number(workingHours[person]):8;
-    const row=document.createElement('div');
-    row.style.cssText='display:grid;grid-template-columns:'+cols+';align-items:center;padding:11px 14px;border-bottom:1px solid var(--border);gap:10px;font-size:.82rem;animation:rowIn .18s ease '+i*0.01+'s both';
-    row.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.68rem;color:var(--muted)">'+(i+1)+'</span>'
-      +'<span style="display:flex;align-items:center;gap:8px"><span style="width:24px;height:24px;border-radius:6px;background:'+t2.bg+';color:'+t2.color+';display:inline-flex;align-items:center;justify-content:center;font-size:.56rem;font-weight:700;font-family:Syne,sans-serif">'+ini(person)+'</span><span style="color:'+t2.color+'">'+person+'</span></span>'
-      +'<span><span class="time-badge plan" id="wh-current-'+i+'" style="font-size:.68rem">'+current+' Hours'+(!hasSaved?' · Default':'')+'</span></span>'
-      +'<div style="display:flex;align-items:center;gap:7px"><input type="number" class="lead-inp wh-inp" id="wh-'+i+'" value="'+current+'" placeholder="Hours" min="0.5" max="24" step="0.5" style="width:90px"><button class="lead-save wh-save" data-index="'+i+'">SAVE</button></div>';
-    list.appendChild(row);
-  });
-  body.appendChild(list);
-  list.querySelectorAll('.wh-save').forEach(btn=>{
-    btn.onclick=async()=>{
-      const i=Number(btn.dataset.index),person=persons[i];
-      const value=Number(document.getElementById('wh-'+i)?.value);
-      if(!Number.isFinite(value)||value<=0||value>24){toast('Enter working hours between 0.5 and 24','error');return;}
-      const had=Object.prototype.hasOwnProperty.call(workingHours,person),previous=workingHours[person];
-      workingHours[person]=value;
-      btn.disabled=true;btn.textContent='SAVING...';
-      const saveResult=await syncWorkingHours();
-      if(!saveResult){
-        if(had)workingHours[person]=previous;else delete workingHours[person];
-        btn.disabled=false;btn.textContent='SAVE';
-        toast('Working hours could not be saved','error');
-        return;
-      }
-      const currentBadge=document.getElementById('wh-current-'+i);
-      if(currentBadge)currentBadge.textContent=value+' Hours';
-      toast(person+' → '+value+' working hours saved'+(saveResult==='local'?' on this browser':''),'success');
-      renderSettingsBody(body);
-    };
-  });
-  list.querySelectorAll('.wh-inp').forEach((inp,i)=>{
-    inp.addEventListener('input',()=>{
-      const btn=list.querySelector('.wh-save[data-index="'+i+'"]');
-      if(btn){btn.textContent='SAVE';btn.style.color='#3ef0b0';btn.style.borderColor='rgba(62,240,176,.35)';}
+
+function renderMasterTasks(body){
+  if(currentUser!=='admin'){body.textContent='Administrator access required.';return;}
+  const heading=document.createElement('h3');heading.textContent='Master Tasks';body.appendChild(heading);
+  const intro=document.createElement('p');intro.className='s-section-sub';intro.textContent='Add, assign, reassign, rename, set plan date/time and lead minutes, or delete tasks. Save confirms the Supabase update.';body.appendChild(intro);
+  const editing=masterEditingId===null?null:tasks.find(t=>t.sl===masterEditingId);
+  if(masterEditingId!==null&&!editing){masterEditingId=null;masterDraft=null;masterEditBaseline=null;masterFormDirty=false;}
+  const initial=masterDraft|| (editing?{...editing}:{task:'',person:'',planDate:'',planTime:'',leadTime:'',priority:false});
+  const original=editing?(masterEditBaseline||taskToRow(editing)):null;
+  const form=document.createElement('form');form.className='add-panel';
+  const title=document.createElement('h4');title.textContent=editing?'Edit Task #'+editing.sl:'Add New Task';form.appendChild(title);
+  const fields=document.createElement('div');fields.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:14px';
+  const inputs={};
+  const addField=(key,label,type,value)=>{
+    const wrap=document.createElement('div');wrap.className='fg';
+    const lab=document.createElement('label');lab.textContent=label;lab.htmlFor='master-'+key;
+    const input=document.createElement(type==='select'?'select':'input');input.id='master-'+key;input.className=type==='select'?'fi-sel':'fi';
+    if(type==='select'){
+      const blank=document.createElement('option');blank.value='';blank.textContent='Select person';input.appendChild(blank);
+      teamPersons().forEach(p=>{const option=document.createElement('option');option.value=p;option.textContent=p;input.appendChild(option);});
+    }else input.type=type;
+    if(type==='checkbox'){input.checked=!!value;input.style.width='20px';}else input.value=value;
+    if(['task','person'].includes(key))input.required=true;
+    if(type==='number'){input.min='0';input.step='any';}
+    wrap.append(lab,input);fields.appendChild(wrap);inputs[key]=input;
+  };
+  addField('task','Task name *','text',initial.task);
+  addField('person','Assign to *','select',initial.person);
+  addField('planDate','Plan date (optional)','date',initial.planDate||'');
+  addField('planTime','Plan time','time',(initial.planTime||'').slice(0,5));
+  addField('leadTime','Lead time (minutes)','number',initial.leadTime?leadMinutes(initial.leadTime):'');
+  addField('priority','Priority','checkbox',initial.priority);
+  form.appendChild(fields);
+  const controls=document.createElement('div');controls.style.cssText='display:flex;gap:10px;margin-top:16px';
+  const save=document.createElement('button');save.type='submit';save.className='add-btn';save.textContent=editing?'SAVE CHANGES':'ADD TASK';
+  const cancel=document.createElement('button');cancel.type='button';cancel.className='fbtn';cancel.textContent='Clear / New Task';
+  const reset=()=>{masterEditingId=null;masterDraft=null;masterEditBaseline=null;masterFormDirty=false;body.innerHTML='';renderMasterTasks(body);};
+  cancel.onclick=reset;controls.append(save,cancel);form.appendChild(controls);body.appendChild(form);
+  const readDraft=()=>({task:inputs.task.value.trim(),person:inputs.person.value,planDate:inputs.planDate.value,planTime:inputs.planTime.value,leadTime:inputs.leadTime.value===''?'':Number(inputs.leadTime.value)+'min',priority:inputs.priority.checked});
+  form.oninput=form.onchange=()=>{masterDraft=readDraft();masterFormDirty=true;};
+  form.onsubmit=async e=>{
+    e.preventDefault();if(masterBusy||!form.reportValidity())return;
+    const draft=readDraft();
+    if(!draft.task||!draft.person||!teamPersons().includes(draft.person)){toast('Enter a task and select a person','error');return;}
+    if(inputs.leadTime.value!==''&&(!Number.isFinite(Number(inputs.leadTime.value))||Number(inputs.leadTime.value)<0)){toast('Enter non-negative lead minutes','error');return;}
+    const fields=taskToRow({...draft,sl:editing?.sl||0});delete fields.sl;
+    // Existing completions stay intact when assignment or planning fields change.
+    delete fields.actual_date;delete fields.actual_time;
+    if(original)Object.keys(fields).forEach(key=>{
+      const equal=key==='plan_time'?String(fields[key]).slice(0,5)===String(original[key]).slice(0,5):fields[key]===original[key];
+      if(equal)delete fields[key];
     });
-    inp.addEventListener('keydown',e=>{if(e.key==='Enter')list.querySelector('.wh-save[data-index="'+i+'"]')?.click();});
+    if(editing&&!Object.keys(fields).length){toast('No changes to save','info');return;}
+    if(!editing){fields.actual_date='';fields.actual_time='';}
+    cancel.disabled=true;
+    try{if(await saveMasterTask(editing?editing.sl:null,fields,save))reset();}
+    finally{cancel.disabled=false;}
+  };
+  const filters=document.createElement('div');filters.className='filter-row';
+  const search=document.createElement('input');search.className='fi';search.placeholder='Search task or person';search.value=masterSearch;search.setAttribute('aria-label','Search tasks');search.style.flex='1';
+  const personFilter=document.createElement('select');personFilter.className='fi-sel';personFilter.style.width='220px';personFilter.setAttribute('aria-label','Filter by person');
+  [{value:'',text:'All Persons'},...teamPersons().map(p=>({value:p,text:p}))].forEach(p=>{const o=document.createElement('option');o.value=p.value;o.textContent=p.text;personFilter.appendChild(o);});personFilter.value=masterPerson;
+  filters.append(search,personFilter);body.appendChild(filters);
+  const list=document.createElement('div');list.style.overflowX='auto';body.appendChild(list);
+  const draw=()=>{
+    list.innerHTML='';
+    const table=document.createElement('table');table.className='pct-table';table.style.minWidth='780px';
+    const head=document.createElement('thead');head.innerHTML='<tr><th>#</th><th>Task</th><th>Assigned to</th><th>Plan date</th><th>Plan time</th><th>Lead minutes</th><th>Actions</th></tr>';table.appendChild(head);
+    const rows=document.createElement('tbody');
+    const filtered=tasks.filter(t=>(!masterPerson||t.person===masterPerson)&&(!masterSearch||(t.task+' '+t.person).toLowerCase().includes(masterSearch.toLowerCase())));
+    filtered.forEach(task=>{
+      const row=document.createElement('tr');
+      [task.sl,(task.priority?'★ ':'')+task.task,task.person,task.planDate||'—',task.planTime?formatTime12(task.planTime):'—',task.leadTime?leadMinutes(task.leadTime):'—'].forEach(value=>{const td=document.createElement('td');td.textContent=value;row.appendChild(td);});
+      const action=document.createElement('td');const edit=document.createElement('button');edit.className='fbtn';edit.textContent='EDIT';
+      edit.onclick=()=>{if(masterBusy)return;masterEditingId=task.sl;masterDraft=null;masterEditBaseline=taskToRow(task);masterFormDirty=false;body.innerHTML='';renderMasterTasks(body);};
+      const del=document.createElement('button');del.className='act-btn del-btn';del.textContent='DELETE';
+      del.onclick=()=>confirm2('Delete task?',task.task+' will be permanently deleted.',async()=>{
+        del.disabled=true;
+        try{
+          await queueTaskWrite(async()=>{await dbRequest('tasks','DELETE','sl=eq.'+task.sl);tasks=tasks.filter(t=>t.sl!==task.sl);taskBaseline.delete(task.sl);await notifySaved();});
+          toast('Task deleted','success');if(masterEditingId===task.sl)reset();else draw();
+        }catch(e){toast('Delete failed: '+e.message,'error');del.disabled=false;}
+      });
+      action.append(edit,del);row.appendChild(action);rows.appendChild(row);
+    });
+    if(!filtered.length){const row=document.createElement('tr');const td=document.createElement('td');td.colSpan=7;td.textContent='No tasks found';row.appendChild(td);rows.appendChild(row);}
+    table.appendChild(rows);list.appendChild(table);
+  };
+  search.oninput=()=>{masterSearch=search.value;draw();};personFilter.onchange=()=>{masterPerson=personFilter.value;draw();};draw();
+}
+
+function renderSettingsWorkingHours(body){
+  const heading=document.createElement('h3');heading.textContent='Daily Working Hours';body.appendChild(heading);
+  const note=document.createElement('p');note.className='s-section-sub';note.textContent='Choose a date, then save each person’s hours. 0 = off day. Workload shows minutes. Unset dates use the existing default or 8 hours (480 min).';body.appendChild(note);
+  const label=document.createElement('label');label.textContent='Working date ';label.htmlFor='hours-date';
+  const date=document.createElement('input');date.id='hours-date';date.type='date';date.className='fi';date.style.width='180px';date.value=workingHoursDate;
+  date.onchange=()=>{if(date.value){workingHoursDate=date.value;body.innerHTML='';renderSettingsWorkingHours(body);}};
+  body.append(label,date);
+  const wrap=document.createElement('div');wrap.style.cssText='overflow-x:auto;margin-top:16px';body.appendChild(wrap);
+  const table=document.createElement('table');table.className='pct-table';table.style.minWidth='560px';table.innerHTML='<thead><tr><th>Person</th><th>Working minutes</th><th>Hours for selected date</th><th>Save</th></tr></thead>';
+  const tbody=document.createElement('tbody');
+  teamPersons().forEach(person=>{
+    const row=document.createElement('tr'),name=document.createElement('td'),value=document.createElement('td'),edit=document.createElement('td'),action=document.createElement('td');
+    name.textContent=person;
+    const minutes=dailyMinutes(person,workingHoursDate),saved=Object.prototype.hasOwnProperty.call(dailyWorkingHours,dailyHoursKey(workingHoursDate,person));
+    value.textContent=minutes+' min'+(saved?'':' (default)');
+    const input=document.createElement('input');input.type='number';input.className='fi';input.min='0';input.max='24';input.step='any';input.value=minutes/60;input.setAttribute('aria-label',person+' working hours');
+    const button=document.createElement('button');button.className='lead-save';button.textContent='SAVE';
+    button.onclick=async()=>{
+      if(input.value===''||!input.reportValidity())return;
+      const selectedDate=workingHoursDate;
+      if(await saveDailyHours(person,selectedDate,Number(input.value),button)){value.textContent=dailyMinutes(person,selectedDate)+' min';}
+    };
+    input.onkeydown=e=>{if(e.key==='Enter')button.click();};
+    edit.appendChild(input);action.appendChild(button);row.append(name,value,edit,action);tbody.appendChild(row);
   });
+  table.appendChild(tbody);wrap.appendChild(table);
 }
 
 // ── SECTION 6: LEAD TIME ─────────────────────────
