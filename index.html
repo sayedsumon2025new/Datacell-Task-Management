@@ -1000,6 +1000,7 @@ let workingHours = (()=>{
   }catch(e){return {};}
 })(); // person → daily working hours
 let kpiDate='',kpiMonth='';
+let overviewDate=localISODate();
 let calYear=new Date().getFullYear(),calMonth=new Date().getMonth(),calSelectedDate='';
 let ovCalYear=new Date().getFullYear(),ovCalMonth=new Date().getMonth(),ovCalSelected='';
 const doneState={};
@@ -1773,18 +1774,49 @@ function renderAdmin(allowedModules = null){
 
 // ── OVERVIEW ──
 function buildOverview(c){
+  const completedOnDate=k=>isTaskComplete(k)&&(!overviewDate||k.actualDate===overviewDate);
   const allP=[...new Set(tasks.map(t=>t.person))];
-  const totalDone=tasks.filter(isTaskComplete).length;
+  const totalDone=tasks.filter(completedOnDate).length;
   const pct=tasks.length?Math.round((totalDone/tasks.length)*100):0;
   const withActual=totalDone;
-  const lateCount=tasks.filter(t=>isTaskComplete(t)&&timeCmp(t.planDate,t.planTime,t.actualDate,t.actualTime)==='late').length;
+  const lateCount=tasks.filter(t=>completedOnDate(t)&&timeCmp(t.planDate,t.planTime,t.actualDate,t.actualTime)==='late').length;
 
   c.insertAdjacentHTML('beforeend',`<div style="font-family:'Syne',sans-serif;font-size:1.5rem;font-weight:800;letter-spacing:-.02em;margin-bottom:16px">Admin <span style="color:#f5c842">Overview</span></div>`);
+
+
+  const dateFilter=document.createElement('div');dateFilter.className='filter-row';
+  const dateLabel=document.createElement('label');
+  dateLabel.htmlFor='overviewDate';dateLabel.textContent='Status date';
+  const dateInput=document.createElement('input');
+  dateInput.type='date';dateInput.id='overviewDate';dateInput.className='fi';
+  dateInput.style.cssText='width:170px;color-scheme:dark';
+  dateInput.value=overviewDate;
+  const selectDate=value=>{
+    overviewDate=value;
+    if(value){
+      ovCalSelected=value;
+      const [year,month]=value.split('-').map(Number);
+      ovCalYear=year;ovCalMonth=month-1;
+    }
+    renderContent();
+  };
+  dateInput.onchange=()=>{if(dateInput.validity.valid)selectDate(dateInput.value);};
+  const todayBtn=document.createElement('button');todayBtn.className='fbtn';
+  todayBtn.textContent='Today';todayBtn.onclick=()=>selectDate(localISODate());
+  const allBtn=document.createElement('button');allBtn.className='fbtn'+(!overviewDate?' on':'');
+  allBtn.textContent='All Dates';allBtn.onclick=()=>selectDate('');
+  dateFilter.append(dateLabel,dateInput,todayBtn,allBtn);c.appendChild(dateFilter);
+  const filterNote=document.createElement('p');
+  filterNote.style.cssText='font-size:.75rem;color:var(--muted);margin-bottom:16px';
+  filterNote.textContent=overviewDate
+    ? 'Status for '+formatDateDisplay(overviewDate)+' · Based on saved actual completion dates. Pending = current tasks without completion on this date. Auto-refresh every 8 seconds.'
+    : 'All saved completion dates · Auto-refresh every 8 seconds.';
+  c.appendChild(filterNote);
 
   // Global stats strip
   const strip=document.createElement('div');
   strip.style.cssText='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px';
-  [{l:'Total Tasks',v:tasks.length,c:'#f5c842'},{l:'Completed',v:withActual,c:'#3ef0b0'},{l:'Overdue',v:lateCount,c:'#f87171'},{l:'Done Rate',v:pct+'%',c:'#60a5fa'}]
+  [{l:'Total Tasks',v:tasks.length,c:'#f5c842'},{l:'Completed',v:withActual,c:'#3ef0b0'},{l:'Pending',v:tasks.length-totalDone,c:'#f5c842'},{l:'Completed Late',v:lateCount,c:'#f87171'},{l:'Done Rate',v:pct+'%',c:'#60a5fa'}]
     .forEach(x=>{
       const el=document.createElement('div');
       el.style.cssText='background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 16px;display:flex;align-items:center;gap:10px';
@@ -1795,17 +1827,17 @@ function buildOverview(c){
 
   // Overall progress bar
   const prog=document.createElement('div');prog.className='prog-sect';prog.style.marginBottom='18px';
-  prog.innerHTML='<div class="prog-info"><span>OVERALL · '+totalDone+'/'+tasks.length+' DONE</span><strong style="color:#f5c842">'+pct+'%</strong></div><div class="prog-track"><div class="prog-fill" style="width:'+pct+'%;background:linear-gradient(90deg,#3ef0b0,#f5c842)"></div></div>';
+  prog.innerHTML='<div class="prog-info"><span>'+(overviewDate?formatDateDisplay(overviewDate):'ALL DATES')+' · '+totalDone+'/'+tasks.length+' DONE</span><strong style="color:#f5c842">'+pct+'%</strong></div><div class="prog-track"><div class="prog-fill" style="width:'+pct+'%;background:linear-gradient(90deg,#3ef0b0,#f5c842)"></div></div>';
   c.appendChild(prog);
 
   // Team cards
   const teamLbl=document.createElement('div');teamLbl.className='section-title';teamLbl.textContent='TEAM BREAKDOWN';c.appendChild(teamLbl);
   const grid=document.createElement('div');grid.className='admin-grid';
   allP.forEach(p=>{
-    const t2=th(p),mt=tasks.filter(k=>k.person===p),dn=mt.filter(isTaskComplete).length;
+    const t2=th(p),mt=tasks.filter(k=>k.person===p),dn=mt.filter(completedOnDate).length;
     const pp=mt.length?Math.round((dn/mt.length)*100):0;
-    const late=mt.filter(k=>isTaskComplete(k)&&timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='late').length;
-    const early=mt.filter(k=>isTaskComplete(k)&&['early','ontime'].includes(timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime))).length;
+    const late=mt.filter(k=>completedOnDate(k)&&timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='late').length;
+    const early=mt.filter(k=>completedOnDate(k)&&['early','ontime'].includes(timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime))).length;
     const card=document.createElement('div');card.className='apc';card.style.borderColor=t2.accent+'22';
     card.innerHTML='<div style="position:absolute;top:0;left:0;right:0;height:2px;background:'+t2.accent+'"></div>'
       +'<div class="apc-hd"><div class="apc-av" style="background:'+t2.bg+';color:'+t2.color+'">'+ini(p)+'</div>'
@@ -1907,7 +1939,7 @@ function buildOverview(c){
         html+='<div style="font-family:DM Mono,monospace;font-size:.56rem;color:#f5c842;margin-top:3px">TODAY</div>';
       }
       cell.innerHTML=html;
-      cell.onclick=()=>{ovCalSelected=dateStr;buildOvCal();buildOvDayDetail(dateStr,planMap[dateStr]||[],actualMap[dateStr]||[],isToday);};
+      cell.onclick=()=>selectDate(dateStr);
       calGrid.appendChild(cell);
     }
 
@@ -1938,11 +1970,9 @@ function buildOverview(c){
       }
     };
 
-    // Auto-open today on first build
-    if(!ovCalSelected){
-      ovCalSelected=today;
-      buildOvDayDetail(today,planMap[today]||[],actualMap[today]||[],true);
-    }
+    // Restore the selected day's detail after every live refresh.
+    if(!ovCalSelected)ovCalSelected=overviewDate||today;
+    buildOvDayDetail(ovCalSelected,planMap[ovCalSelected]||[],actualMap[ovCalSelected]||[],ovCalSelected===today);
   }
 
   function buildOvDayDetail(dateStr,planTasks,actualTasks,isToday){
