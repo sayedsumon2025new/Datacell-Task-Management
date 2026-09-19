@@ -2447,7 +2447,7 @@ function buildKPICharts(){
   const teamDateLabel=kpiDate?' · '+fmtDate(kpiDate):kpiMonth!==''?' · '+months[+kpiMonth]:' · All Actual Dates';
   tableBox.innerHTML='<h4 style="font-family:Syne,sans-serif;font-size:.9rem;font-weight:700;margin-bottom:4px">Team Performance'+teamDateLabel+'</h4>'
     +'<div style="font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted);margin-bottom:12px">LIVE ACTUAL DATA · PERSON-WISE TASK QUANTITY · UTILIZATION / EFFICIENCY: '+fmtDate(workloadDate)+' (WORKLOAD DATE)</div>'
-    +'<table class="pct-table"><thead><tr><th>PERSON</th><th>TASKS</th><th>DONE</th><th>PENDING</th><th>EARLY / ON-TIME</th><th>LATE</th><th>RATE</th><th title="Total task minutes / working minutes × 100">UTILIZATION</th><th title="Completed minutes / working minutes × 100">EFFICIENCY</th></tr></thead><tbody id="kpiTableBody"></tbody></table>';
+    +'<table class="pct-table"><thead><tr><th>PERSON</th><th>TASKS</th><th>DONE</th><th>PENDING</th><th>EARLY / ON-TIME</th><th>LATE</th><th>RATE</th><th title="Total task minutes / working minutes × 100">UTILIZATION</th><th title="Completed minutes / working minutes × 100">EFFICIENCY</th><th title="Early or on-time completed tasks / all completed tasks × 100">OTD %</th><th title="Late completed tasks / all completed tasks × 100">DELAYED %</th></tr></thead><tbody id="kpiTableBody"></tbody></table>';
   wrap.appendChild(tableBox);
 
   // ── LEAD TIME CHARTS ──
@@ -2551,9 +2551,18 @@ function buildKPICharts(){
         efficiencyCell.textContent=workloadPercent(metrics.efficiency);
         efficiencyCell.title=metrics.completedMinutes+' / '+metrics.workingMinutes+' minutes'+(metrics.workingMinutes===0?' · No working capacity':'');
         [utilizationCell,efficiencyCell].forEach(cell=>{cell.style.cssText='font-family:DM Mono,monospace;font-size:.8rem;white-space:nowrap;color:#60a5fa';tr.appendChild(cell);});
+        const timingUnknown=Math.max(0,dn-ot-lt);
+        const timingNote=timingUnknown?' · '+timingUnknown+' completed task(s) have no comparable plan time':'';
+        [{count:ot,label:'Early/on-time',color:'#3ef0b0'},{count:lt,label:'Delayed',color:'#f87171'}].forEach(item=>{
+          const cell=document.createElement('td');
+          cell.textContent=workloadPercent(dn>0?item.count/dn*100:null);
+          cell.title=dn>0?item.label+': '+item.count+' / '+dn+' completed tasks'+timingNote:'No completed tasks in selected date/month';
+          cell.style.cssText='font-family:DM Mono,monospace;font-size:.8rem;white-space:nowrap;color:'+item.color;
+          tr.appendChild(cell);
+        });
         tbody.appendChild(tr);
       });
-      if(!tbody.children.length)tbody.innerHTML='<tr><td colspan="9" style="text-align:center;padding:30px;font-family:DM Mono,monospace;font-size:.8rem;color:var(--muted)">No tasks found</td></tr>';
+      if(!tbody.children.length)tbody.innerHTML='<tr><td colspan="11" style="text-align:center;padding:30px;font-family:DM Mono,monospace;font-size:.8rem;color:var(--muted)">No tasks found</td></tr>';
     }
 
     // ── LEAD TIME CHART 1: BY PERSON ──
