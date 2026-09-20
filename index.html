@@ -2777,31 +2777,74 @@ function buildKPICharts(){
 }
 
 // ── ALL TASKS ──
+async function transferTask(sl,newPerson,button){
+  if(currentUser!=='admin'){toast('Only the administrator can transfer tasks','error');return false;}
+  const task=tasks.find(t=>t.sl===sl);
+  if(!task||!teamPersons().includes(newPerson)){toast('Select a valid person','error');return false;}
+  if(task.person===newPerson){toast('This task is already assigned to that person','info');return false;}
+  const previousPerson=task.person,label=button.textContent;
+  button.disabled=true;button.textContent='TRANSFERRING...';
+  try{
+    await queueTaskWrite(async()=>{
+      setSyncStatus('syncing');
+      const rows=await dbRequest('tasks','PATCH',
+        'sl=eq.'+encodeURIComponent(sl)+'&person=eq.'+postgrestText(previousPerson),
+        {person:newPerson});
+      if(!Array.isArray(rows)||rows.length!==1||Number(rows[0].sl)!==sl||rows[0].person!==newPerson){
+        throw new Error('Transfer not confirmed. Assignment may have changed, or Supabase UPDATE permission is missing.');
+      }
+      const verified=await dbRequest('tasks','GET','sl=eq.'+encodeURIComponent(sl));
+      if(!Array.isArray(verified)||verified.length!==1||verified[0].person!==newPerson){
+        throw new Error('Could not verify the new assignment. Refresh before retrying.');
+      }
+      // Only person is written; lead time, plan and completion are untouched.
+      Object.assign(task,rowToTask(verified[0]));rememberTask(task);
+      await notifySaved();
+    });
+    toast('Task #'+sl+' transferred: '+previousPerson+' → '+newPerson,'success');
+    renderContent();return true;
+  }catch(e){setSyncStatus('error');toast(e.message,'error');return false;}
+  finally{button.disabled=false;button.textContent=label;}
+}
+
 function buildAllTasks(c){
-  const sl=document.createElement('div');sl.className='section-title';sl.textContent=`ALL TASKS — ${tasks.length} TOTAL`;c.appendChild(sl);
-  const list=document.createElement('div');list.className='task-list';
-  const cols='36px 1fr 160px 120px';
-  const hdr=document.createElement('div');hdr.className='tlh';hdr.style.gridTemplateColumns=cols;
-  hdr.innerHTML=`<span>#</span><span>Task</span><span>Person</span>
-    <span style="color:#60a5fa">${clockIcon()} Plan</span>`;
-  list.appendChild(hdr);
-  const rows=document.createElement('div');
-  tasks.forEach((k,i)=>{
-    const t2=th(k.person);const isDone=isTaskComplete(k);
-    const row=document.createElement('div');
-    row.style.cssText=`display:grid;grid-template-columns:${cols};align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);gap:8px;font-size:0.84rem;transition:background 0.15s;animation:rowIn 0.2s ease ${i*0.005}s both;${k.priority?'border-left:3px solid '+t2.accent+';':''}${isDone?'opacity:0.42;':''}`;
-    row.innerHTML=`<span style="font-family:'DM Mono',monospace;font-size:0.7rem;color:var(--muted)">${k.sl}</span>
-      <span style="${isDone?'text-decoration:line-through':''}${k.priority?`;color:${t2.accent}`:''}">${k.task}</span>
-      <span style="display:flex;align-items:center;gap:5px">
-        <span style="width:20px;height:20px;border-radius:5px;background:${t2.bg};color:${t2.color};display:inline-flex;align-items:center;justify-content:center;font-size:0.56rem;font-weight:700;font-family:'Syne',sans-serif">${ini(k.person)}</span>
-        <span style="color:${t2.color};font-size:0.78rem">${k.person}</span>
-      </span>
-      <span>${k.planTime?`<span class="time-badge plan" style="font-size:0.62rem">${clockIcon()} ${k.planTime}</span>`:'<span class="time-badge unset" style="font-size:0.62rem">—</span>'}</span>`;
-    row.onmouseenter=()=>row.style.background='var(--surface2)';
-    row.onmouseleave=()=>row.style.background='';
-    rows.appendChild(row);
+  const title=document.createElement('div');title.className='section-title';title.textContent='ALL TASKS — '+tasks.length+' TOTAL';c.appendChild(title);
+  const canTransfer=currentUser==='admin';
+  if(canTransfer){
+    const note=document.createElement('p');note.style.cssText='font-size:.8rem;color:var(--muted);margin-bottom:14px';
+    note.textContent='Choose a new person and click Transfer. Lead time, plan time and completion records stay unchanged. Other views sync automatically.';
+    c.appendChild(note);
+  }
+  const wrap=document.createElement('div');wrap.style.overflowX='auto';
+  const table=document.createElement('table');table.className='pct-table';table.style.minWidth=canTransfer?'1000px':'650px';
+  const head=document.createElement('thead');
+  head.innerHTML='<tr><th>#</th><th>Task</th><th>Assigned to</th><th>Plan time</th><th>Lead minutes</th>'+(canTransfer?'<th>Transfer to</th>':'')+'</tr>';
+  table.appendChild(head);
+  const tbody=document.createElement('tbody');
+  tasks.forEach(task=>{
+    const row=document.createElement('tr');
+    [task.sl,(task.priority?'★ ':'')+task.task,task.person,task.planTime?formatTime12(task.planTime):'—',task.leadTime?leadMinutes(task.leadTime):'—'].forEach(value=>{
+      const cell=document.createElement('td');cell.textContent=value;row.appendChild(cell);
+    });
+    if(canTransfer){
+      const cell=document.createElement('td'),controls=document.createElement('div');controls.style.cssText='display:flex;align-items:center;gap:8px';
+      const select=document.createElement('select');select.className='person-sel';select.style.minWidth='170px';select.setAttribute('aria-label','Transfer task '+task.sl+' to');
+      const placeholder=document.createElement('option');placeholder.value='';placeholder.textContent='Select new person';select.appendChild(placeholder);
+      teamPersons().filter(person=>person!==task.person).forEach(person=>{
+        const option=document.createElement('option');option.value=person;option.textContent=person;select.appendChild(option);
+      });
+      const button=document.createElement('button');button.type='button';button.className='lead-save';button.textContent='TRANSFER';button.disabled=true;
+      select.onchange=()=>{button.disabled=!select.value;};
+      button.onclick=async()=>{
+        const destination=select.value;select.disabled=true;
+        try{await transferTask(task.sl,destination,button);}finally{select.disabled=false;button.disabled=!select.value;}
+      };
+      controls.append(select,button);cell.appendChild(controls);row.appendChild(cell);
+    }
+    tbody.appendChild(row);
   });
-  list.appendChild(rows);c.appendChild(list);
+  if(!tasks.length){const row=document.createElement('tr'),cell=document.createElement('td');cell.colSpan=canTransfer?6:5;cell.textContent='No tasks found';row.appendChild(cell);tbody.appendChild(row);}
+  table.appendChild(tbody);wrap.appendChild(table);c.appendChild(wrap);
 }
 
 // ═══════════════════════════════════════
