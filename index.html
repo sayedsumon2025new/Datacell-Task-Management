@@ -715,7 +715,9 @@ function dailyMinutes(person,date){
   const legacy=Number(workingHours[person]);
   return Number.isFinite(legacy)&&legacy>0?Math.round(legacy*60):480;
 }
+function canManageWorkingHours(){return currentUser==='admin'||(moduleAccess[currentUser]||[]).includes('workinghours');}
 async function saveDailyHours(person,date,hours,button){
+  if(!canManageWorkingHours()){toast('Working Hours access is required','error');return false;}
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(hours)||hours<0||hours>24){
     toast('Choose a date and enter hours from 0 to 24','error');return false;
   }
@@ -1894,6 +1896,7 @@ function renderAdmin(allowedModules = null){
     {id:'kpi',label:'KPI',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>'},
     {id:'plantime',label:'PLAN TIME',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'},
     {id:'all',label:'ALL TASKS',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><polyline points="3 6 4 7 6 5"/><polyline points="3 12 4 13 6 11"/></svg>'},
+    {id:'workinghours',label:'WORKING HOURS',icon:'🕒'},
     {id:'settings',label:'SETTINGS',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'},
   ];
 
@@ -1941,6 +1944,7 @@ function renderAdmin(allowedModules = null){
   
   else if(adminTab==='kpi')buildKPI(c);
   else if(adminTab==='plantime')buildPlanTime(c);
+  else if(adminTab==='workinghours')renderSettingsWorkingHours(c);
   else if(adminTab==='settings')buildSettings(c);
   else buildAllTasks(c);
 }
@@ -3095,24 +3099,25 @@ function renderSettingsAccess(body){
     {id:'overview',label:'Team Overview',desc:'See all users progress'},
     {id:'all',label:'All Tasks',desc:'View full task list'},
     {id:'plantime',label:'Plan Time',desc:'View deadlines panel'},
+    {id:'workinghours',label:'Working Hours',desc:'View and update daily working hours'},
   ];
 
   // Init missing
   userRegistry.forEach(u=>{if(!moduleAccess[u.name])moduleAccess[u.name]=[];});
 
-  const cols='1fr'+modules.map(()=>' 90px').join('');
-  const mgrid=document.createElement('div');mgrid.className='module-grid';
+  const cols='minmax(180px,1fr)'+modules.map(()=>' 100px').join('');
+  const mgrid=document.createElement('div');mgrid.className='module-grid';mgrid.style.overflowX='auto';
 
   // Header row
-  const hdr=document.createElement('div');hdr.className='module-header';
+  const hdr=document.createElement('div');hdr.className='module-header';hdr.style.minWidth=(180+modules.length*100)+'px';
   hdr.style.gridTemplateColumns=cols;
-  hdr.innerHTML='<span>TEAM MEMBER</span>'+modules.map(m=>`<span style="text-align:center">${m.label.split(' ')[0].toUpperCase()}</span>`).join('');
+  hdr.innerHTML='<span>TEAM MEMBER</span>'+modules.map(m=>`<span style="text-align:center">${m.label.toUpperCase()}</span>`).join('');
   mgrid.appendChild(hdr);
 
   // User rows
   userRegistry.forEach(u=>{
     const t2=th(u.name);
-    const row=document.createElement('div');row.className='module-row';row.style.gridTemplateColumns=cols;
+    const row=document.createElement('div');row.className='module-row';row.style.minWidth=(180+modules.length*100)+'px';row.style.gridTemplateColumns=cols;
     row.innerHTML='<span style="display:inline-flex;align-items:center;gap:8px">'
       +'<span style="width:24px;height:24px;border-radius:6px;background:'+t2.bg+';color:'+u.color+';display:inline-flex;align-items:center;justify-content:center;font-size:.56rem;font-weight:700;font-family:Syne,sans-serif">'+ini(u.name)+'</span>'
       +'<span style="color:'+u.color+';font-size:.84rem">'+u.name+'</span>'
@@ -3127,14 +3132,25 @@ function renderSettingsAccess(body){
 
   // Toggle handler
   mgrid.querySelectorAll('.mod-toggle').forEach(btn=>{
-    btn.onclick=()=>{
+    btn.onclick=async()=>{
+      if(currentUser!=='admin')return;
       const u=btn.dataset.user,m=btn.dataset.mod;
-      if(!moduleAccess[u])moduleAccess[u]=[];
-      const idx=moduleAccess[u].indexOf(m);
-      if(idx>-1){moduleAccess[u].splice(idx,1);btn.classList.remove('on');}
-      else{moduleAccess[u].push(m);btn.classList.add('on');}
-      syncModuleAccess();
-      toast((btn.classList.contains('on')?'✓ ':'✕ ')+(u+' → '+modules.find(x=>x.id===m).label),'info');
+      const previous=[...(moduleAccess[u]||[])];
+      const next=previous.includes(m)?previous.filter(id=>id!==m):[...previous,m];
+      btn.disabled=true;
+      try{
+        await queueTaskWrite(async()=>{
+          const rows=await dbRequest('module_access','POST','on_conflict=username',
+            [{username:u,modules:next.join(',')}],'resolution=merge-duplicates,return=representation');
+          if(!Array.isArray(rows)||!rows.some(r=>r.username===u&&r.modules===next.join(',')))
+            throw new Error('Access change was not confirmed');
+          moduleAccess[u]=next;
+          btn.classList.toggle('on',next.includes(m));
+          await notifySaved();
+        });
+        toast('Saved: '+u+' → '+modules.find(x=>x.id===m).label+' '+(next.includes(m)?'enabled':'disabled'),'success');
+      }catch(e){toast('Access not saved: '+e.message,'error');}
+      finally{btn.disabled=false;}
     };
   });
 
@@ -3448,6 +3464,7 @@ function renderMasterTasks(body){
 }
 
 function renderSettingsWorkingHours(body){
+  if(!canManageWorkingHours()){body.textContent='Working Hours access is required';return;}
   const heading=document.createElement('h3');heading.textContent='Daily Working Hours';body.appendChild(heading);
   const note=document.createElement('p');note.className='s-section-sub';note.textContent='Choose a date, then save each person’s hours. 0 = off day. Workload shows minutes. Unset dates use the existing default or 8 hours (480 min).';body.appendChild(note);
   const label=document.createElement('label');label.textContent='Working date ';label.htmlFor='hours-date';
