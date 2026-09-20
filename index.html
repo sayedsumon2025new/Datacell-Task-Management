@@ -642,7 +642,7 @@ async function notifySaved(){
 }
 async function patchTaskRecord(sl,changes){
   const rows=await dbRequest('tasks','PATCH','sl=eq.'+encodeURIComponent(sl),changes);
-  if(!Array.isArray(rows)||rows.length!==1||Number(rows[0].sl)!==Number(sl))throw new Error('Task update was not confirmed. Refresh and retry.');
+  if(!Array.isArray(rows)||rows.length!==1||Number(rows[0].sl)!==Number(sl))throw new Error('Supabase did not update this task. Check tasks UPDATE permission/RLS if the task still exists.');
   const row=rows[0];
   for(const [key,value] of Object.entries(changes)){
     const actual=row[key];
@@ -743,7 +743,10 @@ function applyRemoteData(data) {
     data.users.forEach(u => { CREDS[u.name] = u.password; });
     PERSONS=regularUsers.map(u=>u.name);
   }
-  if (data.moduleAccess) moduleAccess = data.moduleAccess;
+  if (data.moduleAccess) {
+    if(JSON.stringify(moduleAccess)!==JSON.stringify(data.moduleAccess)){moduleAccess=data.moduleAccess;changed=true;}
+  }
+  if(data.taskCompletionHistory){taskCompletionHistory=data.taskCompletionHistory;}
   if (data.dailyWorkingHours) {
     if(JSON.stringify(dailyWorkingHours)!==JSON.stringify(data.dailyWorkingHours)){dailyWorkingHours=data.dailyWorkingHours;changed=true;}
   }
@@ -795,6 +798,7 @@ async function sbFetchAll() {
   }
 
   return {
+    taskCompletionHistory:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('taskCompletion:')).flatMap(r=>{try{const t=JSON.parse(r.value);return t&&t.actualDate&&t.actualTime?[[r.key.slice('taskCompletion:'.length),t]]:[];}catch(e){return [];}})),
     tasks: fetchedTasks, doneState: fetchedDone, users: fetchedUsers, moduleAccess: fetchedAccess,
     workingHours: fetchedWorkingHours,
     dailyWorkingHours:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('workingHoursDaily:')&&r.value!==''&&Number.isFinite(Number(r.value))&&Number(r.value)>=0&&Number(r.value)<=1440).map(r=>[r.key,Number(r.value)])),
@@ -1137,11 +1141,56 @@ const doneState={};
 
 // Actual time remains editable while status is PEND. It locks only after the
 // user explicitly changes the task status to DONE.
-function isTaskLocked(task, user) {
-  if(!task||!task.actualTime)return false;
-  const done=doneState[user];
-  return !!(done&&done.has(task.sl));
+
+let taskCompletionHistory={};
+function taskForDate(task,date){
+  return taskCompletionHistory[date+':'+task.sl]||task;
 }
+function completedOnDate(task,date){
+  const record=taskForDate(task,date);
+  return !!(date&&record.actualDate===date&&record.actualTime);
+}
+async function completePersonalTask(sl,button){
+  const user=currentUser,date=localISODate(),task=tasks.find(t=>t.sl===sl);
+  if(!task||!(task.person===user||String(task.person).split('/').map(x=>x.trim()).includes(user))){
+    toast('This task is not assigned to you','error');return false;
+  }
+  if(personalActualDate!==date&&userView!=='calendar'){toast('Select today to update status','error');return false;}
+  if(completedOnDate(task,date)){toast('Already completed today','info');return false;}
+  if(button.disabled)return false;
+  button.disabled=true;
+  try{
+    await queueTaskWrite(async()=>{
+      setSyncStatus('syncing');
+      // Preserve the previous completion before recording a new day's status.
+      if(task.actualDate&&task.actualTime&&task.actualDate!==date){
+        const key='taskCompletion:'+task.actualDate+':'+sl;
+        const rows=await dbRequest('meta','POST','on_conflict=key',
+          [{key,value:JSON.stringify(task)}],'resolution=merge-duplicates,return=representation');
+        if(!Array.isArray(rows)||!rows.some(r=>r.key===key&&r.value===JSON.stringify(task)))throw new Error('Previous completion could not be archived');
+        taskCompletionHistory[task.actualDate+':'+sl]={...task};
+      }
+      const time=currentTime24();
+      await patchTaskRecord(sl,{actual_date:date,actual_time:time});
+      const check=await dbRequest('tasks','GET','sl=eq.'+sl+'&select=sl,person,actual_date,actual_time');
+      if(check.length!==1||check[0].actual_date!==date||String(check[0].actual_time||'').slice(0,5)!==time){
+        throw new Error('Supabase did not confirm the saved status');
+      }
+      getDone(user).add(sl);
+      // Completion is stored on the task itself. No second done_state write
+      // may turn a successful task save into a misleading failure.
+      doneBaseline[user]=[...getDone(user)];
+      await notifySaved();
+    });
+    toast('DONE · Actual time saved to Supabase','success');
+    if(currentUser===user)renderContent();
+    return true;
+  }catch(e){
+    setSyncStatus('error');toast('Status not confirmed: '+e.message,'error');return false;
+  }finally{button.disabled=false;}
+}
+
+function isTaskLocked(task,user){return completedOnDate(task,localISODate());}
 
 // Format date for display: YYYY-MM-DD → DD/MM/YYYY
 function formatDateDisplay(dateStr) {
@@ -1186,7 +1235,7 @@ function currentTime24(date = new Date()) {
   return String(date.getHours()).padStart(2,'0')+':'+String(date.getMinutes()).padStart(2,'0');
 }
 
-function getDone(u){if(!doneState[u])doneState[u]=new Set();return doneState[u];}
+function getDone(u){if(!doneState[u])doneState[u]=new Set();tasks.forEach(t=>{if(t.actualDate&&t.actualTime&&(t.person===u||String(t.person).split('/').map(x=>x.trim()).includes(u)))doneState[u].add(t.sl);});return doneState[u];}
 
 // Reports share one completion rule, including older records whose done_state
 // entry is missing but whose actual completion date and time were persisted.
@@ -1357,7 +1406,7 @@ function openApp(){startPolling();
   av.style.background=t.bg;av.style.color=t.color;
   document.getElementById('ucNm').textContent=currentUser==='admin'?'Administrator':currentUser;
   document.getElementById('adminBadge').style.display=currentUser==='admin'?'inline':'none';
-  taskFilter='all';searchQ='';adminTab='overview';userView='list';personalActualDate=localISODate();kpiDate=localISODate();kpiMonth='';
+  taskFilter='all';searchQ='';adminTab=currentUser==='admin'?'overview':'personal';userView='list';personalActualDate=localISODate();kpiDate=localISODate();kpiMonth='';
   calYear=new Date().getFullYear();calMonth=new Date().getMonth();calSelectedDate='';
   ovCalYear=new Date().getFullYear();ovCalMonth=new Date().getMonth();ovCalSelected='';
   renderContent();
@@ -1420,7 +1469,7 @@ function renderPersonal(){
     return k.person===currentUser;
   });
   const done=getDone(currentUser);
-  const dc=personalActualDate?myTasks.filter(k=>done.has(k.sl)&&k.actualDate===personalActualDate).length:0;
+  const dc=personalActualDate?myTasks.filter(k=>completedOnDate(k,personalActualDate)).length:0;
   const pct=myTasks.length?Math.round((dc/myTasks.length)*100):0;
 
   // personal header
@@ -1524,29 +1573,11 @@ function renderPersonal(){
     document.getElementById('fPend').onclick=()=>setF('pending');
     document.getElementById('fDone').onclick=()=>setF('done');
 
-    document.getElementById('taskRows').addEventListener('click',e=>{
-      const tog=e.target.closest('.tog');
-      if(tog){const sl=+tog.dataset.sl,d=getDone(currentUser);// Check if task is locked
-      const lockedTask = tasks.find(t => t.sl === sl);
-      if(!personalActualDate){toast('Select Actual Date first','error');return;}
-      if(personalActualDate>localISODate()){toast('Future date is not allowed','error');return;}
-      if(personalActualDate!==localISODate()){toast('Past dates are view-only','info');return;}
-      if (lockedTask && isTaskLocked(lockedTask, currentUser)) {
-        toast('⚠ Completed task is locked', 'error');
-        return;
-      }
-      if(!d.has(sl)&&lockedTask){
-        const now=new Date();
-        lockedTask.actualTime=currentTime24(now);
-        lockedTask.actualDate=localISODate(now);
-        d.add(sl);
-        syncToSheets();
-        updatePersonalStats(myTasks,t);
-        toast('DONE · Actual time '+formatTime12(lockedTask.actualTime)+' saved and locked','success');
-        renderUserRows(myTasks,t,cols);
-        return;
-      }
-      return;}
+    document.getElementById('taskRows').addEventListener('click',async e=>{
+      const button=e.target.closest('.tog');
+      if(!button||button.disabled)return;
+      if(personalActualDate!==localISODate()){toast('Select today to update status','info');return;}
+      await completePersonalTask(Number(button.dataset.sl),button);
     });
   }
 
@@ -1582,8 +1613,8 @@ function renderPersonal(){
 
       // Build date→tasks map from myTasks actualDate
       const dateMap={};
-      myTasks.forEach(k=>{
-        if(k.actualDate&&getDone(currentUser).has(k.sl)){
+      [...myTasks,...Object.values(taskCompletionHistory).filter(record=>myTasks.some(task=>task.sl===record.sl)&&!myTasks.some(task=>task.sl===record.sl&&task.actualDate===record.actualDate))].forEach(k=>{
+        if(k.actualDate&&k.actualTime){
           if(!dateMap[k.actualDate])dateMap[k.actualDate]=[];
           dateMap[k.actualDate].push(k);
         }
@@ -1689,7 +1720,7 @@ function renderPersonal(){
 
       // For today: also show all pending tasks that haven't been updated today
       if(isToday){
-        const pendingNotToday=myTasks.filter(k=>!getDone(currentUser).has(k.sl));
+        const pendingNotToday=myTasks.filter(k=>!completedOnDate(k,localISODate()));
         if(pendingNotToday.length){
           const sep=document.createElement('div');
           sep.style.cssText='font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted);letter-spacing:.08em;padding-top:4px;';
@@ -1743,18 +1774,7 @@ function renderPersonal(){
         const doneBtn=document.createElement('button');
         doneBtn.className='time-save-btn actual-save';
         doneBtn.textContent='DONE';
-        doneBtn.onclick=()=>{
-          const now=new Date();
-          k.actualTime=currentTime24(now);
-          k.actualDate=localISODate(now);
-          getDone(currentUser).add(k.sl);
-          syncToSheets();
-          updatePersonalStats(myTasks,t);
-          toast('DONE · Actual time '+formatTime12(k.actualTime)+' saved and locked','success');
-          // rebuild day detail and calendar
-          const dateMap={};myTasks.forEach(x=>{if(x.actualDate&&getDone(currentUser).has(x.sl)){if(!dateMap[x.actualDate])dateMap[x.actualDate]=[];dateMap[x.actualDate].push(x);}});
-          buildCal();buildDayDetail(dateStr,dateMap[dateStr]||[],true,false,dateMap);
-        };
+        doneBtn.onclick=async()=>{await completePersonalTask(k.sl,doneBtn);};
         actDiv.appendChild(doneBtn);
       } else if(isTaskLocked(k,currentUser)){
         actDiv.innerHTML='<span style="font-family:DM Mono,monospace;font-size:.66rem;color:#3ef0b0;background:rgba(62,240,176,.08);border:1px solid rgba(62,240,176,.2);border-radius:6px;padding:3px 8px">🔒 '+formatTime12(k.actualTime)+'</span>';
@@ -1779,7 +1799,7 @@ function renderPersonal(){
 
 function updatePersonalStats(myTasks,t){
   const d=getDone(currentUser);
-  const dc=personalActualDate?myTasks.filter(k=>d.has(k.sl)&&k.actualDate===personalActualDate).length:0;
+  const dc=personalActualDate?myTasks.filter(k=>completedOnDate(k,personalActualDate)).length:0;
   const pct=myTasks.length?Math.round((dc/myTasks.length)*100):0;
   document.getElementById('pDC').textContent=dc;
   document.getElementById('pPC').textContent=myTasks.length-dc;
@@ -1788,10 +1808,11 @@ function updatePersonalStats(myTasks,t){
 }
 
 function renderUserRows(myTasks,t,cols){
+  myTasks=myTasks.map(k=>taskForDate(k,personalActualDate));
   const d=getDone(currentUser);
   const q=(document.getElementById('tSrch')?.value||searchQ).toLowerCase();
   const filtered=myTasks.filter(k=>{
-    const doneOnDate=!!(personalActualDate&&d.has(k.sl)&&k.actualDate===personalActualDate);
+    const doneOnDate=!!(personalActualDate&&completedOnDate(k,personalActualDate));
     if(q&&!k.task.toLowerCase().includes(q))return false;
     if(taskFilter==='done'&&!doneOnDate)return false;
     if(taskFilter==='pending'&&doneOnDate)return false;
@@ -1801,7 +1822,7 @@ function renderUserRows(myTasks,t,cols){
   if(!filtered.length){wrap.innerHTML='<div class="empty-msg">NO TASKS FOUND</div>';return;}
 
   filtered.forEach((k,i)=>{
-    const isDone=!!(personalActualDate&&d.has(k.sl)&&k.actualDate===personalActualDate);
+    const isDone=!!(personalActualDate&&completedOnDate(k,personalActualDate));
     const isGloballyLocked=isTaskLocked(k,currentUser);
     const canComplete=!!(personalActualDate&&personalActualDate===localISODate()&&!isGloballyLocked);
     const showActual=!!(personalActualDate&&isDone&&k.actualDate===personalActualDate&&k.actualTime);
@@ -1858,7 +1879,7 @@ function renderAdmin(allowedModules = null){
   } else {
     // Only show modules the user is allowed to see
     // Always allow personal view to be reached by logging out
-    tabDefs = allTabDefs.filter(d => allowedModules.includes(d.id));
+    tabDefs = [{id:'personal',label:'MY TASKS',icon:''},...allTabDefs.filter(d => allowedModules.includes(d.id))];
     // If current adminTab is not allowed, switch to first available
     if (tabDefs.length && !tabDefs.find(d => d.id === adminTab)) {
       adminTab = tabDefs[0].id;
@@ -1888,7 +1909,8 @@ function renderAdmin(allowedModules = null){
     c.appendChild(note);
   }
 
-  if(adminTab==='overview')buildOverview(c);
+  if(adminTab==='personal'&&currentUser!=='admin')renderPersonal();
+  else if(adminTab==='overview')buildOverview(c);
   else if(adminTab==='master')renderMasterTasks(c);
   else if(adminTab==='delete')buildDelete(c);
   
@@ -1902,10 +1924,10 @@ function renderAdmin(allowedModules = null){
 function buildOverview(c){
   const completedOnDate=k=>isTaskComplete(k)&&(!overviewDate||k.actualDate===overviewDate);
   const allP=[...new Set(tasks.map(t=>t.person))];
-  const totalDone=tasks.filter(completedOnDate).length;
+  const totalDone=tasks.map(k=>taskForDate(k,overviewDate)).filter(completedOnDate).length;
   const pct=tasks.length?Math.round((totalDone/tasks.length)*100):0;
   const withActual=totalDone;
-  const lateCount=tasks.filter(t=>completedOnDate(t)&&timeCmp(t.planDate,t.planTime,t.actualDate,t.actualTime)==='late').length;
+  const lateCount=tasks.map(k=>taskForDate(k,overviewDate)).filter(t=>completedOnDate(t)&&timeCmp(t.planDate,t.planTime,t.actualDate,t.actualTime)==='late').length;
 
   c.insertAdjacentHTML('beforeend',`<div style="font-family:'Syne',sans-serif;font-size:1.5rem;font-weight:800;letter-spacing:-.02em;margin-bottom:16px">Admin <span style="color:#f5c842">Overview</span></div>`);
 
@@ -1960,7 +1982,7 @@ function buildOverview(c){
   const teamLbl=document.createElement('div');teamLbl.className='section-title';teamLbl.textContent='TEAM BREAKDOWN';c.appendChild(teamLbl);
   const grid=document.createElement('div');grid.className='admin-grid';
   allP.forEach(p=>{
-    const t2=th(p),mt=tasks.filter(k=>k.person===p),dn=mt.filter(completedOnDate).length;
+    const t2=th(p),mt=tasks.filter(k=>k.person===p).map(k=>taskForDate(k,overviewDate)),dn=mt.filter(completedOnDate).length;
     const pp=mt.length?Math.round((dn/mt.length)*100):0;
     const late=mt.filter(k=>completedOnDate(k)&&timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='late').length;
     const early=mt.filter(k=>completedOnDate(k)&&['early','ontime'].includes(timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime))).length;
@@ -2360,7 +2382,7 @@ function buildPlanTime(c){
 function personWorkloadMetrics(person,date){
   const assigned=tasks.filter(task=>task.person===person);
   const totalMinutes=assigned.reduce((sum,task)=>sum+leadMinutes(task.leadTime),0);
-  const completedMinutes=assigned.filter(task=>isTaskComplete(task)&&task.actualDate===date)
+  const completedMinutes=assigned.map(task=>taskForDate(task,date)).filter(task=>isTaskComplete(task)&&task.actualDate===date)
     .reduce((sum,task)=>sum+leadMinutes(task.leadTime),0);
   const workingMinutes=dailyMinutes(person,date);
   return {totalMinutes,completedMinutes,workingMinutes,
@@ -2388,7 +2410,7 @@ function buildKPI(c){
 }
 
 function getKPITasks(){
-  return tasks.filter(k=>{
+  return tasks.map(k=>kpiDate?taskForDate(k,kpiDate):k).filter(k=>{
     const d=k.actualDate;
     if(kpiMonth!==''){if(!d)return false;return new Date(d+'T00:00:00').getMonth()===+kpiMonth;}
     if(kpiDate){return d===kpiDate;}
@@ -2517,7 +2539,7 @@ function buildKPICharts(){
     if(tbody){
       // This table intentionally reads only completed Actual records. The
       // master task list remains unchanged by KPI date/month filtering.
-      const actualFiltered=tasks.filter(k=>{
+      const actualFiltered=tasks.map(k=>kpiDate?taskForDate(k,kpiDate):k).filter(k=>{
         if(!k.actualDate||!k.actualTime)return false;
         if(kpiDate)return k.actualDate===kpiDate;
         if(kpiMonth!=='')return new Date(k.actualDate+'T00:00:00').getMonth()===+kpiMonth;
@@ -2576,7 +2598,7 @@ function buildKPICharts(){
     const ltPersonData=leadTimePersons.map(p=>{
       const pt=leadTimeSource.filter(k=>k.person===p&&k.leadTime);
       const totalHrs=pt.reduce((s,k)=>s+parseLT(k.leadTime),0);
-      const doneHrs=pt.filter(k=>isTaskComplete(k)&&k.actualDate===workloadDate).reduce((s,k)=>s+parseLT(k.leadTime),0);
+      const doneHrs=pt.map(k=>taskForDate(k,workloadDate)).filter(k=>isTaskComplete(k)&&k.actualDate===workloadDate).reduce((s,k)=>s+parseLT(k.leadTime),0);
       const pendHrs=totalHrs-doneHrs;
       return{name:p,total:+totalHrs.toFixed(1),done:+doneHrs.toFixed(1),pend:+pendHrs.toFixed(1),count:pt.length};
     }).sort((a,b)=>b.total-a.total);
