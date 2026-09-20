@@ -1574,7 +1574,7 @@ function renderPersonal(){
     document.getElementById('fDone').onclick=()=>setF('done');
 
     document.getElementById('taskRows').addEventListener('click',async e=>{
-      const button=e.target.closest('.tog');
+      const button=e.target.closest('.tog, .status-action');
       if(!button||button.disabled)return;
       if(personalActualDate!==localISODate()){toast('Select today to update status','info');return;}
       await completePersonalTask(Number(button.dataset.sl),button);
@@ -1810,7 +1810,7 @@ function updatePersonalStats(myTasks,t){
 function renderUserRows(myTasks,t,cols){
   myTasks=myTasks.map(k=>taskForDate(k,personalActualDate));
   const d=getDone(currentUser);
-  const q=(document.getElementById('tSrch')?.value||searchQ).toLowerCase();
+  const q=(document.getElementById('tSrch')?.value??searchQ).toLowerCase();
   const filtered=myTasks.filter(k=>{
     const doneOnDate=!!(personalActualDate&&completedOnDate(k,personalActualDate));
     if(q&&!k.task.toLowerCase().includes(q))return false;
@@ -1849,8 +1849,8 @@ function renderUserRows(myTasks,t,cols){
       <div class="time-cell">${planBadge(k)}<span class="time-label">${k.planTime?'Deadline':'Admin sets this'}</span></div>
       ${actualInputHtml}
       <div class="tog-wrap" style="justify-content:flex-end">
-        <button class="tog${isDone?' on':''}" data-sl="${k.sl}" ${(!canComplete||isDone)?'disabled':''} title="${!personalActualDate?'Select a date':personalActualDate!==localISODate()?'Past dates are view-only':isGloballyLocked&&!isDone?'Task already completed on another date':isDone?'Completed and locked':'Mark DONE'}"></button>
-        <span class="tog-lbl">${isDone?'DONE':'PEND'}</span>
+        <button type="button" aria-label="${isDone?'Completed task':'Mark task done'}" class="tog${isDone?' on':''}" data-sl="${k.sl}" ${(!canComplete||isDone)?'disabled':''} title="${!personalActualDate?'Select a date':personalActualDate!==localISODate()?'Past dates are view-only':isGloballyLocked&&!isDone?'Task already completed on another date':isDone?'Completed and locked':'Mark DONE'}"></button>
+        <button type="button" class="tog-lbl status-action" data-sl="${k.sl}" ${(!canComplete||isDone)?'disabled':''} style="background:none;border:0;padding:6px 2px;cursor:${canComplete&&!isDone?'pointer':'default'};color:${isDone?'#3ef0b0':'var(--muted)'}" title="${canComplete&&!isDone?'Mark this pending task DONE':'View-only status'}">${isDone?'DONE':'PEND'}</button>
       </div>`;
     wrap.appendChild(row);
   });
