@@ -3224,7 +3224,8 @@ function buildLeadImportPlan(source,remote){
   });
 }
 function postgrestText(value){
-  return encodeURIComponent('"'+String(value).replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"');
+  // Simple eq filters take the raw value; wrapping quotes become literal text.
+  return encodeURIComponent(String(value));
 }
 let leadImportView={plan:[],message:'',open:true};
 async function applyLeadImportEntry(entry){
