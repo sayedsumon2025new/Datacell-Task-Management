@@ -158,20 +158,24 @@ body::before{content:'';position:fixed;inset:0;background:linear-gradient(135deg
 .apc-bar{height:4px;background:var(--border);border-radius:10px;overflow:hidden;margin:10px 0 8px;}
 .apc-fill{height:100%;border-radius:10px;transition:width 0.5s ease;}
 .apc-ct{display:flex;justify-content:space-between;font-size:0.67rem;font-family:'DM Mono',monospace;color:var(--muted);}
-.apc.kpi-late-hover-card{cursor:default;transition:border-color .2s,box-shadow .2s,transform .2s;}
-.apc.kpi-late-hover-card:hover,.apc.kpi-late-hover-card:focus{z-index:4;border-color:rgba(248,113,113,.4);box-shadow:0 10px 24px rgba(0,0,0,.22);transform:translateY(-2px);}
-.kpi-late-popup{position:fixed;z-index:500;width:min(330px,calc(100vw - 24px));max-height:320px;overflow:auto;background:#111c2d;border:1px solid rgba(248,113,113,.38);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.48);padding:13px 14px;pointer-events:none;opacity:0;transform:translateY(6px) scale(.98);transition:opacity .15s ease,transform .15s ease;}
-.kpi-late-popup.show{opacity:1;transform:translateY(0) scale(1);}
-.kpi-late-popup-title{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:9px;margin-bottom:5px;border-bottom:1px solid rgba(248,113,113,.18);font-family:'DM Mono',monospace;font-size:.64rem;letter-spacing:.07em;color:#f87171;text-transform:uppercase;}
-.kpi-late-popup-person{color:var(--text);font-family:'Syne',sans-serif;font-size:.8rem;font-weight:700;letter-spacing:0;text-transform:none;}
+.apc.kpi-late-click-card{cursor:pointer;transition:border-color .2s,box-shadow .2s,transform .2s;}
+.apc.kpi-late-click-card:hover,.apc.kpi-late-click-card:focus{z-index:4;border-color:rgba(248,113,113,.4);box-shadow:0 10px 24px rgba(0,0,0,.22);transform:translateY(-2px);}
+.kpi-late-modal-overlay{position:fixed;inset:0;z-index:500;background:rgba(4,10,20,.72);backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;padding:20px;}
+.kpi-late-modal{width:min(720px,96vw);max-height:82vh;overflow:auto;background:#111c2d;border:1px solid rgba(248,113,113,.38);border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.55);}
+.kpi-late-modal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid rgba(248,113,113,.18);position:sticky;top:0;background:#111c2d;z-index:1;}
+.kpi-late-modal-title{font-family:'Syne',sans-serif;font-size:.95rem;font-weight:700;color:#f87171;}
+.kpi-late-modal-sub{font-family:'DM Mono',monospace;font-size:.62rem;color:var(--muted);margin-top:2px;}
+.kpi-late-modal-close{background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-family:'DM Mono',monospace;font-size:.68rem;padding:7px 10px;cursor:pointer;}
+.kpi-late-modal-close:hover{color:#fff;border-color:rgba(255,255,255,.25);}
+.kpi-late-modal-body{padding:12px 14px 16px;}
 .kpi-late-table{width:100%;border-collapse:collapse;font-size:.72rem;}
-.kpi-late-table th{padding:7px 8px;text-align:left;font-family:'DM Mono',monospace;font-size:.58rem;letter-spacing:.06em;color:var(--muted);border-bottom:1px solid rgba(248,113,113,.2);white-space:nowrap;}
-.kpi-late-table td{padding:8px;border-bottom:1px solid rgba(255,255,255,.06);vertical-align:top;}
+.kpi-late-table th{padding:8px;text-align:left;font-family:'DM Mono',monospace;font-size:.58rem;letter-spacing:.06em;color:var(--muted);border-bottom:1px solid rgba(248,113,113,.2);white-space:nowrap;}
+.kpi-late-table td{padding:9px 8px;border-bottom:1px solid rgba(255,255,255,.06);vertical-align:top;}
 .kpi-late-table tr:last-child td{border-bottom:none;}
 .kpi-late-table .report{color:var(--text);line-height:1.35;overflow-wrap:anywhere;}
 .kpi-late-table .plan{color:#60a5fa;font-family:'DM Mono',monospace;white-space:nowrap;}
 .kpi-late-table .actual{color:#f87171;font-family:'DM Mono',monospace;white-space:nowrap;}
-@media(max-width:700px){.apc.kpi-late-hover-card:hover,.apc.kpi-late-hover-card:focus{transform:none}.kpi-late-popup{max-height:260px}}
+@media(max-width:700px){.apc.kpi-late-click-card:hover,.apc.kpi-late-click-card:focus{transform:none}.kpi-late-modal-overlay{padding:10px}.kpi-late-modal{max-height:88vh}}
 
 /* add form */
 .add-panel{background:var(--surface);border:1px solid rgba(245,200,66,0.18);border-radius:16px;padding:22px 24px;margin-bottom:24px;}
@@ -1527,7 +1531,7 @@ function confirm2(title,msg,onOk){
 
 // ─── MAIN RENDER ───
 function renderContent(){
-  document.querySelectorAll('.kpi-late-popup').forEach(el=>el.remove());
+  document.querySelectorAll('.kpi-late-modal-overlay').forEach(el=>el.remove());
   if(typeof Chart!=='undefined')Object.values(Chart.instances||{}).forEach(chart=>chart.destroy());
   document.getElementById('mainContent').innerHTML='';
   if (currentUser === 'admin') {
@@ -1959,61 +1963,33 @@ function renderUserRows(myTasks,t,cols){
   });
 }
 
-function attachLateDonePopup(card,person,lateTasks){
-  if(!card||!lateTasks.length)return;
-  let popup=null,hideTimer=null;
-  const positionPopup=()=>{
-    if(!popup)return;
-    const rect=card.getBoundingClientRect();
-    const gap=8;
-    const width=Math.min(330,window.innerWidth-24);
-    let left=rect.left+(rect.width-width)/2;
-    left=Math.max(12,Math.min(left,window.innerWidth-width-12));
-    let top=rect.bottom+gap;
-    const popupHeight=Math.min(popup.scrollHeight,320);
-    if(top+popupHeight>window.innerHeight-12){
-      top=Math.max(12,rect.top-popupHeight-gap);
-    }
-    popup.style.left=Math.round(left)+'px';
-    popup.style.top=Math.round(top)+'px';
+function openLateDoneModal(person,lateTasks){
+  document.querySelectorAll('.kpi-late-modal-overlay').forEach(el=>el.remove());
+  const overlay=document.createElement('div');
+  overlay.className='kpi-late-modal-overlay';
+  overlay.setAttribute('role','dialog');
+  overlay.setAttribute('aria-modal','true');
+  overlay.setAttribute('aria-label','Delayed completed reports for '+person);
+  const rows=lateTasks.map(k=>{
+    const plan=k.planTime?formatTime12(k.planTime):'Not set';
+    const actual=k.actualTime?formatTime12(k.actualTime):'—';
+    return '<tr><td class="report">'+k.task+'</td><td class="plan">'+plan+'</td><td class="actual">'+actual+'</td></tr>';
+  }).join('');
+  overlay.innerHTML='<div class="kpi-late-modal">'
+    +'<div class="kpi-late-modal-head"><div><div class="kpi-late-modal-title">Delayed DONE Reports</div><div class="kpi-late-modal-sub">'+person+' · '+lateTasks.length+' delayed report'+(lateTasks.length!==1?'s':'')+'</div></div>'
+    +'<button type="button" class="kpi-late-modal-close">CLOSE ✕</button></div>'
+    +'<div class="kpi-late-modal-body"><table class="kpi-late-table"><thead><tr><th>Report Name</th><th>Plan Time</th><th>Actual Time</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
+    +'</div>';
+  const close=()=>{
+    document.removeEventListener('keydown',onKey);
+    overlay.remove();
   };
-  const show=()=>{
-    clearTimeout(hideTimer);
-    if(popup)return;
-    popup=document.createElement('div');
-    popup.className='kpi-late-popup';
-    popup.setAttribute('role','tooltip');
-    popup.innerHTML='<div class="kpi-late-popup-title"><span>Delayed DONE</span><span class="kpi-late-popup-person">'+person+'</span></div>'
-      +'<table class="kpi-late-table"><thead><tr><th>Report Name</th><th>Plan Time</th><th>Actual Time</th></tr></thead><tbody>'
-      +lateTasks.map(k=>{
-        const plan=k.planTime?formatTime12(k.planTime):'Not set';
-        const actual=k.actualTime?formatTime12(k.actualTime):'—';
-        return '<tr>'
-          +'<td class="report">'+k.task+'</td>'
-          +'<td class="plan">'+plan+'</td>'
-          +'<td class="actual">'+actual+'</td>'
-          +'</tr>';
-      }).join('')
-      +'</tbody></table>';
-    document.body.appendChild(popup);
-    positionPopup();
-    requestAnimationFrame(()=>popup?.classList.add('show'));
-  };
-  const hide=()=>{
-    clearTimeout(hideTimer);
-    hideTimer=setTimeout(()=>{
-      if(!popup)return;
-      const el=popup;popup=null;
-      el.classList.remove('show');
-      setTimeout(()=>el.remove(),160);
-    },50);
-  };
-  card.addEventListener('mouseenter',show);
-  card.addEventListener('mouseleave',hide);
-  card.addEventListener('focus',show);
-  card.addEventListener('blur',hide);
-  window.addEventListener('scroll',hide,{passive:true});
-  window.addEventListener('resize',hide,{passive:true});
+  const onKey=e=>{if(e.key==='Escape')close();};
+  overlay.addEventListener('click',e=>{if(e.target===overlay)close();});
+  overlay.querySelector('.kpi-late-modal-close').onclick=close;
+  document.addEventListener('keydown',onKey);
+  document.body.appendChild(overlay);
+  overlay.querySelector('.kpi-late-modal-close').focus();
 }
 
 // ═══════════════════════════════════════════
@@ -2149,10 +2125,10 @@ function buildOverview(c){
     const lateTasks=mt.filter(k=>completedOnDate(k)&&timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='late');
     const late=lateTasks.length;
     const early=mt.filter(k=>completedOnDate(k)&&['early','ontime'].includes(timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime))).length;
-    const card=document.createElement('div');card.className='apc'+(lateTasks.length?' kpi-late-hover-card':'');card.style.borderColor=t2.accent+'22';
+    const card=document.createElement('div');card.className='apc'+(lateTasks.length?' kpi-late-click-card':'');card.style.borderColor=t2.accent+'22';
     if(lateTasks.length){
       card.tabIndex=0;
-      card.setAttribute('aria-label',p+' KPI card. '+lateTasks.length+' delayed completed report'+(lateTasks.length!==1?'s':'')+'. Hover or focus to view report names.');
+      card.setAttribute('aria-label',p+' KPI card. Click to view '+lateTasks.length+' delayed completed report'+(lateTasks.length!==1?'s':'')+'.');
     }
     card.innerHTML='<div style="position:absolute;top:0;left:0;right:0;height:2px;background:'+t2.accent+'"></div>'
       +'<div class="apc-hd"><div class="apc-av" style="background:'+t2.bg+';color:'+t2.color+'">'+ini(p)+'</div>'
@@ -2161,7 +2137,7 @@ function buildOverview(c){
       +'<div class="apc-ct"><span>'+dn+' done</span><span>'+(mt.length-dn)+' pending</span><span style="color:'+t2.color+'">'+pp+'%</span></div>'
       +(early||late?'<div style="margin-top:6px;display:flex;gap:8px;font-size:.62rem;font-family:DM Mono,monospace">'+(early?'<span style="color:#3ef0b0">&#10003;'+early+' ontime</span>':'')+(late?'<span style="color:#f87171">&#10007;'+late+' late</span>':'')+'</div>':'');
     grid.appendChild(card);
-    if(lateTasks.length)attachLateDonePopup(card,p,lateTasks);
+    if(lateTasks.length){card.onclick=()=>openLateDoneModal(p,lateTasks);card.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openLateDoneModal(p,lateTasks);}};}
   });
   c.appendChild(grid);
 
