@@ -2681,7 +2681,7 @@ function buildKPICharts(){
 
   // Chart grids
   const cg1=document.createElement('div');cg1.className='chart-grid';
-  const cb1=document.createElement('div');cb1.className='chart-box';cb1.innerHTML='<h4>Completion by Person <span>done vs pending</span></h4><canvas id="chartPerson" style="max-height:220px"></canvas>';cg1.appendChild(cb1);
+  const cb1=document.createElement('div');cb1.className='chart-box';cb1.innerHTML='<h4>Completion by Person <span>all persons · done vs pending</span></h4><div id="chartPersonWrap" style="position:relative;min-height:220px"><canvas id="chartPerson"></canvas></div>';cg1.appendChild(cb1);
   const cb2=document.createElement('div');cb2.className='chart-box';cb2.innerHTML='<h4>On-Time Status <span>selected-date Plan vs Actual</span></h4><canvas id="chartStatus" style="max-height:220px"></canvas>';cg1.appendChild(cb2);
   wrap.appendChild(cg1);
   const cg2=document.createElement('div');cg2.className='chart-grid';
@@ -2734,27 +2734,50 @@ function buildKPICharts(){
   wrap.appendChild(ltSection);
 
   requestAnimationFrame(()=>{
-    const cd={plugins:{legend:{labels:{color:'#505870',font:{size:9}}},tooltip:{backgroundColor:'#12151d',borderColor:'#1f2535',borderWidth:1,titleColor:'#dde1ec',bodyColor:'#505870'}}};
-    if(typeof Chart!=='undefined')Chart.defaults.color='#505870';
+    const cd={plugins:{legend:{labels:{color:'#76859a',font:{size:9}}},tooltip:{backgroundColor:'#12151d',borderColor:'#344158',borderWidth:1,titleColor:'#edf2f8',bodyColor:'#adbed2'}}};
+    if(typeof Chart!=='undefined')Chart.defaults.color='#76859a';
+    const valueLabelPlugin={
+      id:'inlineValueLabels',
+      afterDatasetsDraw(chart,args,opts){
+        const ctx=chart.ctx;
+        ctx.save();
+        ctx.font="600 10px 'DM Mono', monospace";
+        ctx.textAlign='center';ctx.textBaseline='middle';
+        chart.data.datasets.forEach((dataset,di)=>{
+          const meta=chart.getDatasetMeta(di);
+          meta.data.forEach((element,i)=>{
+            const raw=Number(dataset.data[i]);
+            if(!Number.isFinite(raw)||raw<=0)return;
+            let pos;
+            try{pos=element.tooltipPosition();}catch(e){return;}
+            ctx.fillStyle=(opts&&opts.color)||'#edf2f8';
+            ctx.fillText(String(raw),pos.x,pos.y);
+          });
+        });
+        ctx.restore();
+      }
+    };
     // Person bar
     const chartPersons=[...new Set([...PERSONS,...tasks.map(k=>k.person)])];
-    const pData=chartPersons.map(p=>{const master=tasks.filter(k=>k.person===p);const dn=filtered.filter(k=>k.person===p&&isTaskComplete(k)).length;return{n:p,t:master.length,d:dn};}).filter(x=>x.t>0);
+    const pData=chartPersons.map(p=>{const master=tasks.filter(k=>k.person===p);const dn=filtered.filter(k=>k.person===p&&isTaskComplete(k)).length;return{n:p,t:master.length,d:dn};});
+    const pWrap=document.getElementById('chartPersonWrap');
+    if(pWrap)pWrap.style.height=Math.max(220,pData.length*32+48)+'px';
     const pCtx=document.getElementById('chartPerson')?.getContext('2d');
-    if(pCtx&&typeof Chart!=='undefined')new Chart(pCtx,{type:'bar',data:{labels:pData.map(x=>x.n.split('/')[0]),datasets:[{label:'Done',data:pData.map(x=>x.d),backgroundColor:pData.map(x=>th(x.n).accent+'cc'),borderRadius:4},{label:'Pending',data:pData.map(x=>x.t-x.d),backgroundColor:'rgba(80,88,112,0.3)',borderRadius:4}]},options:{...cd,indexAxis:'y',scales:{x:{stacked:true,grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#505870'}},y:{stacked:true,grid:{display:false},ticks:{color:'#dde1ec',font:{size:10}}}}}});
+    if(pCtx&&typeof Chart!=='undefined')new Chart(pCtx,{type:'bar',data:{labels:pData.map(x=>x.n),datasets:[{label:'Done',data:pData.map(x=>x.d),backgroundColor:pData.map(x=>th(x.n).accent+'cc'),borderRadius:4},{label:'Pending',data:pData.map(x=>Math.max(x.t-x.d,0)),backgroundColor:'rgba(80,88,112,0.35)',borderRadius:4}]},plugins:[valueLabelPlugin],options:{...cd,responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{...cd.plugins,inlineValueLabels:{color:'#edf2f8'}},scales:{x:{stacked:true,beginAtZero:true,grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#76859a',precision:0}},y:{stacked:true,grid:{display:false},ticks:{color:'#dde1ec',font:{size:10},autoSkip:false}}}}});
     // Status donut
     const sCtx=document.getElementById('chartStatus')?.getContext('2d');
-    if(sCtx&&typeof Chart!=='undefined')new Chart(sCtx,{type:'doughnut',data:{labels:['On-time','Late','Not Started'],datasets:[{data:[ontimeN,lateN,Math.max(total-completed,0)],backgroundColor:['rgba(62,240,176,.7)','rgba(248,113,113,.7)','rgba(80,88,112,.3)'],borderColor:['#3ef0b0','#f87171','#505870'],borderWidth:1,hoverOffset:8}]},options:{...cd,cutout:'65%',plugins:{...cd.plugins,legend:{position:'bottom',labels:{color:'#505870',font:{size:9},padding:10}}}}});
+    if(sCtx&&typeof Chart!=='undefined')new Chart(sCtx,{type:'doughnut',data:{labels:['On-time','Late','Not Started'],datasets:[{data:[ontimeN,lateN,Math.max(total-completed,0)],backgroundColor:['rgba(62,240,176,.7)','rgba(248,113,113,.7)','rgba(80,88,112,.3)'],borderColor:['#3ef0b0','#f87171','#505870'],borderWidth:1,hoverOffset:8}]},plugins:[valueLabelPlugin],options:{...cd,cutout:'65%',plugins:{...cd.plugins,inlineValueLabels:{color:'#edf2f8'},legend:{position:'bottom',labels:{color:'#76859a',font:{size:9},padding:10}}}}});
     // Priority
     const prCtx=document.getElementById('chartPrio')?.getContext('2d');
     const nPrios=tasks.filter(k=>!k.priority);const nDone=filtered.filter(k=>!k.priority&&isTaskComplete(k)).length;
-    if(prCtx&&typeof Chart!=='undefined')new Chart(prCtx,{type:'bar',data:{labels:['Priority ★','Normal'],datasets:[{label:'Done',data:[prioDone,nDone],backgroundColor:['rgba(232,121,249,.7)','rgba(62,240,176,.6)'],borderRadius:6},{label:'Pending',data:[prios.length-prioDone,nPrios.length-nDone],backgroundColor:['rgba(232,121,249,.2)','rgba(62,240,176,.15)'],borderRadius:6}]},options:{...cd,scales:{x:{grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#dde1ec'}},y:{grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#505870'}}}}});
+    if(prCtx&&typeof Chart!=='undefined')new Chart(prCtx,{type:'bar',data:{labels:['Priority ★','Normal'],datasets:[{label:'Done',data:[prioDone,nDone],backgroundColor:['rgba(232,121,249,.7)','rgba(62,240,176,.6)'],borderRadius:6},{label:'Pending',data:[Math.max(prios.length-prioDone,0),Math.max(nPrios.length-nDone,0)],backgroundColor:['rgba(232,121,249,.2)','rgba(62,240,176,.15)'],borderRadius:6}]},plugins:[valueLabelPlugin],options:{...cd,plugins:{...cd.plugins,inlineValueLabels:{color:'#edf2f8'}},scales:{x:{grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#dde1ec'}},y:{beginAtZero:true,grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#76859a',precision:0}}}}});
     // Timeline
     const tlCtx=document.getElementById('chartTimeline')?.getContext('2d');
     const withDates=filtered.filter(k=>k.actualDate);
     const dateMap={};withDates.forEach(k=>{if(!dateMap[k.actualDate])dateMap[k.actualDate]={on:0,late:0};if(k.planTime&&k.actualTime&&selectedDateLateMinutes(k)>0)dateMap[k.actualDate].late++;else if(k.planTime&&k.actualTime)dateMap[k.actualDate].on++;});
     const sortedD=Object.keys(dateMap).sort();
     if(tlCtx&&typeof Chart!=='undefined'){
-      if(sortedD.length)new Chart(tlCtx,{type:'bar',data:{labels:sortedD.map(d=>fmtDate(d)),datasets:[{label:'On-Time',data:sortedD.map(d=>dateMap[d].on),backgroundColor:'rgba(62,240,176,.65)',borderRadius:4},{label:'Late',data:sortedD.map(d=>dateMap[d].late),backgroundColor:'rgba(248,113,113,.65)',borderRadius:4}]},options:{...cd,scales:{x:{stacked:true,grid:{display:false},ticks:{color:'#505870',maxRotation:35}},y:{stacked:true,grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#505870'}}}}});
+      if(sortedD.length)new Chart(tlCtx,{type:'bar',data:{labels:sortedD.map(d=>fmtDate(d)),datasets:[{label:'On-Time',data:sortedD.map(d=>dateMap[d].on),backgroundColor:'rgba(62,240,176,.65)',borderRadius:4},{label:'Late',data:sortedD.map(d=>dateMap[d].late),backgroundColor:'rgba(248,113,113,.65)',borderRadius:4}]},plugins:[valueLabelPlugin],options:{...cd,plugins:{...cd.plugins,inlineValueLabels:{color:'#edf2f8'}},scales:{x:{stacked:true,grid:{display:false},ticks:{color:'#76859a',maxRotation:35}},y:{stacked:true,beginAtZero:true,grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#76859a',precision:0}}}}});
       else tlCtx.canvas.closest('.chart-box').insertAdjacentHTML('beforeend','<p style="font-size:.75rem;color:var(--muted);text-align:center;padding:30px;font-family:DM Mono,monospace">No completed data for the selected date.</p>');
     }
     // Table
@@ -2773,7 +2796,7 @@ function buildKPICharts(){
       const teamPersons=[...new Set([...PERSONS,...tasks.map(k=>k.person)])];
       const teamSummary={tasks:0,done:0,pending:0,onTime:0,late:0,totalMinutes:0,completedMinutes:0,workingMinutes:0};
       teamPersons.forEach(p=>{
-        const masterTasks=tasks.filter(k=>k.person===p);if(!masterTasks.length)return;
+        const masterTasks=tasks.filter(k=>k.person===p);
         const mt=actualFiltered.filter(k=>k.person===p);
         const t2=th(p);
         const dn=mt.length;
