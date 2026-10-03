@@ -2602,9 +2602,10 @@ function buildKPICharts(){
   const total=tasks.length;
   const completed=filtered.filter(isTaskComplete).length;
   const withPlan=tasks.filter(k=>k.planTime).length;
-  const lateN=filtered.filter(k=>timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='late').length;
-  const earlyN=filtered.filter(k=>timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='early').length;
-  const ontimeN=filtered.filter(k=>timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='ontime').length;
+  const comparable=filtered.filter(k=>k.planTime&&k.actualTime);
+  const lateN=comparable.filter(k=>selectedDateLateMinutes(k)>0).length;
+  const ontimeN=comparable.filter(k=>selectedDateLateMinutes(k)===0).length;
+  const earlyN=0;
   const prios=tasks.filter(k=>k.priority);
   const prioDone=filtered.filter(k=>k.priority&&isTaskComplete(k)).length;
   const onTimeRate=completed>0?Math.round(((earlyN+ontimeN)/completed)*100):0;
@@ -2614,7 +2615,7 @@ function buildKPICharts(){
   const kpiGrid=document.createElement('div');kpiGrid.className='kpi-grid';
   [{label:'TOTAL TASKS',val:total,sub:withPlan+' with plan time',color:'#f5c842'},
    {label:'COMPLETED',val:completed,sub:compRate+'% completion rate',color:'#3ef0b0'},
-   {label:'ON-TIME RATE',val:onTimeRate+'%',sub:(earlyN+ontimeN)+' on-time · '+lateN+' late',color:'#60a5fa'},
+   {label:'ON-TIME RATE',val:onTimeRate+'%',sub:ontimeN+' on-time · '+lateN+' late',color:'#60a5fa'},
    {label:'PRIORITY DONE',val:prioDone+'/'+prios.length,sub:(prios.length?Math.round(prioDone/prios.length*100):0)+'% of priority tasks',color:'#e879f9'}
   ].forEach(k=>{
     const card=document.createElement('div');card.className='kpi-card';card.style.borderColor=k.color+'33';
@@ -2629,7 +2630,7 @@ function buildKPICharts(){
   // Chart grids
   const cg1=document.createElement('div');cg1.className='chart-grid';
   const cb1=document.createElement('div');cb1.className='chart-box';cb1.innerHTML='<h4>Completion by Person <span>done vs pending</span></h4><canvas id="chartPerson" style="max-height:220px"></canvas>';cg1.appendChild(cb1);
-  const cb2=document.createElement('div');cb2.className='chart-box';cb2.innerHTML='<h4>On-Time Status <span>of completed tasks</span></h4><canvas id="chartStatus" style="max-height:220px"></canvas>';cg1.appendChild(cb2);
+  const cb2=document.createElement('div');cb2.className='chart-box';cb2.innerHTML='<h4>On-Time Status <span>selected-date Plan vs Actual</span></h4><canvas id="chartStatus" style="max-height:220px"></canvas>';cg1.appendChild(cb2);
   wrap.appendChild(cg1);
   const cg2=document.createElement('div');cg2.className='chart-grid';
   const cb3=document.createElement('div');cb3.className='chart-box';cb3.innerHTML='<h4>Priority vs Normal <span>completion</span></h4><canvas id="chartPrio" style="max-height:220px"></canvas>';cg2.appendChild(cb3);
@@ -2639,7 +2640,7 @@ function buildKPICharts(){
   const teamDateLabel=kpiDate?' · '+fmtDate(kpiDate):kpiMonth!==''?' · '+months[+kpiMonth]:' · All Actual Dates';
   tableBox.innerHTML='<h4 style="font-family:Syne,sans-serif;font-size:.9rem;font-weight:700;margin-bottom:4px">Team Performance'+teamDateLabel+'</h4>'
     +'<div style="font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted);margin-bottom:12px">LIVE ACTUAL DATA · PERSON-WISE TASK QUANTITY · UTILIZATION / EFFICIENCY: '+fmtDate(workloadDate)+' (WORKLOAD DATE)</div>'
-    +'<table class="pct-table"><thead><tr><th>PERSON</th><th>TASKS</th><th>DONE</th><th>PENDING</th><th>EARLY / ON-TIME</th><th>LATE</th><th>RATE</th><th title="Total task minutes / working minutes × 100">UTILIZATION</th><th title="Completed minutes / working minutes × 100">EFFICIENCY</th><th title="Early or on-time completed tasks / all completed tasks × 100">OTD %</th><th title="Late completed tasks / all completed tasks × 100">DELAYED %</th></tr></thead><tbody id="kpiTableBody"></tbody></table>';
+    +'<table class="pct-table"><thead><tr><th>PERSON</th><th>TASKS</th><th>DONE</th><th>PENDING</th><th>ON-TIME</th><th>LATE</th><th>RATE</th><th title="Total task minutes / working minutes × 100">UTILIZATION</th><th title="Completed minutes / working minutes × 100">EFFICIENCY</th><th title="On-time completed tasks / all completed tasks × 100">OTD %</th><th title="Late completed tasks / all completed tasks × 100">DELAYED %</th></tr></thead><tbody id="kpiTableBody"></tbody></table>';
   wrap.appendChild(tableBox);
 
   // ── LEAD TIME CHARTS ──
@@ -2690,7 +2691,7 @@ function buildKPICharts(){
     if(pCtx&&typeof Chart!=='undefined')new Chart(pCtx,{type:'bar',data:{labels:pData.map(x=>x.n.split('/')[0]),datasets:[{label:'Done',data:pData.map(x=>x.d),backgroundColor:pData.map(x=>th(x.n).accent+'cc'),borderRadius:4},{label:'Pending',data:pData.map(x=>x.t-x.d),backgroundColor:'rgba(80,88,112,0.3)',borderRadius:4}]},options:{...cd,indexAxis:'y',scales:{x:{stacked:true,grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#505870'}},y:{stacked:true,grid:{display:false},ticks:{color:'#dde1ec',font:{size:10}}}}}});
     // Status donut
     const sCtx=document.getElementById('chartStatus')?.getContext('2d');
-    if(sCtx&&typeof Chart!=='undefined')new Chart(sCtx,{type:'doughnut',data:{labels:['Early/On-time','Late','Not Started'],datasets:[{data:[earlyN+ontimeN,lateN,total-completed],backgroundColor:['rgba(62,240,176,.7)','rgba(248,113,113,.7)','rgba(80,88,112,.3)'],borderColor:['#3ef0b0','#f87171','#505870'],borderWidth:1,hoverOffset:8}]},options:{...cd,cutout:'65%',plugins:{...cd.plugins,legend:{position:'bottom',labels:{color:'#505870',font:{size:9},padding:10}}}}});
+    if(sCtx&&typeof Chart!=='undefined')new Chart(sCtx,{type:'doughnut',data:{labels:['On-time','Late','Not Started'],datasets:[{data:[ontimeN,lateN,Math.max(total-completed,0)],backgroundColor:['rgba(62,240,176,.7)','rgba(248,113,113,.7)','rgba(80,88,112,.3)'],borderColor:['#3ef0b0','#f87171','#505870'],borderWidth:1,hoverOffset:8}]},options:{...cd,cutout:'65%',plugins:{...cd.plugins,legend:{position:'bottom',labels:{color:'#505870',font:{size:9},padding:10}}}}});
     // Priority
     const prCtx=document.getElementById('chartPrio')?.getContext('2d');
     const nPrios=tasks.filter(k=>!k.priority);const nDone=filtered.filter(k=>!k.priority&&isTaskComplete(k)).length;
@@ -2698,7 +2699,7 @@ function buildKPICharts(){
     // Timeline
     const tlCtx=document.getElementById('chartTimeline')?.getContext('2d');
     const withDates=filtered.filter(k=>k.actualDate);
-    const dateMap={};withDates.forEach(k=>{if(!dateMap[k.actualDate])dateMap[k.actualDate]={on:0,late:0};const cmp=timeCmp('',k.planTime,k.actualDate,k.actualTime);if(cmp==='late')dateMap[k.actualDate].late++;else dateMap[k.actualDate].on++;});
+    const dateMap={};withDates.forEach(k=>{if(!dateMap[k.actualDate])dateMap[k.actualDate]={on:0,late:0};if(k.planTime&&k.actualTime&&selectedDateLateMinutes(k)>0)dateMap[k.actualDate].late++;else if(k.planTime&&k.actualTime)dateMap[k.actualDate].on++;});
     const sortedD=Object.keys(dateMap).sort();
     if(tlCtx&&typeof Chart!=='undefined'){
       if(sortedD.length)new Chart(tlCtx,{type:'bar',data:{labels:sortedD.map(d=>fmtDate(d)),datasets:[{label:'On-Time',data:sortedD.map(d=>dateMap[d].on),backgroundColor:'rgba(62,240,176,.65)',borderRadius:4},{label:'Late',data:sortedD.map(d=>dateMap[d].late),backgroundColor:'rgba(248,113,113,.65)',borderRadius:4}]},options:{...cd,scales:{x:{stacked:true,grid:{display:false},ticks:{color:'#505870',maxRotation:35}},y:{stacked:true,grid:{color:'rgba(31,37,53,.6)'},ticks:{color:'#505870'}}}}});
@@ -2724,8 +2725,9 @@ function buildKPICharts(){
         const t2=th(p);
         const dn=mt.length;
         const pending=Math.max(masterTasks.length-dn,0);
-        const ot=mt.filter(k=>['early','ontime'].includes(timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime))).length;
-        const lt=mt.filter(k=>timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='late').length;
+        const comparableMt=mt.filter(k=>k.planTime&&k.actualTime);
+        const ot=comparableMt.filter(k=>selectedDateLateMinutes(k)===0).length;
+        const lt=comparableMt.filter(k=>selectedDateLateMinutes(k)>0).length;
         const rate=masterTasks.length?Math.round(dn/masterTasks.length*100):0;
         const metrics=personWorkloadMetrics(p,workloadDate);
         const tr=document.createElement('tr');
@@ -2745,7 +2747,7 @@ function buildKPICharts(){
         [utilizationCell,efficiencyCell].forEach(cell=>{cell.style.cssText='font-family:DM Mono,monospace;font-size:.8rem;white-space:nowrap;color:#60a5fa';tr.appendChild(cell);});
         const timingUnknown=Math.max(0,dn-ot-lt);
         const timingNote=timingUnknown?' · '+timingUnknown+' completed task(s) have no comparable plan time':'';
-        [{count:ot,label:'Early/on-time',color:'#3ef0b0'},{count:lt,label:'Delayed',color:'#f87171'}].forEach(item=>{
+        [{count:ot,label:'On-time',color:'#3ef0b0'},{count:lt,label:'Delayed',color:'#f87171'}].forEach(item=>{
           const cell=document.createElement('td');
           cell.textContent=workloadPercent(dn>0?item.count/dn*100:null);
           cell.title=dn>0?item.label+': '+item.count+' / '+dn+' completed tasks'+timingNote:'No completed tasks in selected date/month';
