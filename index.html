@@ -429,7 +429,7 @@ body::before{content:'';position:fixed;inset:0;background:linear-gradient(135deg
 
 <script>
 // ─── CREDENTIALS ───
-let CREDS={admin:'165240'}; // users loaded from Google Sheets
+let CREDS={}; // credentials are loaded from the database; no hardcoded password fallback
 let PERSONS=[]; // loaded from Google Sheets
 // ─ USER REGISTRY (dynamic, admin-managed) ─
 let userRegistry=[]; // loaded from Google Sheets
@@ -1052,7 +1052,7 @@ async function sbSaveAllQueued() {
 async function syncUsers() {
   if (!sbConfigured()) return false;
   const rows = [
-    {name:'admin',password:CREDS.admin||'165240',color:'#f5c842'},
+    {name:'admin',password:CREDS.admin||'',color:'#f5c842'},
     ...userRegistry.filter(u=>u.name!=='admin').map(u => ({ name: u.name, password: u.password || '', color: u.color || '#60a5fa' }))
   ];
   if (!await sbDeleteAll('users')) return false;
@@ -1282,20 +1282,32 @@ function formatDisplayDate(isoDate) {
   const [y,m,d] = isoDate.split('-');
   return `${d}/${m}/${y}`;
 }
+function dateTimeMs(dateStr,timeStr){
+  if(!timeStr)return NaN;
+  const [h,m]=String(timeStr).split(':').map(Number);
+  if(!Number.isFinite(h)||!Number.isFinite(m))return NaN;
+  if(dateStr&&/^\d{4}-\d{2}-\d{2}$/.test(dateStr)){
+    const [y,mo,d]=dateStr.split('-').map(Number);
+    return new Date(y,mo-1,d,h,m,0,0).getTime();
+  }
+  return (h*60+m)*60000;
+}
 function timeCmp(pd,pt,ad,at){
   if(!pt||!at)return'';
-  const [ph,pm]=String(pt).split(':').map(Number),[ah,am]=String(at).split(':').map(Number);
-  const pMs=(ph*60+pm)*60000,aMs=(ah*60+am)*60000;
-  if(aMs===pMs)return'ontime'; return aMs<pMs?'early':'late';
+  const pMs=dateTimeMs(pd,pt),aMs=dateTimeMs(ad,at);
+  if(!Number.isFinite(pMs)||!Number.isFinite(aMs))return'';
+  if(aMs===pMs)return'ontime';
+  return aMs<pMs?'early':'late';
 }
 function timeDiff(pd,pt,ad,at){
   if(!pt||!at)return'';
-  const [ph,pm]=String(pt).split(':').map(Number),[ah,am]=String(at).split(':').map(Number);
-  const pMs=(ph*60+pm)*60000,aMs=(ah*60+am)*60000;
-  const diff=aMs-pMs;const abs=Math.abs(diff);
-  const h=Math.floor(abs/3600000),m=Math.floor((abs%3600000)/60000);
-  const str=(h?h+'h ':'')+m+'m';
-  if(diff===0)return'On Time'; return diff>0?'+'+str+' late':'-'+str+' early';
+  const pMs=dateTimeMs(pd,pt),aMs=dateTimeMs(ad,at);
+  if(!Number.isFinite(pMs)||!Number.isFinite(aMs))return'';
+  const diff=aMs-pMs,abs=Math.abs(diff);
+  const days=Math.floor(abs/86400000),h=Math.floor((abs%86400000)/3600000),m=Math.floor((abs%3600000)/60000);
+  const str=(days?days+'d ':'')+(h?h+'h ':'')+m+'m';
+  if(diff===0)return'On Time';
+  return diff>0?'+'+str+' late':'-'+str+' early';
 }
 function inRange(date,from,to){if(!date)return(!from&&!to);if(from&&date<from)return false;if(to&&date>to)return false;return true;}
 function fmtDate(d){if(!d)return'';const p=d.split('-');return p[2]+'/'+p[1]+'/'+p[0];}
@@ -1394,21 +1406,11 @@ function refreshLoginDropdown() {
   }
 }
 
-// Run on page load
+// Run on page load.
+// Security: do not restore authentication from browser storage. A refresh requires login again.
 (async function initSession(){
+  try { localStorage.removeItem('fts_session'); } catch(e){}
   await populateLoginDropdown();
-  // Auto-restore session if exists (stay logged in until manual logout)
-  try {
-    const saved = JSON.parse(localStorage.getItem('fts_session') || 'null');
-    if (saved && saved.user && CREDS[saved.user]) {
-      currentUser = saved.user;
-      // Make sure dropdown has the user selected
-      const sel = document.getElementById('loginUser');
-      if (sel) sel.value = saved.user;
-      openApp();
-      return;
-    }
-  } catch(e){}
 })();
 document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('loginBtn').click();});
 function doLogin(){
@@ -1419,8 +1421,8 @@ function doLogin(){
   if(CREDS[u]!==p){err.textContent='⚠ Incorrect password.';err.style.display='block';document.getElementById('loginPass').value='';return;}
   err.style.display='none';
   currentUser=u;
-  // Persist session so refresh does not log out
-  try { localStorage.setItem('fts_session', JSON.stringify({ user: u, ts: Date.now() })); } catch(e){}
+  // Do not persist authentication in browser storage.
+  try { localStorage.removeItem('fts_session'); } catch(e){}
   openApp();
 }
 function openApp(){startPolling();
@@ -2992,7 +2994,7 @@ function renderSettingsUsers(body){
     card.innerHTML='<div class="user-card-av" style="background:'+t2.bg+';color:'+u.color+'">'+ini(u.name)+'</div>'
       +'<div class="user-card-info">'
       +'<div class="user-card-name" style="color:'+u.color+'">'+u.name+'</div>'
-      +'<div class="user-card-pass">PW: '+u.password+'</div>'
+      +'<div class="user-card-pass">Password hidden · use reset/change</div>'
       +'</div>'
       +'<button class="user-card-pw-btn" data-name="'+u.name+'" title="Change password">🔑</button>'
       +'<button class="user-card-del" data-name="'+u.name+'" title="Remove user">✕</button>';
@@ -3028,13 +3030,13 @@ function renderSettingsUsers(body){
         +'<button class="add-btn" id="pw-save-btn" style="height:38px;font-size:.82rem">UPDATE</button>'
         +'<button class="dr-clear" id="pw-cancel-btn" style="height:38px">Cancel</button>'
         +'</div>'
-        +'<div style="margin-top:8px;font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted)">Current: <span style="color:var(--text)">'+u.password+'</span></div>';
+        +'<div style="margin-top:8px;font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted)">Existing password is never displayed.</div>';
       pwEditWrap.appendChild(panel);
       document.getElementById('pw-save-btn').onclick=()=>{
         const np=document.getElementById('pw-new').value;
         const cp=document.getElementById('pw-confirm').value;
         if(!np){toast('Enter new password','error');return;}
-        if(np.length<3){toast('Min 3 characters required','error');return;}
+        if(np.length<8){toast('Minimum 8 characters required','error');return;}
         if(np!==cp){toast('Passwords do not match','error');return;}
         CREDS[name]=np;const reg=userRegistry.find(x=>x.name===name);if(reg)reg.password=np;
         syncUsers();toast('\u2713 Password updated for '+name,'success');activePwUser=null;
@@ -3072,6 +3074,7 @@ function renderSettingsUsers(body){
     const np=document.getElementById('admin-newpass').value;
     const cp=document.getElementById('admin-confirmpass').value;
     if(!np){toast('Enter new password','error');return;}
+    if(np.length<8){toast('Minimum 8 characters required','error');return;}
     if(np!==cp){toast('Passwords do not match','error');return;}
     const previous=CREDS.admin;
     CREDS.admin=np;
