@@ -111,6 +111,12 @@ body::before{content:'';position:fixed;inset:0;background:linear-gradient(135deg
 .time-input-wrap{display:flex;align-items:center;gap:4px;}
 .time-inp{background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'DM Mono',monospace;font-size:0.72rem;padding:4px 7px;outline:none;width:100%;transition:border-color 0.18s;}
 .time-inp:focus{border-color:#f5c842;}
+.remark-inp{width:100%;min-width:150px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:'Outfit',sans-serif;font-size:.76rem;padding:6px 8px;outline:none;transition:border-color .18s,box-shadow .18s;}
+.remark-inp:focus{border-color:#f5c842;box-shadow:0 0 0 2px rgba(245,200,66,.08);}
+.remark-inp.remark-required{border-color:#f87171;box-shadow:0 0 0 2px rgba(248,113,113,.12);}
+.remark-view{font-size:.72rem;line-height:1.35;color:var(--text);overflow-wrap:anywhere;}
+.remark-hint{display:block;margin-top:3px;font-family:'DM Mono',monospace;font-size:.56rem;color:var(--muted);}
+.remark-hint.late{color:#f87171;}
 .time-save-btn{background:#f5c842;color:#0b0d12;border:none;border-radius:5px;font-family:'Syne',sans-serif;font-size:0.65rem;font-weight:700;padding:4px 8px;cursor:pointer;white-space:nowrap;transition:background 0.18s;flex-shrink:0;}
 .time-save-btn:hover{background:#f9d84a;}
 .time-save-btn.actual-save{background:rgba(62,240,176,0.2);color:#3ef0b0;border:1px solid rgba(62,240,176,0.3);}
@@ -786,6 +792,9 @@ function applyRemoteData(data) {
     if(JSON.stringify(moduleAccess)!==JSON.stringify(data.moduleAccess)){moduleAccess=data.moduleAccess;changed=true;}
   }
   if(data.taskCompletionHistory){taskCompletionHistory=data.taskCompletionHistory;}
+  if(data.taskRemarks){
+    if(JSON.stringify(taskRemarks)!==JSON.stringify(data.taskRemarks)){taskRemarks=data.taskRemarks;changed=true;}
+  }
   if (data.dailyWorkingHours) {
     if(JSON.stringify(dailyWorkingHours)!==JSON.stringify(data.dailyWorkingHours)){dailyWorkingHours=data.dailyWorkingHours;changed=true;}
   }
@@ -838,6 +847,7 @@ async function sbFetchAll() {
 
   return {
     taskCompletionHistory:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('taskCompletion:')).flatMap(r=>{try{const t=JSON.parse(r.value);return t&&t.actualDate&&t.actualTime?[[r.key.slice('taskCompletion:'.length),t]]:[];}catch(e){return [];}})),
+    taskRemarks:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('taskRemark:')).map(r=>[r.key.slice('taskRemark:'.length),String(r.value||'')])),
     tasks: fetchedTasks, doneState: fetchedDone, users: fetchedUsers, moduleAccess: fetchedAccess,
     workingHours: fetchedWorkingHours,
     dailyWorkingHours:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('workingHoursDaily:')&&r.value!==''&&Number.isFinite(Number(r.value))&&Number(r.value)>=0&&Number(r.value)<=1440).map(r=>[r.key,Number(r.value)])),
@@ -1182,12 +1192,34 @@ const doneState={};
 // user explicitly changes the task status to DONE.
 
 let taskCompletionHistory={};
+let taskRemarks={};
+function remarkKey(date,sl){return date+':'+Number(sl);}
+function taskRemark(date,sl){return taskRemarks[remarkKey(date,sl)]||'';}
 function taskForDate(task,date){
   return taskCompletionHistory[date+':'+task.sl]||task;
 }
 function completedOnDate(task,date){
   const record=taskForDate(task,date);
   return !!(date&&record.actualDate===date&&record.actualTime);
+}
+function completionIsLate(task,date=localISODate(),time=currentTime24()){
+  if(!task||!task.planTime)return false;
+  const planDate=task.planDate||date;
+  return timeCmp(planDate,task.planTime,date,time)==='late';
+}
+function getRemarkInput(sl){
+  return document.querySelector('[data-remark-sl="'+Number(sl)+'"]');
+}
+async function saveTaskRemark(date,sl,remark){
+  const clean=String(remark||'').trim();
+  const key='taskRemark:'+date+':'+Number(sl);
+  const rows=await dbRequest('meta','POST','on_conflict=key',
+    [{key,value:clean}],'resolution=merge-duplicates,return=representation');
+  if(!Array.isArray(rows)||!rows.some(r=>r.key===key&&String(r.value||'')===clean)){
+    throw new Error('Remarks were not confirmed');
+  }
+  taskRemarks[remarkKey(date,sl)]=clean;
+  return clean;
 }
 async function completePersonalTask(sl,button){
   const user=currentUser,date=localISODate(),task=tasks.find(t=>t.sl===sl);
@@ -1196,6 +1228,15 @@ async function completePersonalTask(sl,button){
   }
   if(personalActualDate!==date&&userView!=='calendar'){toast('Select today to update status','error');return false;}
   if(completedOnDate(task,date)){toast('Already completed today','info');return false;}
+  const completionTime=currentTime24();
+  const late=completionIsLate(task,date,completionTime);
+  const remarkInput=getRemarkInput(sl);
+  const remark=String(remarkInput?.value||taskRemark(date,sl)||'').trim();
+  if(late&&!remark){
+    toast('Late completion requires a Remarks reason before DONE','error');
+    if(remarkInput){remarkInput.focus();remarkInput.classList.add('remark-required');}
+    return false;
+  }
   if(button.disabled)return false;
   button.disabled=true;
   try{
@@ -1209,7 +1250,8 @@ async function completePersonalTask(sl,button){
         if(!Array.isArray(rows)||!rows.some(r=>r.key===key&&r.value===JSON.stringify(task)))throw new Error('Previous completion could not be archived');
         taskCompletionHistory[task.actualDate+':'+sl]={...task};
       }
-      const time=currentTime24();
+      const time=completionTime;
+      if(remark)await saveTaskRemark(date,sl,remark);
       await patchTaskRecord(sl,{actual_date:date,actual_time:time});
       const check=await dbRequest('tasks','GET','sl=eq.'+sl+'&select=sl,person,actual_date,actual_time');
       if(check.length!==1||check[0].actual_date!==date||String(check[0].actual_time||'').slice(0,5)!==time){
@@ -1221,7 +1263,7 @@ async function completePersonalTask(sl,button){
       doneBaseline[user]=[...getDone(user)];
       await notifySaved();
     });
-    toast('DONE · Actual time saved to Supabase','success');
+    toast(late?'DONE · Actual time and delay remarks saved':'DONE · Actual time saved to Supabase','success');
     if(currentUser===user)renderContent();
     return true;
   }catch(e){
@@ -1592,7 +1634,7 @@ function renderPersonal(){
     viewWrap.appendChild(fr);
 
     const list=document.createElement('div');list.className='task-list';
-    const cols='36px 1fr 135px 160px 90px';
+    const cols='36px minmax(220px,1fr) 135px 160px minmax(180px,240px) 90px';
     list.innerHTML=`<div class="tlh" style="grid-template-columns:${cols}">
       <span>#</span><span>Task Details</span>
       <span style="display:flex;align-items:center;gap:4px">
@@ -1601,6 +1643,7 @@ function renderPersonal(){
       <span style="display:flex;align-items:center;gap:4px">
         <svg width="10" height="10" fill="none" stroke="#3ef0b0" stroke-width="2" viewBox="0 0 24 24"><polyline points="20 6 9 11 4 6"/></svg>ACTUAL TIME
       </span>
+      <span>REMARKS</span>
       <span style="text-align:right">STATUS</span>
     </div><div id="taskRows"></div>`;
     viewWrap.appendChild(list);
@@ -1614,6 +1657,9 @@ function renderPersonal(){
     document.getElementById('fPend').onclick=()=>setF('pending');
     document.getElementById('fDone').onclick=()=>setF('done');
 
+    document.getElementById('taskRows').addEventListener('input',e=>{
+      if(e.target.matches('.remark-inp')&&e.target.value.trim())e.target.classList.remove('remark-required');
+    });
     document.getElementById('taskRows').addEventListener('click',async e=>{
       const button=e.target.closest('.tog, .status-action');
       if(!button||button.disabled)return;
@@ -1812,6 +1858,14 @@ function renderPersonal(){
       actDiv.style.cssText='display:flex;align-items:center;gap:6px;flex-shrink:0;';
       if(isToday && !isTaskLocked(k,currentUser)){
         // No manual time entry: DONE captures the device's current time.
+        if(completionIsLate(k,localISODate(),currentTime24())){
+          const remark=document.createElement('input');
+          remark.type='text';remark.className='remark-inp';remark.dataset.remarkSl=k.sl;
+          remark.placeholder='Reason for delay (required)';
+          remark.value=taskRemark(localISODate(),k.sl);
+          remark.style.minWidth='190px';
+          actDiv.appendChild(remark);
+        }
         const doneBtn=document.createElement('button');
         doneBtn.className='time-save-btn actual-save';
         doneBtn.textContent='DONE';
@@ -1889,6 +1943,11 @@ function renderUserRows(myTasks,t,cols){
       </div>
       <div class="time-cell">${planBadge(k)}<span class="time-label">${k.planTime?'Deadline':'Admin sets this'}</span></div>
       ${actualInputHtml}
+      <div>
+        ${isDone
+          ?`<div class="remark-view">${taskRemark(personalActualDate,k.sl)||'—'}</div>`
+          :`<input type="text" class="remark-inp" data-remark-sl="${k.sl}" value="${taskRemark(personalActualDate,k.sl).replace(/"/g,'&quot;')}" placeholder="${completionIsLate(k,localISODate(),currentTime24())?'Required: reason for delay':'Remarks (required if late)'}"><span class="remark-hint ${completionIsLate(k,localISODate(),currentTime24())?'late':''}">${completionIsLate(k,localISODate(),currentTime24())?'Late now · reason required before DONE':'Required only when completion is late'}</span>`}
+      </div>
       <div class="tog-wrap" style="justify-content:flex-end">
         <button type="button" aria-label="${isDone?'Completed task':'Mark task done'}" class="tog${isDone?' on':''}" data-sl="${k.sl}" ${(!canComplete||isDone)?'disabled':''} title="${!personalActualDate?'Select a date':personalActualDate!==localISODate()?'Past dates are view-only':isGloballyLocked&&!isDone?'Task already completed on another date':isDone?'Completed and locked':'Mark DONE'}"></button>
         <button type="button" class="tog-lbl status-action" data-sl="${k.sl}" ${(!canComplete||isDone)?'disabled':''} style="background:none;border:0;padding:6px 2px;cursor:${canComplete&&!isDone?'pointer':'default'};color:${isDone?'#3ef0b0':'var(--muted)'}" title="${canComplete&&!isDone?'Mark this pending task DONE':'View-only status'}">${isDone?'DONE':'PEND'}</button>
