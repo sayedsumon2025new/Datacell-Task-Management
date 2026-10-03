@@ -164,13 +164,13 @@ body::before{content:'';position:fixed;inset:0;background:linear-gradient(135deg
 .kpi-late-popup.show{opacity:1;transform:translateY(0) scale(1);}
 .kpi-late-popup-title{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:9px;margin-bottom:5px;border-bottom:1px solid rgba(248,113,113,.18);font-family:'DM Mono',monospace;font-size:.64rem;letter-spacing:.07em;color:#f87171;text-transform:uppercase;}
 .kpi-late-popup-person{color:var(--text);font-family:'Syne',sans-serif;font-size:.8rem;font-weight:700;letter-spacing:0;text-transform:none;}
-.kpi-late-report{padding:9px 2px;border-bottom:1px solid rgba(255,255,255,.06);font-size:.78rem;line-height:1.35;color:var(--text);}
-.kpi-late-report:last-child{border-bottom:none;padding-bottom:3px;}
-.kpi-late-report-name{display:flex;align-items:flex-start;gap:8px;margin-bottom:6px;}
-.kpi-late-report-name::before{content:'●';color:#f87171;font-size:.5rem;line-height:1.8;flex-shrink:0;}
-.kpi-late-report-times{display:grid;grid-template-columns:auto 1fr;gap:4px 8px;padding-left:14px;font-family:'DM Mono',monospace;font-size:.6rem;color:var(--muted);}
-.kpi-late-report-times strong{font-weight:500;color:#60a5fa;}
-.kpi-late-report-times strong.actual{color:#f87171;}
+.kpi-late-table{width:100%;border-collapse:collapse;font-size:.72rem;}
+.kpi-late-table th{padding:7px 8px;text-align:left;font-family:'DM Mono',monospace;font-size:.58rem;letter-spacing:.06em;color:var(--muted);border-bottom:1px solid rgba(248,113,113,.2);white-space:nowrap;}
+.kpi-late-table td{padding:8px;border-bottom:1px solid rgba(255,255,255,.06);vertical-align:top;}
+.kpi-late-table tr:last-child td{border-bottom:none;}
+.kpi-late-table .report{color:var(--text);line-height:1.35;overflow-wrap:anywhere;}
+.kpi-late-table .plan{color:#60a5fa;font-family:'DM Mono',monospace;white-space:nowrap;}
+.kpi-late-table .actual{color:#f87171;font-family:'DM Mono',monospace;white-space:nowrap;}
 @media(max-width:700px){.apc.kpi-late-hover-card:hover,.apc.kpi-late-hover-card:focus{transform:none}.kpi-late-popup{max-height:260px}}
 
 /* add form */
@@ -1984,16 +1984,17 @@ function attachLateDonePopup(card,person,lateTasks){
     popup.className='kpi-late-popup';
     popup.setAttribute('role','tooltip');
     popup.innerHTML='<div class="kpi-late-popup-title"><span>Delayed DONE</span><span class="kpi-late-popup-person">'+person+'</span></div>'
+      +'<table class="kpi-late-table"><thead><tr><th>Report Name</th><th>Plan Time</th><th>Actual Time</th></tr></thead><tbody>'
       +lateTasks.map(k=>{
         const plan=k.planTime?formatTime12(k.planTime):'Not set';
         const actual=k.actualTime?formatTime12(k.actualTime):'—';
-        return '<div class="kpi-late-report">'
-          +'<div class="kpi-late-report-name">'+k.task+'</div>'
-          +'<div class="kpi-late-report-times">'
-          +'<span>PLAN</span><strong>'+plan+'</strong>'
-          +'<span>ACTUAL</span><strong class="actual">'+actual+'</strong>'
-          +'</div></div>';
-      }).join('');
+        return '<tr>'
+          +'<td class="report">'+k.task+'</td>'
+          +'<td class="plan">'+plan+'</td>'
+          +'<td class="actual">'+actual+'</td>'
+          +'</tr>';
+      }).join('')
+      +'</tbody></table>';
     document.body.appendChild(popup);
     positionPopup();
     requestAnimationFrame(()=>popup?.classList.add('show'));
