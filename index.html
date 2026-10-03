@@ -2692,7 +2692,7 @@ function buildKPICharts(){
   const teamDateLabel=kpiDate?' · '+fmtDate(kpiDate):kpiMonth!==''?' · '+months[+kpiMonth]:' · All Actual Dates';
   tableBox.innerHTML='<h4 style="font-family:Syne,sans-serif;font-size:.9rem;font-weight:700;margin-bottom:4px">Team Performance'+teamDateLabel+'</h4>'
     +'<div style="font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted);margin-bottom:12px">LIVE ACTUAL DATA · PERSON-WISE TASK QUANTITY · UTILIZATION / EFFICIENCY: '+fmtDate(workloadDate)+' (WORKLOAD DATE)</div>'
-    +'<table class="pct-table"><thead><tr><th>PERSON</th><th>TASKS</th><th>DONE</th><th>PENDING</th><th>ON-TIME</th><th>LATE</th><th>RATE</th><th title="Total task minutes / working minutes × 100">UTILIZATION</th><th title="Completed minutes / working minutes × 100">EFFICIENCY</th><th title="On-time completed tasks / all completed tasks × 100">OTD %</th><th title="Late completed tasks / all completed tasks × 100">DELAYED %</th></tr></thead><tbody id="kpiTableBody"></tbody></table>';
+    +'<table class="pct-table"><thead><tr><th>PERSON</th><th>TASKS</th><th>DONE</th><th>PENDING</th><th>ON-TIME</th><th>LATE</th><th>RATE</th><th title="Total task minutes / working minutes × 100">UTILIZATION</th><th title="Completed minutes / working minutes × 100">EFFICIENCY</th><th title="On-time completed tasks / all completed tasks × 100">OTD %</th><th title="Late completed tasks / all completed tasks × 100">DELAYED %</th></tr></thead><tbody id="kpiTableBody"></tbody><tfoot id="kpiTableFoot"></tfoot></table>';
   wrap.appendChild(tableBox);
 
   // ── LEAD TIME CHARTS ──
@@ -2771,6 +2771,7 @@ function buildKPICharts(){
       // PERSON and TASKS come from the unfiltered ALL TASKS master list.
       // Only performance figures use the selected Actual Date/month.
       const teamPersons=[...new Set([...PERSONS,...tasks.map(k=>k.person)])];
+      const teamSummary={tasks:0,done:0,pending:0,onTime:0,late:0,totalMinutes:0,completedMinutes:0,workingMinutes:0};
       teamPersons.forEach(p=>{
         const masterTasks=tasks.filter(k=>k.person===p);if(!masterTasks.length)return;
         const mt=actualFiltered.filter(k=>k.person===p);
@@ -2782,6 +2783,14 @@ function buildKPICharts(){
         const lt=comparableMt.filter(k=>selectedDateLateMinutes(k)>0).length;
         const rate=masterTasks.length?Math.round(dn/masterTasks.length*100):0;
         const metrics=personWorkloadMetrics(p,workloadDate);
+        teamSummary.tasks+=masterTasks.length;
+        teamSummary.done+=dn;
+        teamSummary.pending+=pending;
+        teamSummary.onTime+=ot;
+        teamSummary.late+=lt;
+        teamSummary.totalMinutes+=metrics.totalMinutes;
+        teamSummary.completedMinutes+=metrics.completedMinutes;
+        teamSummary.workingMinutes+=metrics.workingMinutes;
         const tr=document.createElement('tr');
         tr.innerHTML='<td><span style="display:inline-flex;align-items:center;gap:7px"><span style="width:22px;height:22px;border-radius:6px;background:'+t2.bg+';color:'+t2.color+';display:inline-flex;align-items:center;justify-content:center;font-size:.55rem;font-weight:700;font-family:Syne,sans-serif">'+ini(p)+'</span><span style="color:'+t2.color+'">'+p+'</span></span></td>'
           +'<td style="font-family:DM Mono,monospace;font-size:.8rem">'+masterTasks.length+'</td>'
@@ -2808,7 +2817,31 @@ function buildKPICharts(){
         });
         tbody.appendChild(tr);
       });
-      if(!tbody.children.length)tbody.innerHTML='<tr><td colspan="11" style="text-align:center;padding:30px;font-family:DM Mono,monospace;font-size:.8rem;color:var(--muted)">No tasks found</td></tr>';
+      if(!tbody.children.length){
+        tbody.innerHTML='<tr><td colspan="11" style="text-align:center;padding:30px;font-family:DM Mono,monospace;font-size:.8rem;color:var(--muted)">No tasks found</td></tr>';
+      }else{
+        const foot=document.getElementById('kpiTableFoot');
+        if(foot){
+          const rate=teamSummary.tasks?teamSummary.done/teamSummary.tasks*100:0;
+          const utilization=teamSummary.workingMinutes>0?teamSummary.totalMinutes/teamSummary.workingMinutes*100:null;
+          const efficiency=teamSummary.workingMinutes>0?teamSummary.completedMinutes/teamSummary.workingMinutes*100:null;
+          const otd=teamSummary.done>0?teamSummary.onTime/teamSummary.done*100:null;
+          const delayed=teamSummary.done>0?teamSummary.late/teamSummary.done*100:null;
+          foot.innerHTML='<tr style="background:rgba(245,200,66,.06);border-top:2px solid rgba(245,200,66,.28)">'
+            +'<td style="font-family:Syne,sans-serif;font-weight:800;color:#f5c842">TOTAL / SUMMARY</td>'
+            +'<td style="font-family:DM Mono,monospace;font-weight:700">'+teamSummary.tasks+'</td>'
+            +'<td style="font-family:DM Mono,monospace;font-weight:700;color:#3ef0b0">'+teamSummary.done+'</td>'
+            +'<td style="font-family:DM Mono,monospace;font-weight:700;color:#f87171">'+teamSummary.pending+'</td>'
+            +'<td style="font-family:DM Mono,monospace;font-weight:700;color:#3ef0b0">'+(teamSummary.onTime||'—')+'</td>'
+            +'<td style="font-family:DM Mono,monospace;font-weight:700;color:#f87171">'+(teamSummary.late||'—')+'</td>'
+            +'<td style="font-family:DM Mono,monospace;font-weight:700;color:#f5c842">'+rate.toFixed(1)+'%</td>'
+            +'<td style="font-family:DM Mono,monospace;font-weight:700;color:#60a5fa">'+workloadPercent(utilization)+'</td>'
+            +'<td style="font-family:DM Mono,monospace;font-weight:700;color:#60a5fa">'+workloadPercent(efficiency)+'</td>'
+            +'<td style="font-family:DM Mono,monospace;font-weight:700;color:#3ef0b0">'+workloadPercent(otd)+'</td>'
+            +'<td style="font-family:DM Mono,monospace;font-weight:700;color:#f87171">'+workloadPercent(delayed)+'</td>'
+            +'</tr>';
+        }
+      }
     }
 
     // ── LEAD TIME CHART 1: BY PERSON ──
