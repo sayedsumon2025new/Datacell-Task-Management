@@ -175,6 +175,7 @@ body::before{content:'';position:fixed;inset:0;background:linear-gradient(135deg
 .kpi-late-table .report{color:var(--text);line-height:1.35;overflow-wrap:anywhere;}
 .kpi-late-table .plan{color:#60a5fa;font-family:'DM Mono',monospace;white-space:nowrap;}
 .kpi-late-table .actual{color:#f87171;font-family:'DM Mono',monospace;white-space:nowrap;}
+.kpi-late-table .lateby{color:#f5c842;font-family:'DM Mono',monospace;font-weight:600;white-space:nowrap;}
 @media(max-width:700px){.apc.kpi-late-click-card:hover,.apc.kpi-late-click-card:focus{transform:none}.kpi-late-modal-overlay{padding:10px}.kpi-late-modal{max-height:88vh}}
 
 /* add form */
@@ -1973,12 +1974,13 @@ function openLateDoneModal(person,lateTasks){
   const rows=lateTasks.map(k=>{
     const plan=k.planTime?formatTime12(k.planTime):'Not set';
     const actual=k.actualTime?formatTime12(k.actualTime):'—';
-    return '<tr><td class="report">'+k.task+'</td><td class="plan">'+plan+'</td><td class="actual">'+actual+'</td></tr>';
+    const lateBy=timeDiff(k.planDate,k.planTime,k.actualDate,k.actualTime).replace(/^\+/,'').replace(/ late$/,'');
+    return '<tr><td class="report">'+k.task+'</td><td class="plan">'+plan+'</td><td class="actual">'+actual+'</td><td class="lateby">'+lateBy+'</td></tr>';
   }).join('');
   overlay.innerHTML='<div class="kpi-late-modal">'
     +'<div class="kpi-late-modal-head"><div><div class="kpi-late-modal-title">Delayed DONE Reports</div><div class="kpi-late-modal-sub">'+person+' · '+lateTasks.length+' delayed report'+(lateTasks.length!==1?'s':'')+'</div></div>'
     +'<button type="button" class="kpi-late-modal-close">CLOSE ✕</button></div>'
-    +'<div class="kpi-late-modal-body"><table class="kpi-late-table"><thead><tr><th>Report Name</th><th>Plan Time</th><th>Actual Time</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
+    +'<div class="kpi-late-modal-body"><table class="kpi-late-table"><thead><tr><th>Report Name</th><th>Plan Time</th><th>Actual Time</th><th>Late By</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
     +'</div>';
   const close=()=>{
     document.removeEventListener('keydown',onKey);
