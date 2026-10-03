@@ -81,6 +81,18 @@ body::before{content:'';position:fixed;inset:0;background:linear-gradient(135deg
 .prog-info strong{font-family:'Syne',sans-serif;font-size:1.1rem;font-weight:700;}
 .prog-track{height:8px;background:var(--border);border-radius:10px;overflow:hidden;}
 .prog-fill{height:100%;border-radius:10px;transition:width 0.5s ease;}
+.personal-summary-wrap{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px;margin-bottom:18px;align-items:stretch;}
+.personal-summary-cards{display:grid;grid-template-columns:repeat(5,minmax(120px,1fr));gap:10px;}
+.personal-summary-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;min-width:0;}
+.personal-summary-card .v{font-family:'Syne',sans-serif;font-size:1.45rem;font-weight:800;line-height:1;}
+.personal-summary-card .l{font-family:'DM Mono',monospace;font-size:.62rem;color:var(--muted);margin-top:5px;letter-spacing:.04em;}
+.personal-summary-chart{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px;min-height:118px;}
+.personal-summary-chart-copy{min-width:100px;}
+.personal-summary-chart-title{font-family:'Syne',sans-serif;font-size:.8rem;font-weight:700;}
+.personal-summary-chart-sub{font-family:'DM Mono',monospace;font-size:.58rem;color:var(--muted);margin-top:4px;line-height:1.4;}
+.personal-summary-chart canvas{max-width:130px;max-height:130px;}
+@media(max-width:1100px){.personal-summary-wrap{grid-template-columns:1fr}.personal-summary-cards{grid-template-columns:repeat(5,minmax(105px,1fr))}.personal-summary-chart{justify-content:flex-start}}
+@media(max-width:720px){.personal-summary-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.personal-summary-card:last-child{grid-column:span 2}}
 
 /* ═══ TASK TABLE ═══ */
 .task-list{background:var(--surface);border:1px solid var(--border);border-radius:16px;overflow:hidden;}
@@ -1595,6 +1607,46 @@ function renderPersonal(){
     +'<button class="fbtn" id="personalActualClear"'+(personalActualDate?'':' disabled')+'>Clear</button>';
   c.appendChild(actualDateFilter);
 
+  // Personal summary cards + status pie chart
+  const personalSummary=document.createElement('div');
+  personalSummary.className='personal-summary-wrap';
+  personalSummary.innerHTML='<div class="personal-summary-cards">'
+    +'<div class="personal-summary-card"><div class="v" id="psTotal" style="color:#f5c842">0</div><div class="l">TOTAL TASKS</div></div>'
+    +'<div class="personal-summary-card"><div class="v" id="psDone" style="color:#3ef0b0">0</div><div class="l">COMPLETED</div></div>'
+    +'<div class="personal-summary-card"><div class="v" id="psPending" style="color:#f5c842">0</div><div class="l">PENDING</div></div>'
+    +'<div class="personal-summary-card"><div class="v" id="psLate" style="color:#f87171">0</div><div class="l">COMPLETED LATE</div></div>'
+    +'<div class="personal-summary-card"><div class="v" id="psRate" style="color:#60a5fa">0%</div><div class="l">DONE RATE</div></div>'
+    +'</div>'
+    +'<div class="personal-summary-chart"><div style="width:130px;height:130px"><canvas id="personalStatusPie"></canvas></div>'
+    +'<div class="personal-summary-chart-copy"><div class="personal-summary-chart-title">Task Status</div><div class="personal-summary-chart-sub" id="personalStatusPieSub">Selected actual date</div></div></div>';
+  c.appendChild(personalSummary);
+  let personalStatusPieChart=null;
+  const updatePersonalSummary=()=>{
+    const total=myTasks.length;
+    const dated=personalActualDate?myTasks.map(k=>taskForDate(k,personalActualDate)):[];
+    const completed=personalActualDate?dated.filter(k=>completedOnDate(k,personalActualDate)).length:0;
+    const pending=Math.max(total-completed,0);
+    const late=personalActualDate?dated.filter(k=>completedOnDate(k,personalActualDate)&&selectedDateLateMinutes(k)>0).length:0;
+    const rate=total?Math.round(completed/total*100):0;
+    document.getElementById('psTotal').textContent=total;
+    document.getElementById('psDone').textContent=completed;
+    document.getElementById('psPending').textContent=pending;
+    document.getElementById('psLate').textContent=late;
+    document.getElementById('psRate').textContent=rate+'%';
+    const sub=document.getElementById('personalStatusPieSub');
+    if(sub)sub.textContent=personalActualDate?formatDateDisplay(personalActualDate)+' · '+completed+' done · '+pending+' pending':'Select an actual date';
+    if(personalStatusPieChart){personalStatusPieChart.destroy();personalStatusPieChart=null;}
+    const ctx=document.getElementById('personalStatusPie')?.getContext('2d');
+    if(ctx&&typeof Chart!=='undefined'){
+      personalStatusPieChart=new Chart(ctx,{
+        type:'doughnut',
+        data:{labels:['Completed','Pending'],datasets:[{data:[completed,pending],backgroundColor:['rgba(62,240,176,.75)','rgba(248,113,113,.55)'],borderColor:['#3ef0b0','#f87171'],borderWidth:1,hoverOffset:5}]},
+        options:{responsive:true,maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'bottom',labels:{color:'#adbed2',font:{size:9},boxWidth:9,padding:8}},tooltip:{backgroundColor:'#12151d',borderColor:'#3c506a',borderWidth:1,titleColor:'#edf2f8',bodyColor:'#adbed2'}}}
+      });
+    }
+  };
+  updatePersonalSummary();
+
   // view toggle row
   const toggleRow=document.createElement('div');
   toggleRow.style.cssText='display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;';
@@ -1626,9 +1678,9 @@ function renderPersonal(){
   }
   document.getElementById('personalActualDate').onchange=e=>{
     if(e.target.value>localISODate()){toast('Future date is not allowed','error');e.target.value=localISODate();}
-    personalActualDate=e.target.value;taskFilter='all';updatePersonalStats(myTasks,t);renderCurrentView();document.getElementById('personalActualClear').disabled=!personalActualDate;
+    personalActualDate=e.target.value;taskFilter='all';updatePersonalStats(myTasks,t);updatePersonalSummary();renderCurrentView();document.getElementById('personalActualClear').disabled=!personalActualDate;
   };
-  document.getElementById('personalActualClear').onclick=()=>{personalActualDate='';document.getElementById('personalActualDate').value='';document.getElementById('personalActualClear').disabled=true;taskFilter='all';updatePersonalStats(myTasks,t);renderCurrentView();};
+  document.getElementById('personalActualClear').onclick=()=>{personalActualDate='';document.getElementById('personalActualDate').value='';document.getElementById('personalActualClear').disabled=true;taskFilter='all';updatePersonalStats(myTasks,t);updatePersonalSummary();renderCurrentView();};
 
   // ── LIST VIEW ────────────────────────────────────
   function renderListView(){
