@@ -176,6 +176,9 @@ body::before{content:'';position:fixed;inset:0;background:linear-gradient(135deg
 .kpi-late-table .plan{color:#60a5fa;font-family:'DM Mono',monospace;white-space:nowrap;}
 .kpi-late-table .actual{color:#f87171;font-family:'DM Mono',monospace;white-space:nowrap;}
 .kpi-late-table .lateby{color:#f5c842;font-family:'DM Mono',monospace;font-weight:600;white-space:nowrap;}
+.kpi-late-table tfoot td{border-top:1px solid rgba(245,200,66,.28);border-bottom:none;background:rgba(245,200,66,.04);font-family:'DM Mono',monospace;font-weight:700;}
+.kpi-late-table tfoot .total-label{text-align:right;color:var(--muted);letter-spacing:.04em;}
+.kpi-late-table tfoot .total-late{color:#f5c842;white-space:nowrap;font-size:.76rem;}
 @media(max-width:700px){.apc.kpi-late-click-card:hover,.apc.kpi-late-click-card:focus{transform:none}.kpi-late-modal-overlay{padding:10px}.kpi-late-modal{max-height:88vh}}
 
 /* add form */
@@ -1964,6 +1967,24 @@ function renderUserRows(myTasks,t,cols){
   });
 }
 
+function clockMinutes(timeStr){
+  if(!timeStr)return NaN;
+  const [h,m]=String(timeStr).split(':').map(Number);
+  if(!Number.isFinite(h)||!Number.isFinite(m))return NaN;
+  return h*60+m;
+}
+function selectedDateLateMinutes(task){
+  const plan=clockMinutes(task?.planTime),actual=clockMinutes(task?.actualTime);
+  if(!Number.isFinite(plan)||!Number.isFinite(actual))return 0;
+  return Math.max(0,actual-plan);
+}
+function formatLateMinutes(minutes){
+  const total=Math.max(0,Math.round(Number(minutes)||0));
+  const h=Math.floor(total/60),m=total%60;
+  if(h&&m)return h+'h '+m+'m';
+  if(h)return h+'h';
+  return m+'m';
+}
 function openLateDoneModal(person,lateTasks){
   document.querySelectorAll('.kpi-late-modal-overlay').forEach(el=>el.remove());
   const overlay=document.createElement('div');
@@ -1971,16 +1992,19 @@ function openLateDoneModal(person,lateTasks){
   overlay.setAttribute('role','dialog');
   overlay.setAttribute('aria-modal','true');
   overlay.setAttribute('aria-label','Delayed completed reports for '+person);
+  const totalLateMinutes=lateTasks.reduce((sum,k)=>sum+selectedDateLateMinutes(k),0);
   const rows=lateTasks.map(k=>{
     const plan=k.planTime?formatTime12(k.planTime):'Not set';
     const actual=k.actualTime?formatTime12(k.actualTime):'—';
-    const lateBy=timeDiff(k.planDate,k.planTime,k.actualDate,k.actualTime).replace(/^\+/,'').replace(/ late$/,'');
+    const lateBy=formatLateMinutes(selectedDateLateMinutes(k));
     return '<tr><td class="report">'+k.task+'</td><td class="plan">'+plan+'</td><td class="actual">'+actual+'</td><td class="lateby">'+lateBy+'</td></tr>';
   }).join('');
   overlay.innerHTML='<div class="kpi-late-modal">'
     +'<div class="kpi-late-modal-head"><div><div class="kpi-late-modal-title">Delayed DONE Reports</div><div class="kpi-late-modal-sub">'+person+' · '+lateTasks.length+' delayed report'+(lateTasks.length!==1?'s':'')+'</div></div>'
     +'<button type="button" class="kpi-late-modal-close">CLOSE ✕</button></div>'
-    +'<div class="kpi-late-modal-body"><table class="kpi-late-table"><thead><tr><th>Report Name</th><th>Plan Time</th><th>Actual Time</th><th>Late By</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
+    +'<div class="kpi-late-modal-body"><table class="kpi-late-table"><thead><tr><th>Report Name</th><th>Plan Time</th><th>Actual Time</th><th>Late By</th></tr></thead><tbody>'+rows+'</tbody>'
+    +'<tfoot><tr><td colspan="3" class="total-label">TOTAL LATE TIME</td><td class="total-late">'+formatLateMinutes(totalLateMinutes)+'</td></tr></tfoot>'
+    +'</table></div>'
     +'</div>';
   const close=()=>{
     document.removeEventListener('keydown',onKey);
@@ -2067,7 +2091,7 @@ function buildOverview(c){
   const totalDone=tasks.map(k=>taskForDate(k,overviewDate)).filter(completedOnDate).length;
   const pct=tasks.length?Math.round((totalDone/tasks.length)*100):0;
   const withActual=totalDone;
-  const lateCount=tasks.map(k=>taskForDate(k,overviewDate)).filter(t=>completedOnDate(t)&&timeCmp(t.planDate,t.planTime,t.actualDate,t.actualTime)==='late').length;
+  const lateCount=tasks.map(k=>taskForDate(k,overviewDate)).filter(t=>completedOnDate(t)&&selectedDateLateMinutes(t)>0).length;
 
   c.insertAdjacentHTML('beforeend',`<div style="font-family:'Syne',sans-serif;font-size:1.5rem;font-weight:800;letter-spacing:-.02em;margin-bottom:16px">Admin <span style="color:#f5c842">Overview</span></div>`);
 
@@ -2124,9 +2148,9 @@ function buildOverview(c){
   allP.forEach(p=>{
     const t2=th(p),mt=tasks.filter(k=>k.person===p).map(k=>taskForDate(k,overviewDate)),dn=mt.filter(completedOnDate).length;
     const pp=mt.length?Math.round((dn/mt.length)*100):0;
-    const lateTasks=mt.filter(k=>completedOnDate(k)&&timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime)==='late');
+    const lateTasks=mt.filter(k=>completedOnDate(k)&&selectedDateLateMinutes(k)>0);
     const late=lateTasks.length;
-    const early=mt.filter(k=>completedOnDate(k)&&['early','ontime'].includes(timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime))).length;
+    const early=mt.filter(k=>completedOnDate(k)&&k.planTime&&k.actualTime&&selectedDateLateMinutes(k)===0).length;
     const card=document.createElement('div');card.className='apc'+(lateTasks.length?' kpi-late-click-card':'');card.style.borderColor=t2.accent+'22';
     if(lateTasks.length){
       card.tabIndex=0;
