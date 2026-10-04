@@ -62,6 +62,7 @@ create table if not exists public.user_roles (
 create table if not exists public.leave_applications (
   id text primary key,
   employee text not null,
+  employee_role text not null default 'Team Member',
   leave_type text not null,
   duration text not null default 'single',
   from_date date not null,
@@ -72,7 +73,12 @@ create table if not exists public.leave_applications (
   short_minutes integer not null default 0 check (short_minutes >= 0),
   reason text not null default '',
   supervisor_status text not null default 'Pending',
+  supervisor_by text not null default '',
+  supervisor_at timestamptz,
   section_status text not null default 'Pending',
+  section_by text not null default '',
+  section_at timestamptz,
+  rejected_stage text not null default '',
   status text not null default 'Pending',
   balancing_complete boolean not null default false,
   applied_by text not null default '',
@@ -184,14 +190,16 @@ on conflict (username) do update set role=excluded.role, updated_at=now();
 
 -- Migrate leave applications from JSON.
 insert into public.leave_applications(
-  id,employee,leave_type,duration,from_date,to_date,days,
+  id,employee,employee_role,leave_type,duration,from_date,to_date,days,
   short_start_time,short_end_time,short_minutes,reason,
-  supervisor_status,section_status,status,balancing_complete,
+  supervisor_status,supervisor_by,supervisor_at,
+  section_status,section_by,section_at,rejected_stage,status,balancing_complete,
   applied_by,applied_at,balanced_by,balanced_at
 )
 select
   j->>'id',
   j->>'employee',
+  coalesce(j->>'employeeRole','Team Member'),
   coalesce(j->>'leaveType','Casual Leave'),
   coalesce(j->>'duration','single'),
   nullif(j->>'fromDate','')::date,
@@ -202,7 +210,12 @@ select
   coalesce(nullif(j->>'shortMinutes','')::integer,0),
   coalesce(j->>'reason',''),
   coalesce(j->>'supervisorStatus','Pending'),
+  coalesce(j->>'supervisorBy',''),
+  nullif(j->>'supervisorAt','')::timestamptz,
   coalesce(j->>'sectionStatus','Pending'),
+  coalesce(j->>'sectionBy',''),
+  nullif(j->>'sectionAt','')::timestamptz,
+  coalesce(j->>'rejectedStage',''),
   coalesce(j->>'status','Pending'),
   coalesce(nullif(j->>'balancingComplete','')::boolean,false),
   coalesce(j->>'appliedBy',''),
@@ -216,12 +229,13 @@ from (
 ) x
 where j ? 'id' and j ? 'employee' and j ? 'fromDate' and j ? 'toDate'
 on conflict (id) do update set
-  employee=excluded.employee, leave_type=excluded.leave_type, duration=excluded.duration,
+  employee=excluded.employee, employee_role=excluded.employee_role, leave_type=excluded.leave_type, duration=excluded.duration,
   from_date=excluded.from_date, to_date=excluded.to_date, days=excluded.days,
   short_start_time=excluded.short_start_time, short_end_time=excluded.short_end_time,
   short_minutes=excluded.short_minutes, reason=excluded.reason,
-  supervisor_status=excluded.supervisor_status, section_status=excluded.section_status,
-  status=excluded.status, balancing_complete=excluded.balancing_complete,
+  supervisor_status=excluded.supervisor_status, supervisor_by=excluded.supervisor_by, supervisor_at=excluded.supervisor_at,
+  section_status=excluded.section_status, section_by=excluded.section_by, section_at=excluded.section_at,
+  rejected_stage=excluded.rejected_stage, status=excluded.status, balancing_complete=excluded.balancing_complete,
   applied_by=excluded.applied_by, applied_at=excluded.applied_at,
   balanced_by=excluded.balanced_by, balanced_at=excluded.balanced_at, updated_at=now();
 
