@@ -229,6 +229,17 @@ body::before{content:'';position:fixed;inset:0;background:linear-gradient(135deg
 .leave-balance-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;}
 .leave-balance-card:last-child{margin-bottom:0;}
 .leave-balance-meta{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:7px 0 12px;font-family:'DM Mono',monospace;font-size:.62rem;color:var(--muted);}
+.leave-recon-cards{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;margin-bottom:14px;}
+.leave-recon-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
+.leave-recon-card .v{font-family:'Syne',sans-serif;font-size:1.45rem;font-weight:800;line-height:1;}
+.leave-recon-card .l{font-family:'DM Mono',monospace;font-size:.6rem;color:var(--muted);margin-top:5px;letter-spacing:.05em;}
+.leave-recon-filter{display:flex;align-items:end;gap:10px;flex-wrap:wrap;margin:12px 0 14px;}
+.leave-recon-filter .fg{min-width:180px;}
+.leave-recon-section{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;}
+.leave-recon-section:last-child{margin-bottom:0;}
+.leave-recon-title{font-family:'Syne',sans-serif;font-size:.9rem;font-weight:700;margin-bottom:3px;}
+.leave-recon-sub{font-family:'DM Mono',monospace;font-size:.6rem;color:var(--muted);margin-bottom:12px;}
+@media(max-width:800px){.leave-recon-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .leave-recent-wrap{overflow:auto;max-height:540px;}
 .leave-recent-wrap .pct-table{min-width:760px;}
 @media(max-width:1180px){.leave-app-layout{grid-template-columns:1fr}.leave-recent-wrap{max-height:none}}
@@ -2653,6 +2664,129 @@ function renderLeaveApprovalPanel(panel){
   loadLeaveApplicationsRemote().then(ok=>{if(ok&&panel.isConnected)draw();});
 }
 
+function renderLeaveStatusReconciliation(panel){
+  panel.innerHTML='';
+  const role=currentUser==='admin'?'Admin':getUserJobRole(currentUser);
+  const canSeeTeam=currentUser==='admin'||role==='Supervisor'||role==='Section Incharge';
+  let employeeFilter='all',statusFilter='all';
+
+  const draw=()=>{
+    panel.innerHTML='';
+    const scope=canSeeTeam?leaveApplications:leaveApplications.filter(a=>a.employee===currentUser);
+    const employees=[...new Set(scope.map(a=>a.employee).filter(Boolean))].sort();
+    const filtered=scope.filter(a=>{
+      if(employeeFilter!=='all'&&a.employee!==employeeFilter)return false;
+      const final=String(a.status||'Pending');
+      const bucket=final==='Approved'?'approved':final==='Rejected'?'rejected':'pending';
+      return statusFilter==='all'||bucket===statusFilter;
+    }).sort((a,b)=>String(b.appliedAt||'').localeCompare(String(a.appliedAt||'')));
+
+    const requested=filtered.reduce((sum,a)=>sum+(Number(a.days)||0),0);
+    const approved=filtered.filter(a=>String(a.status)==='Approved').reduce((sum,a)=>sum+(Number(a.days)||0),0);
+    const rejected=filtered.filter(a=>String(a.status)==='Rejected').reduce((sum,a)=>sum+(Number(a.days)||0),0);
+    const pending=filtered.filter(a=>!['Approved','Rejected'].includes(String(a.status))).reduce((sum,a)=>sum+(Number(a.days)||0),0);
+
+    const head=document.createElement('div');head.className='leave-recon-section';
+    head.innerHTML='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">'
+      +'<div><div class="leave-recon-title">Leave Status Reconciliation</div>'
+      +'<div class="leave-recon-sub">// REQUESTED VS APPROVED VS PENDING VS REJECTED</div></div>'
+      +'<button type="button" class="fbtn" id="leaveReconRefresh">REFRESH</button></div>';
+    const filters=document.createElement('div');filters.className='leave-recon-filter';
+    const employeeFg=document.createElement('div');employeeFg.className='fg';
+    employeeFg.innerHTML='<label>EMPLOYEE</label><select class="fi-sel" id="leaveReconEmployee">'
+      +'<option value="all">All Employees</option>'
+      +employees.map(name=>'<option value="'+name+'"'+(employeeFilter===name?' selected':'')+'>'+name+'</option>').join('')
+      +'</select>';
+    if(!canSeeTeam)employeeFg.style.display='none';
+    const statusFg=document.createElement('div');statusFg.className='fg';
+    statusFg.innerHTML='<label>STATUS</label><select class="fi-sel" id="leaveReconStatus">'
+      +'<option value="all"'+(statusFilter==='all'?' selected':'')+'>All Status</option>'
+      +'<option value="approved"'+(statusFilter==='approved'?' selected':'')+'>Approved</option>'
+      +'<option value="pending"'+(statusFilter==='pending'?' selected':'')+'>Pending</option>'
+      +'<option value="rejected"'+(statusFilter==='rejected'?' selected':'')+'>Rejected</option>'
+      +'</select>';
+    filters.append(employeeFg,statusFg);head.appendChild(filters);panel.appendChild(head);
+
+    const cards=document.createElement('div');cards.className='leave-recon-cards';
+    cards.innerHTML='<div class="leave-recon-card"><div class="v" style="color:#60a5fa">'+requested+'</div><div class="l">REQUESTED DAYS</div></div>'
+      +'<div class="leave-recon-card"><div class="v" style="color:#3ef0b0">'+approved+'</div><div class="l">APPROVED DAYS</div></div>'
+      +'<div class="leave-recon-card"><div class="v" style="color:#f5c842">'+pending+'</div><div class="l">PENDING DAYS</div></div>'
+      +'<div class="leave-recon-card"><div class="v" style="color:#f87171">'+rejected+'</div><div class="l">REJECTED DAYS</div></div>';
+    panel.appendChild(cards);
+
+    const byPerson=document.createElement('div');byPerson.className='leave-recon-section';
+    byPerson.innerHTML='<div class="leave-recon-title">Employee-wise Reconciliation</div><div class="leave-recon-sub">// APPLICATION COUNT AND DAY RECONCILIATION</div>';
+    const personWrap=document.createElement('div');personWrap.className='leave-recent-wrap';
+    const personTable=document.createElement('table');personTable.className='pct-table';personTable.style.minWidth='820px';
+    personTable.innerHTML='<thead><tr><th>Employee</th><th>Role</th><th>Applications</th><th>Requested Days</th><th>Approved</th><th>Pending</th><th>Rejected</th><th>Balanced</th></tr></thead>';
+    const personBody=document.createElement('tbody');
+    const personNames=[...new Set(filtered.map(a=>a.employee))].sort();
+    personNames.forEach(name=>{
+      const apps=filtered.filter(a=>a.employee===name);
+      const req=apps.reduce((x,a)=>x+(Number(a.days)||0),0);
+      const app=apps.filter(a=>String(a.status)==='Approved').reduce((x,a)=>x+(Number(a.days)||0),0);
+      const rej=apps.filter(a=>String(a.status)==='Rejected').reduce((x,a)=>x+(Number(a.days)||0),0);
+      const pend=apps.filter(a=>!['Approved','Rejected'].includes(String(a.status))).reduce((x,a)=>x+(Number(a.days)||0),0);
+      const balanced=apps.filter(a=>leaveBalancingComplete(a)).length;
+      const tr=document.createElement('tr');
+      [name,getUserJobRole(name),apps.length,req,app,pend,rej,balanced+'/'+apps.length].forEach((v,i)=>{
+        const td=document.createElement('td');td.textContent=v;
+        if(i===4)td.style.color='#3ef0b0';
+        if(i===5)td.style.color='#f5c842';
+        if(i===6)td.style.color='#f87171';
+        tr.appendChild(td);
+      });
+      personBody.appendChild(tr);
+    });
+    if(!personNames.length){
+      const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=8;td.textContent='No leave data for the selected filter.';
+      td.style.cssText='text-align:center;padding:24px;color:var(--muted);font-family:DM Mono,monospace';tr.appendChild(td);personBody.appendChild(tr);
+    }
+    personTable.appendChild(personBody);personWrap.appendChild(personTable);byPerson.appendChild(personWrap);panel.appendChild(byPerson);
+
+    const detail=document.createElement('div');detail.className='leave-recon-section';
+    detail.innerHTML='<div class="leave-recon-title">Application Reconciliation Detail</div><div class="leave-recon-sub">// APPROVAL STAGES · BALANCING · FINAL STATUS</div>';
+    const detailWrap=document.createElement('div');detailWrap.className='leave-recent-wrap';
+    const table=document.createElement('table');table.className='pct-table';table.style.minWidth='1250px';
+    table.innerHTML='<thead><tr><th>#</th><th>Employee</th><th>Leave Type</th><th>From</th><th>To</th><th>Days</th><th>Supervisor</th><th>Section Incharge</th><th>Balancing</th><th>Final Status</th><th>Applied On</th></tr></thead>';
+    const tbody=document.createElement('tbody');
+    filtered.forEach((a,i)=>{
+      const tr=document.createElement('tr');
+      const supervisor=a.supervisorStatus||((leaveApplicantRole(a)==='Team Member')?'Pending':'Not Required');
+      const section=a.sectionStatus||'Pending';
+      const balanced=leaveBalancingComplete(a);
+      const status=leaveDisplayStatus(a);
+      const values=[i+1,a.employee,a.leaveType,formatDateDisplay(a.fromDate),formatDateDisplay(a.toDate),a.days,supervisor,section,balanced?'READY':'REQUIRED',status,formatDateDisplay(String(a.appliedAt||'').slice(0,10))];
+      values.forEach((v,idx)=>{
+        const td=document.createElement('td');td.textContent=v;
+        if(idx===8)td.style.color=balanced?'#3ef0b0':'#f87171';
+        if(idx===9)td.style.color=status==='Approved'?'#3ef0b0':status==='Rejected'?'#f87171':'#f5c842';
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    if(!filtered.length){
+      const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=11;td.textContent='No leave applications found.';
+      td.style.cssText='text-align:center;padding:28px;color:var(--muted);font-family:DM Mono,monospace';tr.appendChild(td);tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);detailWrap.appendChild(table);detail.appendChild(detailWrap);panel.appendChild(detail);
+
+    const empSel=panel.querySelector('#leaveReconEmployee');
+    if(empSel)empSel.onchange=()=>{employeeFilter=empSel.value;draw();};
+    const statusSel=panel.querySelector('#leaveReconStatus');
+    if(statusSel)statusSel.onchange=()=>{statusFilter=statusSel.value;draw();};
+    const refresh=panel.querySelector('#leaveReconRefresh');
+    if(refresh)refresh.onclick=async()=>{
+      refresh.disabled=true;refresh.textContent='REFRESHING...';
+      const ok=await loadLeaveApplicationsRemote();
+      if(ok&&panel.isConnected)draw();
+      else{refresh.disabled=false;refresh.textContent='REFRESH';toast('Could not refresh leave reconciliation','error');}
+    };
+  };
+  draw();
+  loadLeaveApplicationsRemote().then(ok=>{if(ok&&panel.isConnected)draw();});
+}
+
 function renderLeaveApplicationPanel(panel){
   panel.innerHTML='';
   const layout=document.createElement('div');layout.className='leave-app-layout';
@@ -2793,6 +2927,7 @@ function buildLeaveManagement(c){
   c.appendChild(subNav);
   const panel=document.createElement('div');
   if(leaveSubTab==='application'){c.appendChild(panel);renderLeaveApplicationPanel(panel);return;}
+  if(leaveSubTab==='status'){c.appendChild(panel);renderLeaveStatusReconciliation(panel);return;}
   if(leaveSubTab==='balancing'){c.appendChild(panel);renderLeaveBalancingPanel(panel);return;}
   if(leaveSubTab==='approval'){c.appendChild(panel);renderLeaveApprovalPanel(panel);return;}
   panel.className='chart-full';panel.style.cssText='padding:24px;min-height:260px;';
