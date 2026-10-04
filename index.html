@@ -815,6 +815,11 @@ async function saveDailyHours(person,date,hours,button){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(hours)||hours<0||hours>24){
     toast('Choose a date and enter hours from 0 to 24','error');return false;
   }
+  const today=localISODate();
+  if(date<today){
+    toast('Past-date Working Hours are locked and cannot be edited','error');
+    return false;
+  }
   const key=dailyHoursKey(date,person),minutes=Math.round(hours*60),label=button.textContent;
   button.disabled=true;button.textContent='SAVING...';
   try{
@@ -4661,6 +4666,14 @@ function renderSettingsWorkingHours(body){
   const date=document.createElement('input');date.id='hours-date';date.type='date';date.className='fi';date.style.width='180px';date.value=workingHoursDate;
   date.onchange=()=>{if(date.value){workingHoursDate=date.value;body.innerHTML='';renderSettingsWorkingHours(body);}};
   body.append(label,date);
+  const today=localISODate();
+  const isPastDate=workingHoursDate<today;
+  if(isPastDate){
+    const warning=document.createElement('div');
+    warning.style.cssText='margin-top:12px;padding:10px 12px;border-radius:9px;background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);color:#f87171;font-family:DM Mono,monospace;font-size:.66rem';
+    warning.textContent='LOCKED: Historical Working Hours are view-only. Past dates cannot be edited.';
+    body.appendChild(warning);
+  }
   const wrap=document.createElement('div');wrap.style.cssText='overflow-x:auto;margin-top:16px';body.appendChild(wrap);
   const table=document.createElement('table');table.className='pct-table';table.style.minWidth='560px';table.innerHTML='<thead><tr><th>Person</th><th>Working minutes</th><th>Hours for selected date</th><th>Save</th></tr></thead>';
   const tbody=document.createElement('tbody');
@@ -4670,7 +4683,13 @@ function renderSettingsWorkingHours(body){
     const minutes=dailyMinutes(person,workingHoursDate),saved=Object.prototype.hasOwnProperty.call(dailyWorkingHours,dailyHoursKey(workingHoursDate,person));
     value.textContent=minutes+' min'+(saved?'':' (default)');
     const input=document.createElement('input');input.type='number';input.className='fi';input.min='0';input.max='24';input.step='any';input.value=minutes/60;input.setAttribute('aria-label',person+' working hours');
-    const button=document.createElement('button');button.className='lead-save';button.textContent='SAVE';
+    const button=document.createElement('button');button.className='lead-save';button.textContent=isPastDate?'LOCKED':'SAVE';
+    if(isPastDate){
+      input.disabled=true;
+      button.disabled=true;
+      input.title='Past-date Working Hours are view-only';
+      button.title='Past-date Working Hours are locked';
+    }
     button.onclick=async()=>{
       if(input.value===''||!input.reportValidity())return;
       const selectedDate=workingHoursDate;
