@@ -4461,6 +4461,13 @@ function renderSettingsUsers(body){
     const usersSaved=await syncUsers();
     if(!usersSaved){toast('User record could not be saved','error');return;}
     const roleSaved=await saveUserJobRole(name,role);
+    if(SQL_TABLES.working_hours_defaults){
+      const defaultRows=await dbRequest('working_hours_defaults','POST','on_conflict=person',
+        [{person,minutes:480}],'resolution=merge-duplicates,return=representation');
+      if(Array.isArray(defaultRows)&&defaultRows.some(r=>r.person===name)){
+        workingHours[name]=8;
+      }
+    }
     refreshLoginDropdown();
     toast(roleSaved?'User "'+name+'" added with '+role:'User added, but job role needs retry',roleSaved?'success':'error');
     renderSettingsBody(body);
@@ -4573,6 +4580,16 @@ function renderSettingsUsers(body){
         delete CREDS[name];
         const idx=PERSONS.indexOf(name);if(idx>-1)PERSONS.splice(idx,1);
         deleteUserJobRole(name);
+        if(SQL_TABLES.working_hours_defaults)dbRequest('working_hours_defaults','DELETE','person=eq.'+encodeURIComponent(name)).catch(console.error);
+        if(SQL_TABLES.working_hours_daily)dbRequest('working_hours_daily','DELETE','person=eq.'+encodeURIComponent(name)).catch(console.error);
+        if(SQL_TABLES.multi_skill_assignments){
+          dbRequest('multi_skill_assignments','DELETE','backup_person=eq.'+encodeURIComponent(name)).then(()=>{
+            Object.keys(multiSkillMap).forEach(k=>{if(multiSkillMap[k]===name)delete multiSkillMap[k];});
+            syncActiveLeaveCoverageFromMultiSkill().catch(console.error);
+          }).catch(console.error);
+        }
+        delete workingHours[name];
+        Object.keys(dailyWorkingHours).forEach(k=>{if(k.endsWith(':'+encodeURIComponent(name)))delete dailyWorkingHours[k];});
         toast('User "'+name+'" removed','error');syncUsers();refreshLoginDropdown();
         renderSettingsBody(body);
       });
