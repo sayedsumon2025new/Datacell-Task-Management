@@ -2337,6 +2337,24 @@ function leaveInclusiveDays(fromDate,toDate){
   if(b<a)return 0;
   return Math.floor((b-a)/86400000)+1;
 }
+function shortLeaveMinutes(startTime,endTime){
+  if(!/^\d{2}:\d{2}$/.test(startTime||'')||!/^\d{2}:\d{2}$/.test(endTime||''))return 0;
+  const [sh,sm]=startTime.split(':').map(Number),[eh,em]=endTime.split(':').map(Number);
+  const diff=(eh*60+em)-(sh*60+sm);
+  return diff>0?diff:0;
+}
+function formatShortLeaveMinutes(minutes){
+  const total=Math.max(0,Math.round(Number(minutes)||0));
+  const h=Math.floor(total/60),m=total%60;
+  return (h?h+'h ':'')+(m?m+'m':(!h?'0m':'')).trim();
+}
+function leaveDateTimeDisplay(application,which){
+  if(application?.leaveType==='Short Leave'){
+    const time=which==='from'?application.shortStartTime:application.shortEndTime;
+    return formatDateDisplay(application.fromDate)+(time?' · '+formatTime12(time):'');
+  }
+  return formatDateDisplay(which==='from'?application.fromDate:application.toDate);
+}
 function leaveEmployeeOptions(){
   return [...new Set(userRegistry.map(u=>u.name).filter(Boolean))];
 }
@@ -2679,7 +2697,8 @@ function renderLeaveApprovalPanel(panel){
     const tbody=document.createElement('tbody');
     queue.forEach((a,i)=>{
       const tr=document.createElement('tr');
-      [i+1,a.employee,leaveApplicantRole(a),a.leaveType,formatDateDisplay(a.fromDate),formatDateDisplay(a.toDate),a.days,a.reason].forEach(v=>{
+      const approvalAmount=a.leaveType==='Short Leave'?formatShortLeaveMinutes(a.shortMinutes):a.days;
+      [i+1,a.employee,leaveApplicantRole(a),a.leaveType,leaveDateTimeDisplay(a,'from'),leaveDateTimeDisplay(a,'to'),approvalAmount,a.reason].forEach(v=>{
         const td=document.createElement('td');td.textContent=v;tr.appendChild(td);
       });
       const stageTd=document.createElement('td');
@@ -2807,7 +2826,7 @@ function renderLeaveStatusReconciliation(panel){
     detail.innerHTML='<div class="leave-recon-title">Application Reconciliation Detail</div><div class="leave-recon-sub">// APPROVAL STAGES · BALANCING · FINAL STATUS</div>';
     const detailWrap=document.createElement('div');detailWrap.className='leave-recent-wrap';
     const table=document.createElement('table');table.className='pct-table';table.style.minWidth='1250px';
-    table.innerHTML='<thead><tr><th>#</th><th>Employee</th><th>Leave Type</th><th>From</th><th>To</th><th>Days</th><th>Supervisor</th><th>Section Incharge</th><th>Balancing</th><th>Final Status</th><th>Applied On</th></tr></thead>';
+    table.innerHTML='<thead><tr><th>#</th><th>Employee</th><th>Leave Type</th><th>From</th><th>To</th><th>Days / Duration</th><th>Supervisor</th><th>Section Incharge</th><th>Balancing</th><th>Final Status</th><th>Applied On</th></tr></thead>';
     const tbody=document.createElement('tbody');
     filtered.forEach((a,i)=>{
       const tr=document.createElement('tr');
@@ -2815,7 +2834,8 @@ function renderLeaveStatusReconciliation(panel){
       const section=a.sectionStatus||'Pending';
       const balanced=leaveBalancingComplete(a);
       const status=leaveDisplayStatus(a);
-      const values=[i+1,a.employee,a.leaveType,formatDateDisplay(a.fromDate),formatDateDisplay(a.toDate),a.days,supervisor,section,balanced?'READY':'REQUIRED',status,formatDateDisplay(String(a.appliedAt||'').slice(0,10))];
+      const amount=a.leaveType==='Short Leave'?formatShortLeaveMinutes(a.shortMinutes):a.days;
+      const values=[i+1,a.employee,a.leaveType,leaveDateTimeDisplay(a,'from'),leaveDateTimeDisplay(a,'to'),amount,supervisor,section,balanced?'READY':'REQUIRED',status,formatDateDisplay(String(a.appliedAt||'').slice(0,10))];
       values.forEach((v,idx)=>{
         const td=document.createElement('td');td.textContent=v;
         if(idx===8)td.style.color=balanced?'#3ef0b0':'#f87171';
@@ -2861,38 +2881,61 @@ function renderLeaveApplicationPanel(panel){
     +'<div class="fg"><label for="leaveEmployee">EMPLOYEE NAME *</label><select class="fi-sel" id="leaveEmployee" required>'
     +employeeChoices.map(name=>'<option value="'+name+'">'+name+'</option>').join('')+'</select></div>'
     +'<div class="fg"><label for="leaveType">LEAVE TYPE *</label><select class="fi-sel" id="leaveType" required>'
-    +'<option value="Casual Leave">Casual Leave</option><option value="Sick Leave">Sick Leave</option><option value="Annual Leave">Annual Leave</option><option value="Emergency Leave">Emergency Leave</option><option value="Other">Other</option></select></div>'
+    +'<option value="Casual Leave">Casual Leave</option><option value="Sick Leave">Sick Leave</option><option value="Annual Leave">Annual Leave</option><option value="Emergency Leave">Emergency Leave</option><option value="Short Leave">Short Leave</option><option value="Other">Other</option></select></div>'
     +'<div class="fg"><label>LEAVE DURATION *</label><div class="leave-radio-row">'
     +'<label><input type="radio" name="leaveDuration" value="single" checked> Single Day</label>'
     +'<label><input type="radio" name="leaveDuration" value="multiple"> Multiple Days</label></div></div>'
     +'<div class="fg"><label for="leaveFrom">FROM DATE *</label><input type="date" class="fi" id="leaveFrom" required></div>'
     +'<div class="fg"><label for="leaveTo">TO DATE *</label><input type="date" class="fi" id="leaveTo" required></div>'
-    +'<div class="fg"><label>TOTAL DAYS</label><div class="leave-total" id="leaveTotalDays">0 day</div></div>'
+    +'<div class="fg" id="shortLeaveStartWrap" style="display:none"><label for="shortLeaveStart">START TIME *</label><input type="time" class="fi" id="shortLeaveStart"></div>'
+    +'<div class="fg" id="shortLeaveEndWrap" style="display:none"><label for="shortLeaveEnd">END TIME *</label><input type="time" class="fi" id="shortLeaveEnd"></div>'
+    +'<div class="fg"><label id="leaveTotalLabel">TOTAL DAYS</label><div class="leave-total" id="leaveTotalDays">0 day</div></div>'
     +'<div class="fg full"><label for="leaveReason">REASON FOR LEAVE *</label><textarea class="fi" id="leaveReason" rows="4" maxlength="500" required placeholder="Write the reason for leave..." style="resize:vertical;min-height:96px"></textarea></div>'
     +'</div>'
     +'<div class="leave-actions"><button type="submit" class="add-btn" id="leaveSubmit">SUBMIT LEAVE APPLICATION</button><button type="button" class="fbtn" id="leaveClear">CLEAR FORM</button></div>';
   formPanel.appendChild(form);
 
   const employee=form.querySelector('#leaveEmployee'),from=form.querySelector('#leaveFrom'),to=form.querySelector('#leaveTo');
-  const total=form.querySelector('#leaveTotalDays'),reason=form.querySelector('#leaveReason');
+  const leaveType=form.querySelector('#leaveType');
+  const total=form.querySelector('#leaveTotalDays'),totalLabel=form.querySelector('#leaveTotalLabel'),reason=form.querySelector('#leaveReason');
+  const shortStart=form.querySelector('#shortLeaveStart'),shortEnd=form.querySelector('#shortLeaveEnd');
+  const shortStartWrap=form.querySelector('#shortLeaveStartWrap'),shortEndWrap=form.querySelector('#shortLeaveEndWrap');
   const today=localISODate();
   from.min=today;to.min=today;
   if(currentUser!=='admin'){employee.value=currentUser;employee.disabled=true;}
   const updateDays=()=>{
+    const isShort=leaveType.value==='Short Leave';
     const duration=form.querySelector('input[name="leaveDuration"]:checked')?.value||'single';
+    form.querySelectorAll('input[name="leaveDuration"]').forEach(r=>{r.disabled=isShort;});
+    shortStartWrap.style.display=isShort?'block':'none';
+    shortEndWrap.style.display=isShort?'block':'none';
+    shortStart.required=isShort;shortEnd.required=isShort;
+    totalLabel.textContent=isShort?'SHORT LEAVE DURATION':'TOTAL DAYS';
+
+    if(isShort){
+      if(from.value)to.value=from.value;
+      to.disabled=true;
+      const mins=shortLeaveMinutes(shortStart.value,shortEnd.value);
+      total.textContent=mins?formatShortLeaveMinutes(mins):'0m';
+      return;
+    }
+
     if(duration==='single'&&from.value){to.value=from.value;to.disabled=true;}
     else to.disabled=false;
     if(from.value)to.min=from.value;
     const days=leaveInclusiveDays(from.value,to.value);
     total.textContent=days+(days===1?' day':' days');
   };
+  leaveType.onchange=updateDays;
   form.querySelectorAll('input[name="leaveDuration"]').forEach(r=>r.onchange=updateDays);
   from.onchange=()=>{updateDays();};
   to.onchange=updateDays;
+  shortStart.onchange=updateDays;
+  shortEnd.onchange=updateDays;
   const clearForm=()=>{
     form.reset();
     if(currentUser!=='admin'){employee.value=currentUser;employee.disabled=true;}
-    from.min=today;to.min=today;to.disabled=true;total.textContent='0 day';
+    from.min=today;to.min=today;to.disabled=true;shortStart.value='';shortEnd.value='';total.textContent='0 day';totalLabel.textContent='TOTAL DAYS';updateDays();
   };
   form.querySelector('#leaveClear').onclick=clearForm;
 
@@ -2904,11 +2947,12 @@ function renderLeaveApplicationPanel(panel){
       .slice().sort((a,b)=>String(b.appliedAt||'').localeCompare(String(a.appliedAt||''))).slice(0,20);
     const wrap=document.createElement('div');wrap.className='leave-recent-wrap';
     const table=document.createElement('table');table.className='pct-table';
-    table.innerHTML='<thead><tr><th>#</th><th>Employee</th><th>Leave Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Status</th><th>Applied On</th></tr></thead>';
+    table.innerHTML='<thead><tr><th>#</th><th>Employee</th><th>Leave Type</th><th>From</th><th>To</th><th>Days / Duration</th><th>Reason</th><th>Status</th><th>Applied On</th></tr></thead>';
     const tbody=document.createElement('tbody');
     visible.forEach((a,i)=>{
       const tr=document.createElement('tr');
-      const values=[i+1,a.employee,a.leaveType,formatDateDisplay(a.fromDate),formatDateDisplay(a.toDate),a.days,a.reason];
+      const amount=a.leaveType==='Short Leave'?formatShortLeaveMinutes(a.shortMinutes):a.days;
+      const values=[i+1,a.employee,a.leaveType,leaveDateTimeDisplay(a,'from'),leaveDateTimeDisplay(a,'to'),amount,a.reason];
       values.forEach(v=>{const td=document.createElement('td');td.textContent=v;tr.appendChild(td);});
       const statusTd=document.createElement('td');const badge=document.createElement('span');
       const status=leaveDisplayStatus(a);badge.className='leave-status '+leaveStatusClass(status);badge.textContent=status;statusTd.appendChild(badge);tr.appendChild(statusTd);
@@ -2931,10 +2975,15 @@ function renderLeaveApplicationPanel(panel){
   form.onsubmit=async e=>{
     e.preventDefault();
     if(!form.reportValidity())return;
-    const duration=form.querySelector('input[name="leaveDuration"]:checked')?.value||'single';
-    if(duration==='single')to.value=from.value;
-    const days=leaveInclusiveDays(from.value,to.value);
-    if(!days){toast('Choose a valid leave date range','error');return;}
+    const isShort=leaveType.value==='Short Leave';
+    const duration=isShort?'short':(form.querySelector('input[name="leaveDuration"]:checked')?.value||'single');
+    if(duration==='single'||isShort)to.value=from.value;
+    const days=isShort?0:leaveInclusiveDays(from.value,to.value);
+    const shortMinutes=isShort?shortLeaveMinutes(shortStart.value,shortEnd.value):0;
+    if(isShort){
+      if(!from.value){toast('Choose the Short Leave date','error');return;}
+      if(!shortMinutes){toast('Short Leave End Time must be after Start Time','error');return;}
+    }else if(!days){toast('Choose a valid leave date range','error');return;}
     if(from.value<today){toast('Leave date cannot be in the past','error');return;}
     if(reason.value.trim().length<3){toast('Enter a leave reason','error');reason.focus();return;}
     const now=new Date();
@@ -2955,6 +3004,9 @@ function renderLeaveApplicationPanel(panel){
       fromDate:from.value,
       toDate:to.value,
       days,
+      shortStartTime:isShort?shortStart.value:'',
+      shortEndTime:isShort?shortEnd.value:'',
+      shortMinutes,
       reason:reason.value.trim(),
       employeeRole:getUserJobRole(employee.value),
       supervisorStatus:getUserJobRole(employee.value)==='Team Member'?'Pending':'Not Required',
