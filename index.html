@@ -1337,6 +1337,7 @@ async function initFromSheets() {
   const data = await sbFetchAll();
   if (data) {
     applyRemoteData(data); _lastVersion = data.version || '0';
+    if(currentUser)setTimeout(showPendingMultiSkillPopup,120);
     if (data.users && data.users.length > 0) {
       PERSONS = data.users.filter(u => u.name !== 'admin').map(u => u.name);
       const sel = document.getElementById('loginUser');
@@ -2421,23 +2422,54 @@ function leaveReportTasks(application){
     return t.person===employee||owners.includes(employee);
   }).sort((a,b)=>Number(a.sl)-Number(b.sl));
 }
-function leaveReportAssignments(application){
+function leaveStoredAssignments(application){
   const a=application&&application.reportAssignments;
   return a&&typeof a==='object'&&!Array.isArray(a)?a:{};
 }
-function leaveReportAcceptance(application){
+function leaveStoredAcceptance(application){
   const a=application&&application.reportAcceptance;
   return a&&typeof a==='object'&&!Array.isArray(a)?a:{};
+}
+function leaveCoverageState(application){
+  const storedAssignments=leaveStoredAssignments(application);
+  const storedAcceptance=leaveStoredAcceptance(application);
+  const assignments={...storedAssignments};
+  const acceptance={...storedAcceptance};
+
+  // Current Multi Skill mapping is authoritative for active/pending leave coverage.
+  // This also upgrades leave applications created before Multi Skill was assigned.
+  leaveReportTasks(application).forEach(t=>{
+    const key=String(t.sl);
+    const currentBackup=String(multiSkillMap[key]||storedAssignments[key]||'').trim();
+    if(currentBackup)assignments[key]=currentBackup;
+    else delete assignments[key];
+
+    const existing=acceptance[key];
+    if(currentBackup){
+      // If the designated backup changed, old acceptance cannot be reused.
+      if(!existing||existing.assignee!==currentBackup){
+        acceptance[key]={assignee:currentBackup,status:'Pending',respondedAt:'',respondedBy:''};
+      }
+    }else{
+      delete acceptance[key];
+    }
+  });
+  return {assignments,acceptance};
+}
+function leaveReportAssignments(application){
+  return leaveCoverageState(application).assignments;
+}
+function leaveReportAcceptance(application){
+  return leaveCoverageState(application).acceptance;
 }
 function leaveBalancingComplete(application){
   const reportTasks=leaveReportTasks(application);
   if(!reportTasks.length)return true;
-  const assignments=leaveReportAssignments(application);
-  const acceptance=leaveReportAcceptance(application);
+  const coverage=leaveCoverageState(application);
   return reportTasks.every(t=>{
     const key=String(t.sl);
-    const backup=String(assignments[key]||'').trim();
-    const accepted=acceptance[key]&&String(acceptance[key].status)==='Accepted';
+    const backup=String(coverage.assignments[key]||'').trim();
+    const accepted=coverage.acceptance[key]&&String(coverage.acceptance[key].status)==='Accepted';
     return !!backup&&backup!==application.employee&&accepted;
   });
 }
@@ -2479,7 +2511,7 @@ async function saveLeaveBalancing(application,assignments,button){
 function renderLeaveBalancingPanel(panel){
   panel.innerHTML='';
   const head=document.createElement('div');head.className='leave-panel';head.style.marginBottom='14px';
-  head.innerHTML='<div class="leave-panel-title">Report Balancing</div><div class="leave-panel-sub">// MULTI SKILL ACCEPTANCE STATUS FOR LEAVE COVERAGE</div><div style="font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted)">Assignments come from Multi Skill. Leave approval stays blocked until every designated backup accepts.</div>';
+  head.innerHTML='<div class="leave-panel-title">Report Balancing</div><div class="leave-panel-sub">// LIVE MULTI SKILL ASSIGNMENT + ACCEPTANCE STATUS</div><div style="font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted)">Current Multi Skill mapping is used automatically. Leave approval stays blocked until every designated backup accepts.</div>';
   panel.appendChild(head);
   const list=document.createElement('div');panel.appendChild(list);
   const draw=()=>{
@@ -2895,11 +2927,13 @@ function renderLeaveApplicationPanel(panel){
 async function respondToMultiSkill(application,taskSl,decision,button){
   const key=String(taskSl);
   if(!['Accepted','Rejected'].includes(decision))return false;
-  const acceptance={...leaveReportAcceptance(application)};
+  const coverage=leaveCoverageState(application);
+  const assignments={...coverage.assignments};
+  const acceptance={...coverage.acceptance};
   const current=acceptance[key];
   if(!current||current.assignee!==currentUser){toast('This request is not assigned to you','error');return false;}
   acceptance[key]={...current,status:decision,respondedAt:new Date().toISOString(),respondedBy:currentUser};
-  const updated={...application,reportAcceptance:acceptance};
+  const updated={...application,reportAssignments:assignments,reportAcceptance:acceptance};
   updated.balancingComplete=leaveBalancingComplete(updated);
   const metaKey='leaveApplication:'+updated.id,label=button?.textContent||'';
   if(button){button.disabled=true;button.textContent='SAVING...';}
@@ -2917,10 +2951,14 @@ function showPendingMultiSkillPopup(){
   if(!currentUser||currentUser==='admin'||document.querySelector('.multi-skill-modal-overlay'))return;
   const requests=[];
   leaveApplications.filter(a=>!['Approved','Rejected'].includes(String(a.status))).forEach(a=>{
-    const acceptance=leaveReportAcceptance(a);
+    const coverage=leaveCoverageState(a);
     leaveReportTasks(a).forEach(t=>{
-      const r=acceptance[String(t.sl)];
-      if(r&&r.assignee===currentUser&&r.status==='Pending')requests.push({application:a,task:t});
+      const key=String(t.sl);
+      const r=coverage.acceptance[key];
+      const assigned=coverage.assignments[key];
+      if(assigned===currentUser&&r&&r.assignee===currentUser&&r.status==='Pending'){
+        requests.push({application:a,task:t});
+      }
     });
   });
   if(!requests.length)return;
