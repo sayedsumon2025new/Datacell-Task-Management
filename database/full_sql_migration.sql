@@ -171,6 +171,188 @@ cross join lateral jsonb_each_text(
   case when m.value ~ '^\s*\{' then m.value::jsonb else '{}'::jsonb end
 ) e
 where m.key='workingHours'
+  and e.value ~ '^\d+(\.\d+)?
+
+-- Ensure every active user has an SQL default even if no legacy JSON existed.
+insert into public.working_hours_defaults(person,minutes)
+select name,480 from public.users where name<>'admin'
+on conflict (person) do nothing;
+
+-- Migrate Multi Skill JSON.
+insert into public.multi_skill_assignments(task_sl,backup_person)
+select e.key::bigint,e.value
+from public.meta m
+cross join lateral jsonb_each_text(
+  case when m.value ~ '^\s*\{' then m.value::jsonb else '{}'::jsonb end
+) e
+where m.key='multiSkillMap'
+  and e.key ~ '^\d+$'
+  and btrim(e.value) <> ''
+on conflict (task_sl) do update set backup_person=excluded.backup_person, updated_at=now();
+
+-- Migrate roles from module_access role markers.
+insert into public.user_roles(username,role)
+select username, substring(token from 10)
+from public.module_access
+cross join lateral unnest(string_to_array(coalesce(modules,''),',')) token
+where token like '__role__:%'
+  and substring(token from 10) in ('Section Incharge','Supervisor','Team Member')
+on conflict (username) do update set role=excluded.role, updated_at=now();
+
+-- Remove legacy role markers from module_access after roles are safely copied.
+update public.module_access ma
+set modules=coalesce((
+  select string_agg(btrim(token),',' order by ord)
+  from unnest(string_to_array(coalesce(ma.modules,''),',')) with ordinality as x(token,ord)
+  where btrim(token)<>'' and btrim(token) not like '__role__:%'
+),'')
+where coalesce(ma.modules,'') like '%__role__:%';
+
+-- Migrate leave applications from JSON.
+insert into public.leave_applications(
+  id,employee,employee_role,leave_type,duration,from_date,to_date,days,
+  short_start_time,short_end_time,short_minutes,reason,
+  supervisor_status,supervisor_by,supervisor_at,
+  section_status,section_by,section_at,rejected_stage,status,balancing_complete,
+  applied_by,applied_at,balanced_by,balanced_at
+)
+select
+  j->>'id',
+  j->>'employee',
+  coalesce(j->>'employeeRole','Team Member'),
+  coalesce(j->>'leaveType','Casual Leave'),
+  coalesce(j->>'duration','single'),
+  nullif(j->>'fromDate','')::date,
+  nullif(j->>'toDate','')::date,
+  coalesce(nullif(j->>'days','')::integer,0),
+  nullif(j->>'shortStartTime','')::time,
+  nullif(j->>'shortEndTime','')::time,
+  coalesce(nullif(j->>'shortMinutes','')::integer,0),
+  coalesce(j->>'reason',''),
+  coalesce(j->>'supervisorStatus','Pending'),
+  coalesce(j->>'supervisorBy',''),
+  nullif(j->>'supervisorAt','')::timestamptz,
+  coalesce(j->>'sectionStatus','Pending'),
+  coalesce(j->>'sectionBy',''),
+  nullif(j->>'sectionAt','')::timestamptz,
+  coalesce(j->>'rejectedStage',''),
+  coalesce(j->>'status','Pending'),
+  coalesce(nullif(j->>'balancingComplete','')::boolean,false),
+  coalesce(j->>'appliedBy',''),
+  coalesce(nullif(j->>'appliedAt','')::timestamptz,now()),
+  coalesce(j->>'balancedBy',''),
+  nullif(j->>'balancedAt','')::timestamptz
+from (
+  select value::jsonb j
+  from public.meta
+  where key like 'leaveApplication:%' and value ~ '^\s*\{'
+) x
+where j ? 'id' and j ? 'employee' and j ? 'fromDate' and j ? 'toDate'
+on conflict (id) do update set
+  employee=excluded.employee, employee_role=excluded.employee_role, leave_type=excluded.leave_type, duration=excluded.duration,
+  from_date=excluded.from_date, to_date=excluded.to_date, days=excluded.days,
+  short_start_time=excluded.short_start_time, short_end_time=excluded.short_end_time,
+  short_minutes=excluded.short_minutes, reason=excluded.reason,
+  supervisor_status=excluded.supervisor_status, supervisor_by=excluded.supervisor_by, supervisor_at=excluded.supervisor_at,
+  section_status=excluded.section_status, section_by=excluded.section_by, section_at=excluded.section_at,
+  rejected_stage=excluded.rejected_stage, status=excluded.status, balancing_complete=excluded.balancing_complete,
+  applied_by=excluded.applied_by, applied_at=excluded.applied_at,
+  balanced_by=excluded.balanced_by, balanced_at=excluded.balanced_at, updated_at=now();
+
+-- Migrate leave report coverage from application JSON reportAssignments/reportAcceptance.
+insert into public.leave_report_coverage(
+  application_id,task_sl,assignee,acceptance_status,responded_at,responded_by
+)
+select
+  j->>'id',
+  a.key::bigint,
+  a.value,
+  case
+    when j->'reportAcceptance'->a.key->>'status' in ('Pending','Accepted','Rejected')
+      then j->'reportAcceptance'->a.key->>'status'
+    else 'Pending'
+  end,
+  nullif(j->'reportAcceptance'->a.key->>'respondedAt','')::timestamptz,
+  coalesce(j->'reportAcceptance'->a.key->>'respondedBy','')
+from (
+  select value::jsonb j
+  from public.meta
+  where key like 'leaveApplication:%' and value ~ '^\s*\{'
+) x
+cross join lateral jsonb_each_text(coalesce(j->'reportAssignments','{}'::jsonb)) a
+where a.key ~ '^\d+$'
+on conflict (application_id,task_sl) do update set
+  assignee=excluded.assignee, acceptance_status=excluded.acceptance_status,
+  responded_at=excluded.responded_at, responded_by=excluded.responded_by, updated_at=now();
+
+-- Maintain updated_at automatically for live SQL rows.
+create or replace function public.set_datacell_updated_at()
+returns trigger
+language plpgsql
+as $
+begin
+  new.updated_at=now();
+  return new;
+end;
+$;
+
+do $
+declare t text;
+begin
+  foreach t in array array[
+    'app_state','task_completions','task_remarks','working_hours_defaults',
+    'working_hours_daily','multi_skill_assignments','user_roles',
+    'leave_applications','leave_report_coverage'
+  ]
+  loop
+    execute format('drop trigger if exists trg_datacell_updated_at on public.%I',t);
+    execute format(
+      'create trigger trg_datacell_updated_at before update on public.%I for each row execute function public.set_datacell_updated_at()',
+      t
+    );
+  end loop;
+end $;
+
+-- Front-end currently uses a publishable/anon key. Keep permissions consistent
+-- with the existing architecture. Tighten with authenticated RLS before external exposure.
+grant select,insert,update,delete on
+  public.app_state,
+  public.task_completions,
+  public.task_remarks,
+  public.working_hours_defaults,
+  public.working_hours_daily,
+  public.multi_skill_assignments,
+  public.user_roles,
+  public.leave_applications,
+  public.leave_report_coverage
+to anon, authenticated;
+
+alter table public.app_state enable row level security;
+alter table public.task_completions enable row level security;
+alter table public.task_remarks enable row level security;
+alter table public.working_hours_defaults enable row level security;
+alter table public.working_hours_daily enable row level security;
+alter table public.multi_skill_assignments enable row level security;
+alter table public.user_roles enable row level security;
+alter table public.leave_applications enable row level security;
+alter table public.leave_report_coverage enable row level security;
+
+do $$
+declare t text;
+begin
+  foreach t in array array[
+    'app_state','task_completions','task_remarks','working_hours_defaults',
+    'working_hours_daily','multi_skill_assignments','user_roles',
+    'leave_applications','leave_report_coverage'
+  ]
+  loop
+    execute format('drop policy if exists "app_live_all" on public.%I',t);
+    execute format('create policy "app_live_all" on public.%I for all to anon, authenticated using (true) with check (true)',t);
+  end loop;
+end $$;
+
+commit;
+
 on conflict (person) do update set minutes=excluded.minutes, updated_at=now();
 
 -- Ensure every active user has an SQL default even if no legacy JSON existed.
