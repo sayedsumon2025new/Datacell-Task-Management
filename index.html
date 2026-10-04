@@ -1363,6 +1363,7 @@ let workingHours = (()=>{
 })(); // person → daily working hours
 let kpiDate=localISODate(),kpiMonth='';
 let overviewDate=localISODate();
+let pendingReportFilters={person:'all',status:'all',priority:'all'};
 let calYear=new Date().getFullYear(),calMonth=new Date().getMonth(),calSelectedDate='';
 let ovCalYear=new Date().getFullYear(),ovCalMonth=new Date().getMonth(),ovCalSelected='';
 const doneState={};
@@ -3050,9 +3051,9 @@ function buildOverview(c){
   pendingLbl.textContent='PENDING REPORTS';
   c.appendChild(pendingLbl);
 
-  let pendingPersonFilter='all';
-  let pendingStatusFilter='all';
-  let pendingPriorityFilter='all';
+  let pendingPersonFilter=pendingReportFilters.person||'all';
+  let pendingStatusFilter=pendingReportFilters.status||'all';
+  let pendingPriorityFilter=pendingReportFilters.priority||'all';
 
   const pendingFilterRow=document.createElement('div');
   pendingFilterRow.className='filter-row';
@@ -3075,7 +3076,10 @@ function buildOverview(c){
   resetPendingFilters.type='button';
   resetPendingFilters.textContent='RESET';
 
-  pendingFilterRow.append(personSelect,statusSelect,prioritySelect,resetPendingFilters);
+  const personFg=document.createElement('div');personFg.className='fg';personFg.innerHTML='<label>PERSON</label>';personFg.appendChild(personSelect);
+  const statusFg=document.createElement('div');statusFg.className='fg';statusFg.innerHTML='<label>STATUS</label>';statusFg.appendChild(statusSelect);
+  const priorityFg=document.createElement('div');priorityFg.className='fg';priorityFg.innerHTML='<label>PRIORITY</label>';priorityFg.appendChild(prioritySelect);
+  pendingFilterRow.append(personFg,statusFg,priorityFg,resetPendingFilters);
   c.appendChild(pendingFilterRow);
 
   const pendingWrap=document.createElement('div');
@@ -3123,6 +3127,7 @@ function buildOverview(c){
     const priorities=uniqueSorted(statusScoped.map(k=>k.priority?'Priority':'Normal'));
     if((changedLevel==='person'||changedLevel==='status')&&!priorities.includes(pendingPriorityFilter))pendingPriorityFilter='all';
     pendingPriorityFilter=setSelectOptions(prioritySelect,'All Priority',priorities,pendingPriorityFilter);
+    pendingReportFilters={person:pendingPersonFilter,status:pendingStatusFilter,priority:pendingPriorityFilter};
 
     const filtered=statusScoped.filter(k=>{
       if(pendingPriorityFilter==='all')return true;
@@ -3199,6 +3204,7 @@ function buildOverview(c){
     pendingPersonFilter='all';
     pendingStatusFilter='all';
     pendingPriorityFilter='all';
+    pendingReportFilters={person:'all',status:'all',priority:'all'};
     renderPendingFiltersAndTable('reset');
   };
 
