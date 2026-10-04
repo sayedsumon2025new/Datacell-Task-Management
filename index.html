@@ -571,6 +571,17 @@ let _pollTimer = null;
 let _isSyncing = false;
 let _syncDebounce = null;
 let _lastVersion = null;
+const SQL_TABLES={
+  app_state:false,
+  task_completions:false,
+  task_remarks:false,
+  working_hours_defaults:false,
+  working_hours_daily:false,
+  multi_skill_assignments:false,
+  user_roles:false,
+  leave_applications:false,
+  leave_report_coverage:false
+};
 
 // ── Low-level REST helpers ───────────────────────────────────────
 // Supabase publishable keys are API keys, not JWTs.
@@ -611,6 +622,25 @@ async function sbGet(table, select = '*') {
   } finally {
     req.clear();
   }
+}
+
+async function sbGetOptionalTable(table, select='*') {
+  if (!sbConfigured()) return {exists:false,rows:[]};
+  const req=sbFetchOptions('GET',{headers:sbHeaders()});
+  try{
+    const res=await fetch(`${SB_URL}/rest/v1/${table}?select=${encodeURIComponent(select)}`,req.options);
+    if(res.status===404)return {exists:false,rows:[]};
+    if(!res.ok){
+      let body='';try{body=await res.text();}catch(e){}
+      if(/PGRST205|Could not find the table|schema cache/i.test(body))return {exists:false,rows:[]};
+      console.error('Supabase optional GET '+table+' failed ['+res.status+']:',body);
+      return {exists:false,rows:[]};
+    }
+    return {exists:true,rows:await res.json()};
+  }catch(e){
+    console.error('Supabase optional GET '+table+' error:',e);
+    return {exists:false,rows:[]};
+  }finally{req.clear();}
 }
 
 async function sbUpsert(table, rows) {
@@ -825,8 +855,14 @@ async function saveDailyHours(person,date,hours,button){
   try{
     await queueTaskWrite(async()=>{
       setSyncStatus('syncing');
-      const rows=await dbRequest('meta','POST','on_conflict=key',[{key,value:String(minutes)}],'resolution=merge-duplicates,return=representation');
-      if(!Array.isArray(rows)||!rows.some(r=>r.key===key&&Number(r.value)===minutes))throw new Error('Working hours were not confirmed');
+      if(SQL_TABLES.working_hours_daily){
+        const rows=await dbRequest('working_hours_daily','POST','on_conflict=person,work_date',
+          [{person,work_date:date,minutes}],'resolution=merge-duplicates,return=representation');
+        if(!Array.isArray(rows)||!rows.some(r=>r.person===person&&r.work_date===date&&Number(r.minutes)===minutes))throw new Error('Working hours were not confirmed');
+      }else{
+        const rows=await dbRequest('meta','POST','on_conflict=key',[{key,value:String(minutes)}],'resolution=merge-duplicates,return=representation');
+        if(!Array.isArray(rows)||!rows.some(r=>r.key===key&&Number(r.value)===minutes))throw new Error('Working hours were not confirmed');
+      }
       dailyWorkingHours[key]=minutes;
       await notifySaved();
     });
@@ -891,7 +927,6 @@ function applyRemoteData(data) {
   if (data.workingHours) {
     const n=JSON.stringify(data.workingHours),c=JSON.stringify(workingHours);
     if(n!==c){workingHours=data.workingHours;changed=true;}
-    try{localStorage.setItem('fts_working_hours',JSON.stringify(workingHours));}catch(e){}
   }
   return changed;
 }
@@ -899,13 +934,40 @@ function applyRemoteData(data) {
 // ── READ: fetch all data from Supabase ──────────────────────────
 async function sbFetchAll() {
   if (!sbConfigured()) return null;
-  const results = await Promise.all([
+  const corePromise=Promise.all([
     sbGet('tasks'), sbGet('done_state'), sbGet('users'), sbGet('module_access'), sbGet('meta')
   ]);
-  // A failed request is not the same as an empty table.
-  if (results.some(x => x === null)) return null;
+  const optionalPromise=Promise.all([
+    sbGetOptionalTable('app_state'),
+    sbGetOptionalTable('task_completions'),
+    sbGetOptionalTable('task_remarks'),
+    sbGetOptionalTable('working_hours_defaults'),
+    sbGetOptionalTable('working_hours_daily'),
+    sbGetOptionalTable('multi_skill_assignments'),
+    sbGetOptionalTable('user_roles'),
+    sbGetOptionalTable('leave_applications'),
+    sbGetOptionalTable('leave_report_coverage')
+  ]);
+  const [core,optional]=await Promise.all([corePromise,optionalPromise]);
+  if (core.some(x => x === null)) return null;
 
-  const [taskRows, doneRows, userRows, accessRows, metaRows] = results;
+  const [taskRows, doneRows, userRows, accessRows, metaRows] = core;
+  const [
+    appStateRes,completionRes,remarksRes,workingDefaultsRes,workingDailyRes,
+    multiSkillRes,userRolesRes,leaveAppsRes,leaveCoverageRes
+  ]=optional;
+  Object.assign(SQL_TABLES,{
+    app_state:appStateRes.exists,
+    task_completions:completionRes.exists,
+    task_remarks:remarksRes.exists,
+    working_hours_defaults:workingDefaultsRes.exists,
+    working_hours_daily:workingDailyRes.exists,
+    multi_skill_assignments:multiSkillRes.exists,
+    user_roles:userRolesRes.exists,
+    leave_applications:leaveAppsRes.exists,
+    leave_report_coverage:leaveCoverageRes.exists
+  });
+
   const fetchedTasks = (taskRows || []).map(r => ({
     sl: Number(r.sl), task: r.task || '', person: r.person || '', priority: !!r.priority,
     planDate: r.plan_date || '', planTime: r.plan_time || '',
@@ -931,41 +993,117 @@ async function sbFetchAll() {
     if(JOB_ROLES.includes(role))fetchedRoleMarkers[r.username]=role;
   });
 
-  const metaNext = (metaRows || []).find(r => r.key === 'nextSl');
-  const metaVer = (metaRows || []).find(r => r.key === 'version');
-  const metaWorkingHours = (metaRows || []).find(r => r.key === 'workingHours');
-  const fetchedNextSl = metaNext ? Number(metaNext.value) : 1;
+  const metaNext=(metaRows||[]).find(r=>r.key==='nextSl');
+  const metaVer=(metaRows||[]).find(r=>r.key==='version');
+  const metaWorkingHours=(metaRows||[]).find(r=>r.key==='workingHours');
+  const appState=Object.fromEntries((appStateRes.rows||[]).map(r=>[r.key,String(r.value??'')]));
+  const fetchedNextSl=Number(SQL_TABLES.app_state?appState.nextSl:(metaNext?.value||1));
+  const fetchedVersion=String(SQL_TABLES.app_state?(appState.version||'0'):(metaVer?.value||'0'));
+
   let fetchedWorkingHours={};
-  if(metaWorkingHours&&metaWorkingHours.value){
-    try{const parsed=JSON.parse(metaWorkingHours.value);if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))fetchedWorkingHours=parsed;}catch(e){console.error('Invalid workingHours metadata:',e);}
+  if(SQL_TABLES.working_hours_defaults){
+    (workingDefaultsRes.rows||[]).forEach(r=>{
+      const mins=Number(r.minutes);
+      if(r.person&&Number.isFinite(mins))fetchedWorkingHours[r.person]=mins/60;
+    });
+  }else if(metaWorkingHours&&metaWorkingHours.value){
+    try{const parsed=JSON.parse(metaWorkingHours.value);if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))fetchedWorkingHours=parsed;}catch(e){}
+  }
+
+  let fetchedCompletionHistory={};
+  if(SQL_TABLES.task_completions){
+    (completionRes.rows||[]).forEach(r=>{
+      if(!r.actual_date||!r.actual_time)return;
+      fetchedCompletionHistory[String(r.actual_date)+':'+Number(r.task_sl)]={
+        sl:Number(r.task_sl),task:r.task||'',person:r.person||'',priority:!!r.priority,
+        planDate:r.plan_date||'',planTime:r.plan_time||'',actualDate:r.actual_date||'',
+        actualTime:r.actual_time||'',leadTime:r.lead_time||''
+      };
+    });
+  }else{
+    fetchedCompletionHistory=Object.fromEntries((metaRows||[]).filter(r=>r.key.startsWith('taskCompletion:')).flatMap(r=>{try{const t=JSON.parse(r.value);return t&&t.actualDate&&t.actualTime?[[r.key.slice('taskCompletion:'.length),t]]:[];}catch(e){return [];}}));
+  }
+
+  let fetchedRemarks={};
+  if(SQL_TABLES.task_remarks){
+    (remarksRes.rows||[]).forEach(r=>{if(r.remark_date&&Number.isFinite(Number(r.task_sl)))fetchedRemarks[String(r.remark_date)+':'+Number(r.task_sl)]=String(r.remark||'');});
+  }else{
+    fetchedRemarks=Object.fromEntries((metaRows||[]).filter(r=>r.key.startsWith('taskRemark:')).map(r=>[r.key.slice('taskRemark:'.length),String(r.value||'')]));
+  }
+
+  let fetchedDailyHours={};
+  if(SQL_TABLES.working_hours_daily){
+    (workingDailyRes.rows||[]).forEach(r=>{
+      const mins=Number(r.minutes);
+      if(r.work_date&&r.person&&Number.isFinite(mins))fetchedDailyHours[dailyHoursKey(r.work_date,r.person)]=mins;
+    });
+  }else{
+    fetchedDailyHours=Object.fromEntries((metaRows||[]).filter(r=>r.key.startsWith('workingHoursDaily:')&&r.value!==''&&Number.isFinite(Number(r.value))&&Number(r.value)>=0&&Number(r.value)<=1440).map(r=>[r.key,Number(r.value)]));
+  }
+
+  let fetchedMultiSkill={};
+  if(SQL_TABLES.multi_skill_assignments){
+    (multiSkillRes.rows||[]).forEach(r=>{if(Number.isFinite(Number(r.task_sl))&&r.backup_person)fetchedMultiSkill[String(Number(r.task_sl))]=String(r.backup_person);});
+  }else{
+    const row=(metaRows||[]).find(r=>r.key==='multiSkillMap');
+    if(row){try{const parsed=JSON.parse(row.value||'{}');if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))fetchedMultiSkill=parsed;}catch(e){}}
+  }
+
+  const fetchedRoles={};
+  if(SQL_TABLES.user_roles){
+    (userRolesRes.rows||[]).forEach(r=>{if(r.username&&JOB_ROLES.includes(String(r.role)))fetchedRoles[String(r.username)]=String(r.role);});
+  }else{
+    (metaRows||[]).filter(r=>r.key.startsWith('userRole:')).forEach(r=>{
+      const suffix=r.key.slice('userRole:'.length);let name=suffix;try{name=decodeURIComponent(suffix);}catch(e){}
+      if(JOB_ROLES.includes(String(r.value)))fetchedRoles[name]=String(r.value);
+    });
+    Object.entries(fetchedRoleMarkers).forEach(([name,role])=>{fetchedRoles[name]=role;});
+  }
+
+  let fetchedLeaves=[];
+  if(SQL_TABLES.leave_applications){
+    const coverageByApp={};
+    (leaveCoverageRes.rows||[]).forEach(r=>{
+      const id=String(r.application_id||'');if(!id)return;
+      if(!coverageByApp[id])coverageByApp[id]={assignments:{},acceptance:{}};
+      const key=String(Number(r.task_sl));
+      coverageByApp[id].assignments[key]=String(r.assignee||'');
+      coverageByApp[id].acceptance[key]={
+        assignee:String(r.assignee||''),
+        status:String(r.acceptance_status||'Pending'),
+        respondedAt:r.responded_at||'',
+        respondedBy:String(r.responded_by||'')
+      };
+    });
+    fetchedLeaves=(leaveAppsRes.rows||[]).map(r=>{
+      const cov=coverageByApp[String(r.id)]||{assignments:{},acceptance:{}};
+      return {
+        id:String(r.id),employee:String(r.employee||''),leaveType:String(r.leave_type||''),
+        duration:String(r.duration||'single'),fromDate:r.from_date||'',toDate:r.to_date||'',
+        days:Number(r.days||0),shortStartTime:r.short_start_time||'',shortEndTime:r.short_end_time||'',
+        shortMinutes:Number(r.short_minutes||0),reason:String(r.reason||''),
+        supervisorStatus:String(r.supervisor_status||'Pending'),sectionStatus:String(r.section_status||'Pending'),
+        status:String(r.status||'Pending'),balancingComplete:!!r.balancing_complete,
+        appliedBy:String(r.applied_by||''),appliedAt:r.applied_at||'',
+        balancedBy:String(r.balanced_by||''),balancedAt:r.balanced_at||'',
+        reportAssignments:cov.assignments,reportAcceptance:cov.acceptance
+      };
+    }).sort((a,b)=>String(b.appliedAt||'').localeCompare(String(a.appliedAt||'')));
+  }else{
+    fetchedLeaves=(metaRows||[]).filter(r=>r.key.startsWith('leaveApplication:')).flatMap(r=>{try{const a=JSON.parse(r.value);return a&&a.id&&a.employee&&a.fromDate&&a.toDate?[a]:[];}catch(e){return [];}}).sort((a,b)=>String(b.appliedAt||'').localeCompare(String(a.appliedAt||'')));
   }
 
   return {
-    taskCompletionHistory:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('taskCompletion:')).flatMap(r=>{try{const t=JSON.parse(r.value);return t&&t.actualDate&&t.actualTime?[[r.key.slice('taskCompletion:'.length),t]]:[];}catch(e){return [];}})),
-    taskRemarks:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('taskRemark:')).map(r=>[r.key.slice('taskRemark:'.length),String(r.value||'')])),
-    leaveApplications:metaRows.filter(r=>r.key.startsWith('leaveApplication:')).flatMap(r=>{try{const a=JSON.parse(r.value);return a&&a.id&&a.employee&&a.fromDate&&a.toDate?[a]:[];}catch(e){return [];}}).sort((a,b)=>String(b.appliedAt||'').localeCompare(String(a.appliedAt||''))),
-    multiSkillMap:(()=>{
-      const row=metaRows.find(r=>r.key==='multiSkillMap');
-      if(!row)return {};
-      try{const parsed=JSON.parse(row.value||'{}');return parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?parsed:{};}catch(e){return {};}
-    })(),
-    userJobRoles:(()=>{
-      const roles={},rank={};
-      metaRows.filter(r=>r.key.startsWith('userRole:')).forEach(r=>{
-        const suffix=r.key.slice('userRole:'.length);
-        let name=suffix;try{name=decodeURIComponent(suffix);}catch(e){}
-        const priority=suffix===name?2:1;
-        if(!rank[name]||priority>=rank[name]){roles[name]=String(r.value||'Team Member');rank[name]=priority;}
-      });
-      // Legacy meta roles are migration fallback only; module_access role markers are authoritative.
-      Object.entries(fetchedRoleMarkers).forEach(([name,role])=>{roles[name]=role;});
-      return roles;
-    })(),
-    tasks: fetchedTasks, doneState: fetchedDone, users: fetchedUsers, moduleAccess: fetchedAccess,
-    workingHours: fetchedWorkingHours,
-    dailyWorkingHours:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('workingHoursDaily:')&&r.value!==''&&Number.isFinite(Number(r.value))&&Number(r.value)>=0&&Number(r.value)<=1440).map(r=>[r.key,Number(r.value)])),
-    nextSl: Math.max(1,...fetchedTasks.map(t=>t.sl+1),Number.isFinite(fetchedNextSl)?fetchedNextSl:1),
-    version: metaVer ? String(metaVer.value) : '0'
+    taskCompletionHistory:fetchedCompletionHistory,
+    taskRemarks:fetchedRemarks,
+    leaveApplications:fetchedLeaves,
+    multiSkillMap:fetchedMultiSkill,
+    userJobRoles:fetchedRoles,
+    tasks:fetchedTasks,doneState:fetchedDone,users:fetchedUsers,moduleAccess:fetchedAccess,
+    workingHours:fetchedWorkingHours,
+    dailyWorkingHours:fetchedDailyHours,
+    nextSl:Math.max(1,...fetchedTasks.map(t=>t.sl+1),Number.isFinite(fetchedNextSl)?fetchedNextSl:1),
+    version:fetchedVersion
   };
 }
 
