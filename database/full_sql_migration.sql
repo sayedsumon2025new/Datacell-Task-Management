@@ -125,8 +125,326 @@ set value=excluded.value, updated_at=now();
 insert into public.app_state(key,value)
 values
   ('version','0'),
-  ('nextSl',coalesce((select (max(sl)+1)::text from public.tasks),'1'))
-on conflict (key) do nothing;
+  ('nextSl',greatest(
+    coalesce((select case when value ~ '^[0-9]+
+
+-- Historical task completion snapshots
+insert into public.task_completions(
+  task_sl,actual_date,task,person,priority,
+  plan_date,plan_time,actual_time,lead_time
+)
+select
+  split_part(key,':',3)::bigint,
+  (value::jsonb->>'actualDate')::date,
+  coalesce(value::jsonb->>'task',''),
+  coalesce(value::jsonb->>'person',''),
+  case when lower(coalesce(value::jsonb->>'priority','false'))='true' then true else false end,
+  nullif(value::jsonb->>'planDate','')::date,
+  nullif(value::jsonb->>'planTime','')::time,
+  (value::jsonb->>'actualTime')::time,
+  coalesce(value::jsonb->>'leadTime','')
+from public.meta
+where key ~ '^taskCompletion:[0-9]{4}-[0-9]{2}-[0-9]{2}:[0-9]+$'
+  and value ~ '^[[:space:]]*\{'
+  and nullif(value::jsonb->>'actualDate','') is not null
+  and nullif(value::jsonb->>'actualTime','') is not null
+on conflict (task_sl,actual_date) do update
+set task=excluded.task,
+    person=excluded.person,
+    priority=excluded.priority,
+    plan_date=excluded.plan_date,
+    plan_time=excluded.plan_time,
+    actual_time=excluded.actual_time,
+    lead_time=excluded.lead_time,
+    updated_at=now();
+
+-- Remarks
+insert into public.task_remarks(task_sl,remark_date,remark)
+select
+  split_part(key,':',3)::bigint,
+  split_part(key,':',2)::date,
+  value
+from public.meta
+where key ~ '^taskRemark:[0-9]{4}-[0-9]{2}-[0-9]{2}:[0-9]+$'
+  and btrim(coalesce(value,'')) <> ''
+on conflict (task_sl,remark_date) do update
+set remark=excluded.remark, updated_at=now();
+
+-- Daily working hours. Current legacy keys encode spaces as %20.
+insert into public.working_hours_daily(person,work_date,minutes)
+select
+  replace(split_part(key,':',3),'%20',' '),
+  split_part(key,':',2)::date,
+  value::integer
+from public.meta
+where key ~ '^workingHoursDaily:[0-9]{4}-[0-9]{2}-[0-9]{2}:.+$'
+  and value ~ '^[0-9]+$'
+  and value::integer between 0 and 1440
+on conflict (person,work_date) do update
+set minutes=excluded.minutes, updated_at=now();
+
+-- Default working hours from legacy JSON; values are stored as hours.
+insert into public.working_hours_defaults(person,minutes)
+select
+  e.key,
+  greatest(0,least(1440,round(e.value::numeric*60)::integer))
+from public.meta m
+cross join lateral jsonb_each_text(
+  case
+    when m.value ~ '^[[:space:]]*\{' then m.value::jsonb
+    else '{}'::jsonb
+  end
+) e
+where m.key='workingHours'
+  and e.value ~ '^[0-9]+([.][0-9]+)?$'
+on conflict (person) do update
+set minutes=excluded.minutes, updated_at=now();
+
+-- Ensure every active user has a database default.
+insert into public.working_hours_defaults(person,minutes)
+select name,480
+from public.users
+where name <> 'admin'
+on conflict (person) do nothing;
+
+-- Multi Skill mapping
+insert into public.multi_skill_assignments(task_sl,backup_person)
+select
+  e.key::bigint,
+  e.value
+from public.meta m
+cross join lateral jsonb_each_text(
+  case
+    when m.value ~ '^[[:space:]]*\{' then m.value::jsonb
+    else '{}'::jsonb
+  end
+) e
+where m.key='multiSkillMap'
+  and e.key ~ '^[0-9]+$'
+  and btrim(e.value) <> ''
+on conflict (task_sl) do update
+set backup_person=excluded.backup_person, updated_at=now();
+
+-- Every active user gets an explicit SQL role.
+insert into public.user_roles(username,role)
+select name,'Team Member'
+from public.users
+where name <> 'admin'
+on conflict (username) do nothing;
+
+-- Explicit role markers override the default role.
+insert into public.user_roles(username,role)
+select
+  username,
+  substring(btrim(token) from 10)
+from public.module_access
+cross join lateral unnest(string_to_array(coalesce(modules,''),',')) token
+where btrim(token) like '__role__:%'
+  and substring(btrim(token) from 10) in ('Section Incharge','Supervisor','Team Member')
+on conflict (username) do update
+set role=excluded.role, updated_at=now();
+
+-- Leave applications
+insert into public.leave_applications(
+  id,employee,employee_role,leave_type,duration,
+  from_date,to_date,days,
+  short_start_time,short_end_time,short_minutes,
+  reason,
+  supervisor_status,supervisor_by,supervisor_at,
+  section_status,section_by,section_at,
+  rejected_stage,status,balancing_complete,
+  applied_by,applied_at,balanced_by,balanced_at
+)
+select
+  j->>'id',
+  j->>'employee',
+  coalesce(nullif(j->>'employeeRole',''),'Team Member'),
+  coalesce(nullif(j->>'leaveType',''),'Casual Leave'),
+  coalesce(nullif(j->>'duration',''),'single'),
+  (j->>'fromDate')::date,
+  (j->>'toDate')::date,
+  case when coalesce(j->>'days','') ~ '^[0-9]+$' then (j->>'days')::integer else 0 end,
+  nullif(j->>'shortStartTime','')::time,
+  nullif(j->>'shortEndTime','')::time,
+  case when coalesce(j->>'shortMinutes','') ~ '^[0-9]+$' then (j->>'shortMinutes')::integer else 0 end,
+  coalesce(j->>'reason',''),
+  coalesce(nullif(j->>'supervisorStatus',''),'Pending'),
+  coalesce(j->>'supervisorBy',''),
+  nullif(j->>'supervisorAt','')::timestamptz,
+  coalesce(nullif(j->>'sectionStatus',''),'Pending'),
+  coalesce(j->>'sectionBy',''),
+  nullif(j->>'sectionAt','')::timestamptz,
+  coalesce(j->>'rejectedStage',''),
+  coalesce(nullif(j->>'status',''),'Pending'),
+  case when lower(coalesce(j->>'balancingComplete','false'))='true' then true else false end,
+  coalesce(j->>'appliedBy',''),
+  coalesce(nullif(j->>'appliedAt','')::timestamptz,now()),
+  coalesce(j->>'balancedBy',''),
+  nullif(j->>'balancedAt','')::timestamptz
+from (
+  select value::jsonb as j
+  from public.meta
+  where key like 'leaveApplication:%'
+    and value ~ '^[[:space:]]*\{'
+) x
+where nullif(j->>'id','') is not null
+  and nullif(j->>'employee','') is not null
+  and coalesce(j->>'fromDate','') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+  and coalesce(j->>'toDate','') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+on conflict (id) do update
+set employee=excluded.employee,
+    employee_role=excluded.employee_role,
+    leave_type=excluded.leave_type,
+    duration=excluded.duration,
+    from_date=excluded.from_date,
+    to_date=excluded.to_date,
+    days=excluded.days,
+    short_start_time=excluded.short_start_time,
+    short_end_time=excluded.short_end_time,
+    short_minutes=excluded.short_minutes,
+    reason=excluded.reason,
+    supervisor_status=excluded.supervisor_status,
+    supervisor_by=excluded.supervisor_by,
+    supervisor_at=excluded.supervisor_at,
+    section_status=excluded.section_status,
+    section_by=excluded.section_by,
+    section_at=excluded.section_at,
+    rejected_stage=excluded.rejected_stage,
+    status=excluded.status,
+    balancing_complete=excluded.balancing_complete,
+    applied_by=excluded.applied_by,
+    applied_at=excluded.applied_at,
+    balanced_by=excluded.balanced_by,
+    balanced_at=excluded.balanced_at,
+    updated_at=now();
+
+-- Leave report balancing and acceptance
+insert into public.leave_report_coverage(
+  application_id,task_sl,assignee,
+  acceptance_status,responded_at,responded_by
+)
+select
+  j->>'id',
+  a.key::bigint,
+  a.value,
+  case
+    when coalesce(j->'reportAcceptance'->a.key->>'status','Pending')
+         in ('Pending','Accepted','Rejected')
+      then coalesce(j->'reportAcceptance'->a.key->>'status','Pending')
+    else 'Pending'
+  end,
+  nullif(j->'reportAcceptance'->a.key->>'respondedAt','')::timestamptz,
+  coalesce(j->'reportAcceptance'->a.key->>'respondedBy','')
+from (
+  select value::jsonb as j
+  from public.meta
+  where key like 'leaveApplication:%'
+    and value ~ '^[[:space:]]*\{'
+) x
+cross join lateral jsonb_each_text(coalesce(j->'reportAssignments','{}'::jsonb)) a
+where nullif(j->>'id','') is not null
+  and a.key ~ '^[0-9]+$'
+  and btrim(a.value) <> ''
+on conflict (application_id,task_sl) do update
+set assignee=excluded.assignee,
+    acceptance_status=excluded.acceptance_status,
+    responded_at=excluded.responded_at,
+    responded_by=excluded.responded_by,
+    updated_at=now();
+
+-- Automatic update timestamps.
+create or replace function public.set_datacell_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at=now();
+  return new;
+end;
+$$;
+
+do $$
+declare
+  t text;
+begin
+  foreach t in array array[
+    'app_state',
+    'task_completions',
+    'task_remarks',
+    'working_hours_defaults',
+    'working_hours_daily',
+    'multi_skill_assignments',
+    'user_roles',
+    'leave_applications',
+    'leave_report_coverage'
+  ]
+  loop
+    execute format('drop trigger if exists trg_datacell_updated_at on public.%I',t);
+    execute format(
+      'create trigger trg_datacell_updated_at before update on public.%I for each row execute function public.set_datacell_updated_at()',
+      t
+    );
+  end loop;
+end $$;
+
+-- Current GitHub Pages client uses a publishable key directly.
+-- Preserve current behavior on the new tables.
+grant select,insert,update,delete on
+  public.app_state,
+  public.task_completions,
+  public.task_remarks,
+  public.working_hours_defaults,
+  public.working_hours_daily,
+  public.multi_skill_assignments,
+  public.user_roles,
+  public.leave_applications,
+  public.leave_report_coverage
+to anon, authenticated;
+
+alter table public.app_state enable row level security;
+alter table public.task_completions enable row level security;
+alter table public.task_remarks enable row level security;
+alter table public.working_hours_defaults enable row level security;
+alter table public.working_hours_daily enable row level security;
+alter table public.multi_skill_assignments enable row level security;
+alter table public.user_roles enable row level security;
+alter table public.leave_applications enable row level security;
+alter table public.leave_report_coverage enable row level security;
+
+do $$
+declare
+  t text;
+begin
+  foreach t in array array[
+    'app_state',
+    'task_completions',
+    'task_remarks',
+    'working_hours_defaults',
+    'working_hours_daily',
+    'multi_skill_assignments',
+    'user_roles',
+    'leave_applications',
+    'leave_report_coverage'
+  ]
+  loop
+    execute format('drop policy if exists "app_live_all" on public.%I',t);
+    execute format(
+      'create policy "app_live_all" on public.%I for all to anon, authenticated using (true) with check (true)',
+      t
+    );
+  end loop;
+end $$;
+
+commit;
+ then value::bigint else 1 end from public.meta where key='nextSl' limit 1),1),
+    coalesce((select max(sl)+1 from public.tasks),1)
+  )::text)
+on conflict (key) do update
+set value=case
+      when excluded.key='nextSl' then excluded.value
+      else public.app_state.value
+    end,
+    updated_at=now();
 
 -- Historical task completion snapshots
 insert into public.task_completions(
