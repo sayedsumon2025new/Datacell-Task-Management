@@ -208,6 +208,17 @@ body::before{content:'';position:fixed;inset:0;background:linear-gradient(135deg
 .leave-status.pending{background:rgba(245,200,66,.1);color:#f5c842;border:1px solid rgba(245,200,66,.25);}
 .leave-status.approved{background:rgba(62,240,176,.1);color:#3ef0b0;border:1px solid rgba(62,240,176,.25);}
 .leave-status.rejected{background:rgba(248,113,113,.1);color:#f87171;border:1px solid rgba(248,113,113,.25);}
+.leave-status.pending-supervisor{background:rgba(245,200,66,.1);color:#f5c842;border:1px solid rgba(245,200,66,.25);}
+.leave-status.pending-section-incharge{background:rgba(96,165,250,.1);color:#60a5fa;border:1px solid rgba(96,165,250,.25);}
+.leave-approval-actions{display:flex;gap:7px;flex-wrap:wrap;}
+.leave-approve-btn,.leave-reject-btn{border-radius:7px;padding:6px 10px;font-family:'DM Mono',monospace;font-size:.62rem;cursor:pointer;}
+.leave-approve-btn{background:rgba(62,240,176,.1);border:1px solid rgba(62,240,176,.3);color:#3ef0b0;}
+.leave-reject-btn{background:rgba(248,113,113,.1);border:1px solid rgba(248,113,113,.3);color:#f87171;}
+.leave-approve-btn:disabled,.leave-reject-btn:disabled{opacity:.45;cursor:not-allowed;}
+.leave-flow{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-family:'DM Mono',monospace;font-size:.62rem;color:var(--muted);}
+.leave-flow-step{padding:4px 8px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);}
+.leave-flow-step.done{color:#3ef0b0;border-color:rgba(62,240,176,.25);}
+.leave-flow-step.current{color:#f5c842;border-color:rgba(245,200,66,.25);}
 .leave-recent-wrap{overflow:auto;max-height:540px;}
 .leave-recent-wrap .pct-table{min-width:760px;}
 @media(max-width:1180px){.leave-app-layout{grid-template-columns:1fr}.leave-recent-wrap{max-height:none}}
@@ -2256,6 +2267,149 @@ async function saveLeaveApplication(application,button){
     return false;
   }finally{button.disabled=false;button.textContent=label;}
 }
+function leaveApplicantRole(application){
+  return application.employeeRole||getUserJobRole(application.employee)||'Team Member';
+}
+function leaveStage(application){
+  const role=leaveApplicantRole(application);
+  const status=String(application.status||'Pending');
+  if(status==='Approved'||status==='Rejected')return 'done';
+  if(role==='Team Member'){
+    if(application.supervisorStatus==='Approved'||status==='Pending Section Incharge')return 'section';
+    return 'supervisor';
+  }
+  if(role==='Supervisor')return 'section';
+  return 'section';
+}
+function leaveDisplayStatus(application){
+  const status=String(application.status||'Pending');
+  if(status==='Approved'||status==='Rejected')return status;
+  const stage=leaveStage(application);
+  return stage==='supervisor'?'Pending Supervisor':'Pending Section Incharge';
+}
+function leaveStatusClass(status){
+  return String(status||'Pending').toLowerCase().replace(/\s+/g,'-');
+}
+function canActOnLeave(application){
+  const role=currentUser==='admin'?'Admin':getUserJobRole(currentUser);
+  const stage=leaveStage(application);
+  if(String(application.status)==='Approved'||String(application.status)==='Rejected')return false;
+  if(currentUser==='admin')return true;
+  if(stage==='supervisor')return role==='Supervisor';
+  if(stage==='section')return role==='Section Incharge';
+  return false;
+}
+async function updateLeaveApproval(application,decision,button){
+  if(!['Approved','Rejected'].includes(decision)||!canActOnLeave(application)){
+    toast('You are not authorized for this approval stage','error');return false;
+  }
+  const stage=leaveStage(application);
+  const updated={...application};
+  const now=new Date().toISOString();
+  if(stage==='supervisor'){
+    updated.supervisorStatus=decision;
+    updated.supervisorBy=currentUser;
+    updated.supervisorAt=now;
+    if(decision==='Rejected'){
+      updated.status='Rejected';
+      updated.rejectedStage='Supervisor';
+    }else{
+      updated.status='Pending Section Incharge';
+      updated.sectionStatus='Pending';
+    }
+  }else{
+    updated.sectionStatus=decision;
+    updated.sectionBy=currentUser;
+    updated.sectionAt=now;
+    if(decision==='Rejected'){
+      updated.status='Rejected';
+      updated.rejectedStage='Section Incharge';
+    }else{
+      updated.status='Approved';
+    }
+  }
+  const key='leaveApplication:'+updated.id,label=button?.textContent||'';
+  if(button){button.disabled=true;button.textContent='SAVING...';}
+  try{
+    await queueTaskWrite(async()=>{
+      const rows=await dbRequest('meta','POST','on_conflict=key',
+        [{key,value:JSON.stringify(updated)}],'resolution=merge-duplicates,return=representation');
+      if(!Array.isArray(rows)||!rows.some(r=>r.key===key))throw new Error('Approval update was not confirmed');
+      const verify=await dbRequest('meta','GET','select=key,value&key=eq.'+encodeURIComponent(key));
+      const row=Array.isArray(verify)?verify.find(r=>r.key===key):null;
+      if(!row)throw new Error('Approval could not be verified');
+      const confirmed=JSON.parse(row.value);
+      if(confirmed.status!==updated.status)throw new Error('Approval status did not persist');
+      leaveApplications=leaveApplications.map(a=>a.id===confirmed.id?confirmed:a);
+      await notifySaved();
+    });
+    toast((stage==='supervisor'?'Supervisor':'Section Incharge')+' '+decision.toLowerCase()+' saved','success');
+    return true;
+  }catch(e){toast('Approval not saved: '+e.message,'error');return false;}
+  finally{if(button){button.disabled=false;button.textContent=label;}}
+}
+function renderLeaveApprovalPanel(panel){
+  panel.innerHTML='';
+  const role=currentUser==='admin'?'Admin':getUserJobRole(currentUser);
+  const head=document.createElement('div');head.className='leave-panel';
+  head.style.marginBottom='14px';
+  head.innerHTML='<div class="leave-panel-title">Leave Approval</div>'
+    +'<div class="leave-panel-sub">// TWO-STEP FLOW · TEAM MEMBER → SUPERVISOR → SECTION INCHARGE</div>'
+    +'<div class="leave-flow"><span class="leave-flow-step">Team Member applies</span><span>→</span><span class="leave-flow-step">Supervisor review</span><span>→</span><span class="leave-flow-step">Section Incharge final approval</span></div>'
+    +'<div style="margin-top:10px;font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted)">Signed in as: '+currentUser+' · '+role+'</div>';
+  panel.appendChild(head);
+
+  const box=document.createElement('div');box.className='leave-panel';panel.appendChild(box);
+  const draw=()=>{
+    box.innerHTML='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px"><div><div class="leave-panel-title">Approval Queue</div>'
+      +'<div class="leave-panel-sub">// ONLY APPLICATIONS WAITING FOR YOUR CURRENT APPROVAL STAGE</div></div>'
+      +'<button type="button" class="fbtn" id="leaveApprovalRefresh">REFRESH</button></div>';
+    let queue=leaveApplications.filter(a=>{
+      if(String(a.status)==='Approved'||String(a.status)==='Rejected')return false;
+      const stage=leaveStage(a);
+      if(currentUser==='admin')return true;
+      if(role==='Supervisor')return stage==='supervisor'&&leaveApplicantRole(a)==='Team Member';
+      if(role==='Section Incharge')return stage==='section';
+      return false;
+    }).sort((a,b)=>String(a.appliedAt||'').localeCompare(String(b.appliedAt||'')));
+
+    const wrap=document.createElement('div');wrap.className='leave-recent-wrap';
+    const table=document.createElement('table');table.className='pct-table';table.style.minWidth='1050px';
+    table.innerHTML='<thead><tr><th>#</th><th>Employee</th><th>Role</th><th>Leave Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Stage</th><th>Action</th></tr></thead>';
+    const tbody=document.createElement('tbody');
+    queue.forEach((a,i)=>{
+      const tr=document.createElement('tr');
+      [i+1,a.employee,leaveApplicantRole(a),a.leaveType,formatDateDisplay(a.fromDate),formatDateDisplay(a.toDate),a.days,a.reason].forEach(v=>{
+        const td=document.createElement('td');td.textContent=v;tr.appendChild(td);
+      });
+      const stageTd=document.createElement('td');
+      const stage=leaveStage(a);
+      stageTd.textContent=stage==='supervisor'?'Supervisor Approval':'Section Incharge Approval';
+      stageTd.style.color=stage==='supervisor'?'#f5c842':'#60a5fa';
+      tr.appendChild(stageTd);
+      const actionTd=document.createElement('td');
+      const actions=document.createElement('div');actions.className='leave-approval-actions';
+      const approve=document.createElement('button');approve.type='button';approve.className='leave-approve-btn';approve.textContent='APPROVE';
+      const reject=document.createElement('button');reject.type='button';reject.className='leave-reject-btn';reject.textContent='REJECT';
+      approve.onclick=async()=>{reject.disabled=true;if(await updateLeaveApproval(a,'Approved',approve)){await loadLeaveApplicationsRemote();draw();}else reject.disabled=false;};
+      reject.onclick=async()=>{approve.disabled=true;if(await updateLeaveApproval(a,'Rejected',reject)){await loadLeaveApplicationsRemote();draw();}else approve.disabled=false;};
+      actions.append(approve,reject);actionTd.appendChild(actions);tr.appendChild(actionTd);
+      tbody.appendChild(tr);
+    });
+    if(!queue.length){
+      const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=10;
+      td.textContent=role==='Team Member'?'No approval action is assigned to Team Member role.':'No leave applications are waiting for your approval.';
+      td.style.cssText='text-align:center;padding:30px;color:var(--muted);font-family:DM Mono,monospace';
+      tr.appendChild(td);tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);wrap.appendChild(table);box.appendChild(wrap);
+    const refresh=box.querySelector('#leaveApprovalRefresh');
+    if(refresh)refresh.onclick=async()=>{refresh.disabled=true;const ok=await loadLeaveApplicationsRemote();if(ok)draw();else{refresh.disabled=false;toast('Could not refresh approval queue','error');}};
+  };
+  draw();
+  loadLeaveApplicationsRemote().then(ok=>{if(ok&&panel.isConnected)draw();});
+}
+
 function renderLeaveApplicationPanel(panel){
   panel.innerHTML='';
   const layout=document.createElement('div');layout.className='leave-app-layout';
@@ -2321,7 +2475,7 @@ function renderLeaveApplicationPanel(panel){
       const values=[i+1,a.employee,a.leaveType,formatDateDisplay(a.fromDate),formatDateDisplay(a.toDate),a.days,a.reason];
       values.forEach(v=>{const td=document.createElement('td');td.textContent=v;tr.appendChild(td);});
       const statusTd=document.createElement('td');const badge=document.createElement('span');
-      const status=String(a.status||'Pending');badge.className='leave-status '+status.toLowerCase();badge.textContent=status;statusTd.appendChild(badge);tr.appendChild(statusTd);
+      const status=leaveDisplayStatus(a);badge.className='leave-status '+leaveStatusClass(status);badge.textContent=status;statusTd.appendChild(badge);tr.appendChild(statusTd);
       const applied=document.createElement('td');applied.textContent=formatDateDisplay(String(a.appliedAt||'').slice(0,10));tr.appendChild(applied);
       tbody.appendChild(tr);
     });
@@ -2358,7 +2512,10 @@ function renderLeaveApplicationPanel(panel){
       toDate:to.value,
       days,
       reason:reason.value.trim(),
-      status:'Pending',
+      employeeRole:getUserJobRole(employee.value),
+      supervisorStatus:getUserJobRole(employee.value)==='Team Member'?'Pending':'Not Required',
+      sectionStatus:'Pending',
+      status:getUserJobRole(employee.value)==='Team Member'?'Pending Supervisor':'Pending Section Incharge',
       appliedBy:currentUser,
       appliedAt:now.toISOString()
     };
@@ -2392,6 +2549,7 @@ function buildLeaveManagement(c){
   c.appendChild(subNav);
   const panel=document.createElement('div');
   if(leaveSubTab==='application'){c.appendChild(panel);renderLeaveApplicationPanel(panel);return;}
+  if(leaveSubTab==='approval'){c.appendChild(panel);renderLeaveApprovalPanel(panel);return;}
   panel.className='chart-full';panel.style.cssText='padding:24px;min-height:260px;';
   const content={
     status:{title:'Leave Status Summary',sub:'View leave status, balances and request summaries.',icon:'📊'},
