@@ -1416,8 +1416,10 @@ function completedOnDate(task,date){
 }
 function completionIsLate(task,date=localISODate(),time=currentTime24()){
   if(!task||!task.planTime)return false;
-  const planDate=task.planDate||date;
-  return timeCmp(planDate,task.planTime,date,time)==='late';
+  const plan=clockMinutes(task.planTime),actual=clockMinutes(time);
+  if(!Number.isFinite(plan)||!Number.isFinite(actual))return false;
+  // Late Remarks rule must match Overview: selected/completion date Plan Time vs Actual Time.
+  return actual>plan;
 }
 function getRemarkInput(sl){
   return document.querySelector('[data-remark-sl="'+Number(sl)+'"]');
@@ -1463,7 +1465,14 @@ async function completePersonalTask(sl,button){
         taskCompletionHistory[task.actualDate+':'+sl]={...task};
       }
       const time=completionTime;
+      const lateAtSave=selectedDateLateMinutes({...task,actualDate:date,actualTime:time})>0;
+      if(lateAtSave&&!remark){
+        throw new Error('Late completion cannot be saved without a Remarks reason');
+      }
       if(remark)await saveTaskRemark(date,sl,remark);
+      if(lateAtSave&&!taskRemark(date,sl)){
+        throw new Error('Delay Remarks were not persisted; DONE was cancelled');
+      }
       await patchTaskRecord(sl,{actual_date:date,actual_time:time});
       const check=await dbRequest('tasks','GET','sl=eq.'+sl+'&select=sl,person,actual_date,actual_time');
       if(check.length!==1||check[0].actual_date!==date||String(check[0].actual_time||'').slice(0,5)!==time){
