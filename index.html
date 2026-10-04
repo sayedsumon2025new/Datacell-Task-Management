@@ -840,6 +840,9 @@ function applyRemoteData(data) {
   if(Array.isArray(data.leaveApplications)){
     if(JSON.stringify(leaveApplications)!==JSON.stringify(data.leaveApplications)){leaveApplications=data.leaveApplications;changed=true;}
   }
+  if(data.userJobRoles){
+    if(JSON.stringify(userJobRoles)!==JSON.stringify(data.userJobRoles)){userJobRoles=data.userJobRoles;changed=true;}
+  }
   if (data.dailyWorkingHours) {
     if(JSON.stringify(dailyWorkingHours)!==JSON.stringify(data.dailyWorkingHours)){dailyWorkingHours=data.dailyWorkingHours;changed=true;}
   }
@@ -894,6 +897,7 @@ async function sbFetchAll() {
     taskCompletionHistory:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('taskCompletion:')).flatMap(r=>{try{const t=JSON.parse(r.value);return t&&t.actualDate&&t.actualTime?[[r.key.slice('taskCompletion:'.length),t]]:[];}catch(e){return [];}})),
     taskRemarks:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('taskRemark:')).map(r=>[r.key.slice('taskRemark:'.length),String(r.value||'')])),
     leaveApplications:metaRows.filter(r=>r.key.startsWith('leaveApplication:')).flatMap(r=>{try{const a=JSON.parse(r.value);return a&&a.id&&a.employee&&a.fromDate&&a.toDate?[a]:[];}catch(e){return [];}}).sort((a,b)=>String(b.appliedAt||'').localeCompare(String(a.appliedAt||''))),
+    userJobRoles:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('userRole:')).map(r=>{try{return [decodeURIComponent(r.key.slice('userRole:'.length)),String(r.value||'Team Member')];}catch(e){return [r.key.slice('userRole:'.length),String(r.value||'Team Member')];}})),
     tasks: fetchedTasks, doneState: fetchedDone, users: fetchedUsers, moduleAccess: fetchedAccess,
     workingHours: fetchedWorkingHours,
     dailyWorkingHours:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('workingHoursDaily:')&&r.value!==''&&Number.isFinite(Number(r.value))&&Number(r.value)>=0&&Number(r.value)<=1440).map(r=>[r.key,Number(r.value)])),
@@ -1131,6 +1135,34 @@ async function syncUsers() {
 }
 
 // ── WRITE: module access ─────────────────────────────────────────
+const JOB_ROLES=['Section Incharge','Supervisor','Team Member'];
+function userRoleKey(name){return 'userRole:'+encodeURIComponent(name);}
+function getUserJobRole(name){return userJobRoles[name]||'Team Member';}
+async function saveUserJobRole(name,role,button){
+  if(!JOB_ROLES.includes(role)){toast('Select a valid job role','error');return false;}
+  const key=userRoleKey(name),label=button?.textContent||'';
+  if(button){button.disabled=true;button.textContent='SAVING...';}
+  try{
+    const rows=await dbRequest('meta','POST','on_conflict=key',
+      [{key,value:role}],'resolution=merge-duplicates,return=representation');
+    if(!Array.isArray(rows)||!rows.some(r=>r.key===key&&String(r.value||'')===role))throw new Error('Job role was not confirmed');
+    userJobRoles[name]=role;
+    await notifySaved();
+    toast('Job role saved: '+name+' → '+role,'success');
+    return true;
+  }catch(e){toast('Job role not saved: '+e.message,'error');return false;}
+  finally{if(button){button.disabled=false;button.textContent=label;}}
+}
+async function deleteUserJobRole(name){
+  const key=userRoleKey(name);
+  try{
+    await dbRequest('meta','DELETE','key=eq.'+encodeURIComponent(key));
+    delete userJobRoles[name];
+    await notifySaved();
+    return true;
+  }catch(e){console.error('Job role cleanup failed:',e);return false;}
+}
+
 async function syncModuleAccess() {
   if (!sbConfigured()) return false;
   const rows = Object.entries(moduleAccess).map(([user, mods]) => ({
@@ -1218,6 +1250,7 @@ async function initFromSheets() {
 // ─── STATE ───
 let currentUser=null,taskFilter='all',searchQ='',adminTab='overview',userView='list',personalActualDate=localISODate();
 let moduleAccess = {}; // user → [module IDs]
+let userJobRoles = {}; // username → job role
 let workingHours = (()=>{
   try{
     const saved=JSON.parse(localStorage.getItem('fts_working_hours')||'{}');
@@ -3418,7 +3451,7 @@ function renderSettingsBody(body){
 function renderSettingsUsers(body){
   body.insertAdjacentHTML('beforeend',
     '<div class="s-section-title">👤 User Management</div>'
-    +'<div class="s-section-sub">// ADD NEW USERS · CHANGE PASSWORDS · REMOVE USERS</div>'
+    +'<div class="s-section-sub">// ADD USERS · ASSIGN JOB ROLES · CHANGE PASSWORDS · REMOVE USERS</div>'
   );
 
   // Add user form
@@ -3428,6 +3461,7 @@ function renderSettingsUsers(body){
     +'<div class="aug">'
     +'<div class="fg"><label>FULL NAME</label><input type="text" class="fi" id="nu-name" placeholder="e.g. Fatima" style="padding:9px 12px;font-size:.85rem"></div>'
     +'<div class="fg"><label>PASSWORD</label><input type="text" class="fi" id="nu-pass" placeholder="Set password" style="padding:9px 12px;font-size:.85rem"></div>'
+    +'<div class="fg"><label>JOB ROLE</label><select class="fi-sel" id="nu-role" style="height:38px"><option value="Section Incharge">Section Incharge</option><option value="Supervisor">Supervisor</option><option value="Team Member" selected>Team Member</option></select></div>'
     +'<div class="fg"><label>COLOR</label>'
     +'<div id="nu-color-preview" style="height:38px;border-radius:9px;border:1px solid var(--border);display:flex;align-items:center;padding:0 10px;gap:8px;background:var(--surface2)">'
     +'<div id="nu-swatch" style="width:16px;height:16px;border-radius:4px;background:'+selectedColor+'"></div>'
@@ -3451,9 +3485,10 @@ function renderSettingsUsers(body){
   });
 
   // Submit
-  document.getElementById('nu-submit').onclick=()=>{
+  document.getElementById('nu-submit').onclick=async()=>{
     const name=document.getElementById('nu-name').value.trim();
     const pass=document.getElementById('nu-pass').value.trim();
+    const role=document.getElementById('nu-role').value;
     if(!name){toast('Enter a user name','error');return;}
     if(!pass){toast('Enter a password','error');return;}
     if(CREDS[name]!==undefined){toast('User "'+name+'" already exists','error');return;}
@@ -3461,11 +3496,16 @@ function renderSettingsUsers(body){
     CREDS[name]=pass;
     if(!PERSONS.includes(name))PERSONS.push(name);
     userRegistry.push({name,password:pass,color:selectedColor});
+    userJobRoles[name]=role;
     // Add to TH dynamically
     const acc=selectedColor;
     const rgb=hexToRgb(acc);
     TH[name]={bg:`rgba(${rgb},0.15)`,color:selectedColor,accent:selectedColor};
-    toast('User "'+name+'" added successfully','success');syncUsers();refreshLoginDropdown();
+    const usersSaved=await syncUsers();
+    if(!usersSaved){toast('User record could not be saved','error');return;}
+    const roleSaved=await saveUserJobRole(name,role);
+    refreshLoginDropdown();
+    toast(roleSaved?'User "'+name+'" added with '+role:'User added, but job role needs retry',roleSaved?'success':'error');
     renderSettingsBody(body);
   };
 
@@ -3480,12 +3520,27 @@ function renderSettingsUsers(body){
       +'<div class="user-card-info">'
       +'<div class="user-card-name" style="color:'+u.color+'">'+u.name+'</div>'
       +'<div class="user-card-pass">Password hidden · use reset/change</div>'
+      +'<div style="margin-top:7px"><select class="fi-sel user-role-select" data-name="'+u.name+'" style="height:30px;padding:4px 8px;font-size:.68rem;min-width:145px">'
+      +JOB_ROLES.map(role=>'<option value="'+role+'"'+(getUserJobRole(u.name)===role?' selected':'')+'>'+role+'</option>').join('')
+      +'</select></div>'
       +'</div>'
       +'<button class="user-card-pw-btn" data-name="'+u.name+'" title="Change password">🔑</button>'
       +'<button class="user-card-del" data-name="'+u.name+'" title="Remove user">✕</button>';
     grid.appendChild(card);
   });
   body.appendChild(grid);
+
+  // Job role change handler
+  grid.querySelectorAll('.user-role-select').forEach(select=>{
+    const original=getUserJobRole(select.dataset.name);
+    select.onchange=async()=>{
+      const name=select.dataset.name,role=select.value;
+      select.disabled=true;
+      const ok=await saveUserJobRole(name,role);
+      if(!ok)select.value=userJobRoles[name]||original||'Team Member';
+      select.disabled=false;
+    };
+  });
 
   // Password edit panel container
   const pwEditWrap=document.createElement('div');pwEditWrap.id='pw-edit-wrap';
@@ -3540,6 +3595,7 @@ function renderSettingsUsers(body){
         userRegistry=userRegistry.filter(u=>u.name!==name);
         delete CREDS[name];
         const idx=PERSONS.indexOf(name);if(idx>-1)PERSONS.splice(idx,1);
+        deleteUserJobRole(name);
         toast('User "'+name+'" removed','error');syncUsers();refreshLoginDropdown();
         renderSettingsBody(body);
       });
