@@ -1161,6 +1161,10 @@ async function sbSyncTasks(taskRows) {
     for(const sl of [...taskBaseline.keys()]){
       if(!localSls.has(sl)){
         await dbRequest('tasks','DELETE','sl=eq.'+sl);
+        if(SQL_TABLES.multi_skill_assignments){
+          await dbRequest('multi_skill_assignments','DELETE','task_sl=eq.'+encodeURIComponent(sl));
+          delete multiSkillMap[String(sl)];
+        }
         taskBaseline.delete(sl);
       }
     }
