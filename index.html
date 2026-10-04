@@ -1424,6 +1424,22 @@ function completionIsLate(task,date=localISODate(),time=currentTime24()){
 function getRemarkInput(sl){
   return document.querySelector('[data-remark-sl="'+Number(sl)+'"]');
 }
+async function loadTaskRemarksRemote(){
+  try{
+    const rows=await dbRequest('meta','GET','select=key,value&key=like.taskRemark:*&order=key.asc');
+    if(!Array.isArray(rows))return false;
+    const fresh={};
+    rows.forEach(r=>{
+      if(!r.key||!String(r.key).startsWith('taskRemark:'))return;
+      fresh[String(r.key).slice('taskRemark:'.length)]=String(r.value||'');
+    });
+    taskRemarks=fresh;
+    return true;
+  }catch(e){
+    console.error('Task remarks refresh failed:',e);
+    return false;
+  }
+}
 async function saveTaskRemark(date,sl,remark){
   const clean=String(remark||'').trim();
   const key='taskRemark:'+date+':'+Number(sl);
@@ -1432,8 +1448,15 @@ async function saveTaskRemark(date,sl,remark){
   if(!Array.isArray(rows)||!rows.some(r=>r.key===key&&String(r.value||'')===clean)){
     throw new Error('Remarks were not confirmed');
   }
-  taskRemarks[remarkKey(date,sl)]=clean;
-  return clean;
+
+  // SQL is the source of truth: read the exact row back before continuing.
+  const verify=await dbRequest('meta','GET','select=key,value&key=eq.'+encodeURIComponent(key));
+  const saved=Array.isArray(verify)?verify.find(r=>r.key===key):null;
+  if(!saved||String(saved.value||'')!==clean){
+    throw new Error('Remarks were not confirmed by SQL');
+  }
+  taskRemarks[remarkKey(date,sl)]=String(saved.value||'');
+  return taskRemarks[remarkKey(date,sl)];
 }
 async function completePersonalTask(sl,button){
   const user=currentUser,date=localISODate(),task=tasks.find(t=>t.sl===sl);
@@ -1484,6 +1507,7 @@ async function completePersonalTask(sl,button){
       doneBaseline[user]=[...getDone(user)];
       await notifySaved();
     });
+    if(remark)await loadTaskRemarksRemote();
     toast(late?'DONE · Actual time and delay remarks saved':'DONE · Actual time saved to Supabase','success');
     if(currentUser===user)renderContent();
     return true;
@@ -2242,8 +2266,9 @@ function formatLateMinutes(minutes){
   if(h)return h+'h';
   return m+'m';
 }
-function openLateDoneModal(person,lateTasks){
+async function openLateDoneModal(person,lateTasks){
   document.querySelectorAll('.kpi-late-modal-overlay').forEach(el=>el.remove());
+  await loadTaskRemarksRemote();
   const overlay=document.createElement('div');
   overlay.className='kpi-late-modal-overlay';
   overlay.setAttribute('role','dialog');
