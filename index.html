@@ -2479,9 +2479,28 @@ function canActOnLeave(application){
 function leaveReportTasks(application){
   const employee=String(application?.employee||'').trim();
   if(!employee)return [];
-  return tasks.filter(t=>{
-    const owners=String(t.person||'').split('/').map(x=>x.trim()).filter(Boolean);
-    return t.person===employee||owners.includes(employee);
+  const isShort=application?.leaveType==='Short Leave';
+  const leaveDate=String(application?.fromDate||'');
+  const start=String(application?.shortStartTime||'');
+  const end=String(application?.shortEndTime||'');
+  const shortStartMinutes=/^\d{2}:\d{2}$/.test(start)?Number(start.slice(0,2))*60+Number(start.slice(3,5)):null;
+  const shortEndMinutes=/^\d{2}:\d{2}$/.test(end)?Number(end.slice(0,2))*60+Number(end.slice(3,5)):null;
+
+  return tasks.filter(baseTask=>{
+    const t=isShort&&leaveDate?taskForDate(baseTask,leaveDate):baseTask;
+    const owners=String(t.person||baseTask.person||'').split('/').map(x=>x.trim()).filter(Boolean);
+    const owned=t.person===employee||baseTask.person===employee||owners.includes(employee);
+    if(!owned)return false;
+
+    if(isShort){
+      if(shortStartMinutes===null||shortEndMinutes===null)return false;
+      const plan=String(t.planTime||baseTask.planTime||'').slice(0,5);
+      if(!/^\d{2}:\d{2}$/.test(plan))return false;
+      const planMinutes=Number(plan.slice(0,2))*60+Number(plan.slice(3,5));
+      // Only reports whose Plan Time falls inside the Short Leave window need coverage.
+      return planMinutes>=shortStartMinutes&&planMinutes<=shortEndMinutes;
+    }
+    return true;
   }).sort((a,b)=>Number(a.sl)-Number(b.sl));
 }
 function leaveStoredAssignments(application){
@@ -2988,7 +3007,13 @@ function renderLeaveApplicationPanel(panel){
     if(reason.value.trim().length<3){toast('Enter a leave reason','error');reason.focus();return;}
     const now=new Date();
     const id=String(now.getTime())+'-'+Math.random().toString(36).slice(2,8);
-    const leaveReports=leaveReportTasks({employee:employee.value});
+    const leaveReports=leaveReportTasks({
+      employee:employee.value,
+      leaveType:leaveType.value,
+      fromDate:from.value,
+      shortStartTime:isShort?shortStart.value:'',
+      shortEndTime:isShort?shortEnd.value:''
+    });
     const missingMultiSkill=leaveReports.filter(t=>!multiSkillMap[String(t.sl)]||multiSkillMap[String(t.sl)]===employee.value);
     if(missingMultiSkill.length){
       toast('Leave cannot be submitted. Multi Skill backup missing for '+missingMultiSkill.length+' report(s).','error');
