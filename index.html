@@ -1061,7 +1061,7 @@ async function sbFetchAll() {
   }
 
   let fetchedLeaves=[];
-  if(SQL_TABLES.leave_applications){
+  if(SQL_TABLES.leave_applications&&SQL_TABLES.leave_report_coverage){
     const coverageByApp={};
     (leaveCoverageRes.rows||[]).forEach(r=>{
       const id=String(r.application_id||'');if(!id)return;
@@ -2595,7 +2595,7 @@ async function persistLeaveApplication(application){
 }
 async function loadLeaveApplicationsRemote(){
   try{
-    if(SQL_TABLES.leave_applications){
+    if(SQL_TABLES.leave_applications&&SQL_TABLES.leave_report_coverage){
       const appRows=await dbRequest('leave_applications','GET','select=*&order=applied_at.desc');
       const covRows=SQL_TABLES.leave_report_coverage
         ?await dbRequest('leave_report_coverage','GET','select=*&order=application_id.asc,task_sl.asc')
