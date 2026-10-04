@@ -188,6 +188,15 @@ where token like '__role__:%'
   and substring(token from 10) in ('Section Incharge','Supervisor','Team Member')
 on conflict (username) do update set role=excluded.role, updated_at=now();
 
+-- Remove legacy role markers from module_access after roles are safely copied.
+update public.module_access ma
+set modules=coalesce((
+  select string_agg(btrim(token),',' order by ord)
+  from unnest(string_to_array(coalesce(ma.modules,''),',')) with ordinality as x(token,ord)
+  where btrim(token)<>'' and btrim(token) not like '__role__:%'
+),'')
+where coalesce(ma.modules,'') like '%__role__:%';
+
 -- Migrate leave applications from JSON.
 insert into public.leave_applications(
   id,employee,employee_role,leave_type,duration,from_date,to_date,days,
