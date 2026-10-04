@@ -913,7 +913,16 @@ async function sbFetchAll() {
     taskCompletionHistory:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('taskCompletion:')).flatMap(r=>{try{const t=JSON.parse(r.value);return t&&t.actualDate&&t.actualTime?[[r.key.slice('taskCompletion:'.length),t]]:[];}catch(e){return [];}})),
     taskRemarks:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('taskRemark:')).map(r=>[r.key.slice('taskRemark:'.length),String(r.value||'')])),
     leaveApplications:metaRows.filter(r=>r.key.startsWith('leaveApplication:')).flatMap(r=>{try{const a=JSON.parse(r.value);return a&&a.id&&a.employee&&a.fromDate&&a.toDate?[a]:[];}catch(e){return [];}}).sort((a,b)=>String(b.appliedAt||'').localeCompare(String(a.appliedAt||''))),
-    userJobRoles:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('userRole:')).map(r=>{try{return [decodeURIComponent(r.key.slice('userRole:'.length)),String(r.value||'Team Member')];}catch(e){return [r.key.slice('userRole:'.length),String(r.value||'Team Member')];}})),
+    userJobRoles:(()=>{
+      const roles={},rank={};
+      metaRows.filter(r=>r.key.startsWith('userRole:')).forEach(r=>{
+        const suffix=r.key.slice('userRole:'.length);
+        let name=suffix;try{name=decodeURIComponent(suffix);}catch(e){}
+        const priority=suffix===name?2:1; // raw-name keys override legacy encoded-name keys
+        if(!rank[name]||priority>=rank[name]){roles[name]=String(r.value||'Team Member');rank[name]=priority;}
+      });
+      return roles;
+    })(),
     tasks: fetchedTasks, doneState: fetchedDone, users: fetchedUsers, moduleAccess: fetchedAccess,
     workingHours: fetchedWorkingHours,
     dailyWorkingHours:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('workingHoursDaily:')&&r.value!==''&&Number.isFinite(Number(r.value))&&Number(r.value)>=0&&Number(r.value)<=1440).map(r=>[r.key,Number(r.value)])),
@@ -1152,7 +1161,8 @@ async function syncUsers() {
 
 // ── WRITE: module access ─────────────────────────────────────────
 const JOB_ROLES=['Section Incharge','Supervisor','Team Member'];
-function userRoleKey(name){return 'userRole:'+encodeURIComponent(name);}
+function userRoleKey(name){return 'userRole:'+String(name||'').trim();}
+function legacyUserRoleKey(name){return 'userRole:'+encodeURIComponent(String(name||'').trim());}
 function getUserJobRole(name){return userJobRoles[name]||'Team Member';}
 async function saveUserJobRole(name,role,button){
   if(!JOB_ROLES.includes(role)){toast('Select a valid job role','error');return false;}
@@ -1173,6 +1183,11 @@ async function saveUserJobRole(name,role,button){
       confirmedRole=String(saved.value||'');
       if(confirmedRole!==role)throw new Error('Saved job role does not match selection');
       userJobRoles[name]=confirmedRole;
+      // Remove the old percent-encoded key so polling cannot resurrect a stale role.
+      const legacyKey=legacyUserRoleKey(name);
+      if(legacyKey!==key){
+        try{await dbRequest('meta','DELETE','key=eq.'+encodeURIComponent(legacyKey));}catch(e){console.warn('Legacy role key cleanup failed',e);}
+      }
       await notifySaved();
     });
     toast('Job role saved: '+name+' → '+confirmedRole,'success');
@@ -1186,9 +1201,10 @@ async function saveUserJobRole(name,role,button){
   }
 }
 async function deleteUserJobRole(name){
-  const key=userRoleKey(name);
+  const key=userRoleKey(name),legacyKey=legacyUserRoleKey(name);
   try{
     await dbRequest('meta','DELETE','key=eq.'+encodeURIComponent(key));
+    if(legacyKey!==key)await dbRequest('meta','DELETE','key=eq.'+encodeURIComponent(legacyKey));
     delete userJobRoles[name];
     await notifySaved();
     return true;
