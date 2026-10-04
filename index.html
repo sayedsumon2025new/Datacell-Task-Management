@@ -1346,77 +1346,52 @@ function roleFromModuleAccess(name){
   const role=marker?String(marker).slice(ROLE_MARKER_PREFIX.length):'';
   return JOB_ROLES.includes(role)?role:'';
 }
-function getUserJobRole(name){return roleFromModuleAccess(name)||userJobRoles[name]||'Team Member';}
+function getUserJobRole(name){return userJobRoles[name]||roleFromModuleAccess(name)||'Team Member';}
 async function saveUserJobRole(name,role,button){
   if(!JOB_ROLES.includes(role)){toast('Select a valid job role','error');return false;}
   const label=button?.textContent||'';
   if(button){button.disabled=true;button.textContent='SAVING...';}
   try{
-    let confirmedRole='';
     await queueTaskWrite(async()=>{
       setSyncStatus('syncing');
-
-      const previous=[...(moduleAccess[name]||[])];
-      const next=[...previous.filter(x=>!String(x).startsWith(ROLE_MARKER_PREFIX)),roleMarker(role)];
-      const modulesValue=next.join(',');
-
-      const rows=await dbRequest('module_access','POST','on_conflict=username',
-        [{username:name,modules:modulesValue}],'resolution=merge-duplicates,return=representation');
-      if(!Array.isArray(rows)||!rows.some(r=>r.username===name&&String(r.modules||'')===modulesValue)){
-        throw new Error('Job role write was not confirmed');
+      if(SQL_TABLES.user_roles){
+        const rows=await dbRequest('user_roles','POST','on_conflict=username',
+          [{username:name,role}],'resolution=merge-duplicates,return=representation');
+        const saved=Array.isArray(rows)?rows.find(r=>r.username===name):null;
+        if(!saved||String(saved.role)!==role)throw new Error('Job role write was not confirmed');
+        userJobRoles[name]=String(saved.role);
+      }else{
+        const previous=[...(moduleAccess[name]||[])];
+        const next=[...previous.filter(x=>!String(x).startsWith(ROLE_MARKER_PREFIX)),roleMarker(role)];
+        const modulesValue=next.join(',');
+        const rows=await dbRequest('module_access','POST','on_conflict=username',
+          [{username:name,modules:modulesValue}],'resolution=merge-duplicates,return=representation');
+        if(!Array.isArray(rows)||!rows.some(r=>r.username===name&&String(r.modules||'')===modulesValue))throw new Error('Job role write was not confirmed');
+        moduleAccess[name]=next;userJobRoles[name]=role;
       }
-
-      const verify=await dbRequest('module_access','GET',
-        'select=username,modules&username=eq.'+encodeURIComponent(name));
-      const saved=Array.isArray(verify)?verify.find(r=>r.username===name):null;
-      if(!saved)throw new Error('Saved job role could not be reloaded');
-
-      const confirmedModules=String(saved.modules||'').split(',').map(x=>x.trim()).filter(Boolean);
-      const marker=confirmedModules.find(x=>x.startsWith(ROLE_MARKER_PREFIX));
-      confirmedRole=marker?marker.slice(ROLE_MARKER_PREFIX.length):'';
-      if(confirmedRole!==role)throw new Error('Saved job role does not match selection');
-
-      moduleAccess[name]=confirmedModules;
-      userJobRoles[name]=confirmedRole;
-
-      // Best-effort cleanup of old meta-based role records after the reliable save.
-      try{
-        const rawKey=userRoleKey(name),legacyKey=legacyUserRoleKey(name);
-        await dbRequest('meta','DELETE','key=eq.'+encodeURIComponent(rawKey));
-        if(legacyKey!==rawKey)await dbRequest('meta','DELETE','key=eq.'+encodeURIComponent(legacyKey));
-      }catch(e){}
       await notifySaved();
     });
-
-    toast('Job role saved: '+name+' → '+confirmedRole,'success');
+    toast('Job role saved: '+name+' → '+role,'success');
     return true;
-  }catch(e){
-    setSyncStatus('error');
-    toast('Job role not saved: '+e.message,'error');
-    return false;
-  }finally{
-    if(button){button.disabled=false;button.textContent=label;}
-  }
+  }catch(e){setSyncStatus('error');toast('Job role not saved: '+e.message,'error');return false;}
+  finally{if(button){button.disabled=false;button.textContent=label;}}
 }
 async function deleteUserJobRole(name){
   try{
-    const previous=[...(moduleAccess[name]||[])];
-    const next=previous.filter(x=>!String(x).startsWith(ROLE_MARKER_PREFIX));
-    const modulesValue=next.join(',');
-    await dbRequest('module_access','POST','on_conflict=username',
-      [{username:name,modules:modulesValue}],'resolution=merge-duplicates,return=representation');
-    moduleAccess[name]=next;
+    if(SQL_TABLES.user_roles){
+      await dbRequest('user_roles','DELETE','username=eq.'+encodeURIComponent(name));
+    }else{
+      const previous=[...(moduleAccess[name]||[])];
+      const next=previous.filter(x=>!String(x).startsWith(ROLE_MARKER_PREFIX));
+      await dbRequest('module_access','POST','on_conflict=username',
+        [{username:name,modules:next.join(',')}],'resolution=merge-duplicates,return=representation');
+      moduleAccess[name]=next;
+    }
     delete userJobRoles[name];
-    try{
-      const rawKey=userRoleKey(name),legacyKey=legacyUserRoleKey(name);
-      await dbRequest('meta','DELETE','key=eq.'+encodeURIComponent(rawKey));
-      if(legacyKey!==rawKey)await dbRequest('meta','DELETE','key=eq.'+encodeURIComponent(legacyKey));
-    }catch(e){}
     await notifySaved();
     return true;
   }catch(e){console.error('Job role cleanup failed:',e);return false;}
 }
-
 async function syncModuleAccess() {
   if (!sbConfigured()) return false;
   // moduleAccess arrays may contain hidden __role__ markers; preserve them on sync.
@@ -1435,7 +1410,8 @@ async function sbBumpVersion() {
   if (!sbConfigured()) return false;
   const cur = Number(_lastVersion || 0);
   const next = String((Number.isFinite(cur) ? cur : 0) + 1);
-  const ok = await sbUpsert('meta', [{ key: 'version', value: next }]);
+  const table=SQL_TABLES.app_state?'app_state':'meta';
+  const ok = await sbUpsert(table, [{ key: 'version', value: next }]);
   if (ok) _lastVersion = next;
   return ok;
 }
@@ -1510,12 +1486,7 @@ async function initFromSheets() {
 let currentUser=null,taskFilter='all',searchQ='',adminTab='overview',userView='list',personalActualDate=localISODate();
 let moduleAccess = {}; // user → [module IDs]
 let userJobRoles = {}; // username → job role
-let workingHours = (()=>{
-  try{
-    const saved=JSON.parse(localStorage.getItem('fts_working_hours')||'{}');
-    return saved&&typeof saved==='object'&&!Array.isArray(saved)?saved:{};
-  }catch(e){return {};}
-})(); // person → daily working hours
+let workingHours = {}; // person → default daily working hours; loaded from SQL
 let kpiDate=localISODate(),kpiMonth='';
 let overviewDate=localISODate();
 let pendingReportFilters={person:'all',status:'all',priority:'all'};
@@ -1564,6 +1535,14 @@ function getRemarkInput(sl){
 }
 async function loadTaskRemarksRemote(){
   try{
+    if(SQL_TABLES.task_remarks){
+      const rows=await dbRequest('task_remarks','GET','select=task_sl,remark_date,remark&order=remark_date.asc,task_sl.asc');
+      if(!Array.isArray(rows))return false;
+      const fresh={};
+      rows.forEach(r=>{if(r.remark_date&&Number.isFinite(Number(r.task_sl)))fresh[remarkKey(r.remark_date,r.task_sl)]=String(r.remark||'');});
+      taskRemarks=fresh;
+      return true;
+    }
     const rows=await dbRequest('meta','GET','select=key,value&key=like.taskRemark:*&order=key.asc');
     if(!Array.isArray(rows))return false;
     const fresh={};
@@ -1580,19 +1559,23 @@ async function loadTaskRemarksRemote(){
 }
 async function saveTaskRemark(date,sl,remark){
   const clean=String(remark||'').trim();
+  if(SQL_TABLES.task_remarks){
+    const rows=await dbRequest('task_remarks','POST','on_conflict=task_sl,remark_date',
+      [{task_sl:Number(sl),remark_date:date,remark:clean}],'resolution=merge-duplicates,return=representation');
+    const saved=Array.isArray(rows)?rows.find(r=>Number(r.task_sl)===Number(sl)&&r.remark_date===date):null;
+    if(!saved||String(saved.remark||'')!==clean)throw new Error('Remarks were not confirmed by SQL');
+    taskRemarks[remarkKey(date,sl)]=String(saved.remark||'');
+    return taskRemarks[remarkKey(date,sl)];
+  }
   const key='taskRemark:'+date+':'+Number(sl);
   const rows=await dbRequest('meta','POST','on_conflict=key',
     [{key,value:clean}],'resolution=merge-duplicates,return=representation');
   if(!Array.isArray(rows)||!rows.some(r=>r.key===key&&String(r.value||'')===clean)){
     throw new Error('Remarks were not confirmed');
   }
-
-  // SQL is the source of truth: read the exact row back before continuing.
   const verify=await dbRequest('meta','GET','select=key,value&key=eq.'+encodeURIComponent(key));
   const saved=Array.isArray(verify)?verify.find(r=>r.key===key):null;
-  if(!saved||String(saved.value||'')!==clean){
-    throw new Error('Remarks were not confirmed by SQL');
-  }
+  if(!saved||String(saved.value||'')!==clean)throw new Error('Remarks were not confirmed by SQL');
   taskRemarks[remarkKey(date,sl)]=String(saved.value||'');
   return taskRemarks[remarkKey(date,sl)];
 }
@@ -1619,10 +1602,21 @@ async function completePersonalTask(sl,button){
       setSyncStatus('syncing');
       // Preserve the previous completion before recording a new day's status.
       if(task.actualDate&&task.actualTime&&task.actualDate!==date){
-        const key='taskCompletion:'+task.actualDate+':'+sl;
-        const rows=await dbRequest('meta','POST','on_conflict=key',
-          [{key,value:JSON.stringify(task)}],'resolution=merge-duplicates,return=representation');
-        if(!Array.isArray(rows)||!rows.some(r=>r.key===key&&r.value===JSON.stringify(task)))throw new Error('Previous completion could not be archived');
+        if(SQL_TABLES.task_completions){
+          const archiveRow={
+            task_sl:Number(sl),actual_date:task.actualDate,task:task.task||'',person:task.person||'',
+            priority:!!task.priority,plan_date:task.planDate||null,plan_time:task.planTime||null,
+            actual_time:task.actualTime||null,lead_time:task.leadTime||''
+          };
+          const rows=await dbRequest('task_completions','POST','on_conflict=task_sl,actual_date',
+            [archiveRow],'resolution=merge-duplicates,return=representation');
+          if(!Array.isArray(rows)||!rows.some(r=>Number(r.task_sl)===Number(sl)&&r.actual_date===task.actualDate))throw new Error('Previous completion could not be archived');
+        }else{
+          const key='taskCompletion:'+task.actualDate+':'+sl;
+          const rows=await dbRequest('meta','POST','on_conflict=key',
+            [{key,value:JSON.stringify(task)}],'resolution=merge-duplicates,return=representation');
+          if(!Array.isArray(rows)||!rows.some(r=>r.key===key&&r.value===JSON.stringify(task)))throw new Error('Previous completion could not be archived');
+        }
         taskCompletionHistory[task.actualDate+':'+sl]={...task};
       }
       const time=completionTime;
@@ -2560,21 +2554,21 @@ async function loadLeaveApplicationsRemote(){
 }
 async function loadMultiSkillMapRemote(){
   try{
-    const rows=await dbRequest('meta','GET','select=key,value&key=eq.multiSkillMap');
-    if(!Array.isArray(rows))return false;
-    const row=rows.find(r=>r.key==='multiSkillMap');
     let parsed={};
-    if(row){
-      try{parsed=JSON.parse(row.value||'{}')||{};}catch(e){parsed={};}
+    if(SQL_TABLES.multi_skill_assignments){
+      const rows=await dbRequest('multi_skill_assignments','GET','select=task_sl,backup_person&order=task_sl.asc');
+      if(!Array.isArray(rows))return false;
+      rows.forEach(r=>{if(Number.isFinite(Number(r.task_sl))&&r.backup_person)parsed[String(Number(r.task_sl))]=String(r.backup_person);});
+    }else{
+      const rows=await dbRequest('meta','GET','select=key,value&key=eq.multiSkillMap');
+      if(!Array.isArray(rows))return false;
+      const row=rows.find(r=>r.key==='multiSkillMap');
+      if(row){try{parsed=JSON.parse(row.value||'{}')||{};}catch(e){parsed={};}}
     }
-    if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))parsed={};
     const changed=JSON.stringify(parsed)!==JSON.stringify(multiSkillMap);
     multiSkillMap=parsed;
     return changed;
-  }catch(e){
-    console.error('Multi Skill refresh failed:',e);
-    return false;
-  }
+  }catch(e){console.error('Multi Skill refresh failed:',e);return false;}
 }
 async function refreshLeaveCoverageRemote(force=false){
   const now=Date.now();
@@ -3687,15 +3681,24 @@ async function saveMultiSkillMap(nextMap,button){
   if(button){button.disabled=true;button.textContent='SAVING...';}
   try{
     await queueTaskWrite(async()=>{
-      const rows=await dbRequest('meta','POST','on_conflict=key',
-        [{key:'multiSkillMap',value:JSON.stringify(nextMap)}],'resolution=merge-duplicates,return=representation');
-      if(!Array.isArray(rows)||!rows.some(r=>r.key==='multiSkillMap'))throw new Error('Multi Skill mapping was not confirmed');
-      const verify=await dbRequest('meta','GET','select=key,value&key=eq.multiSkillMap');
-      const row=Array.isArray(verify)?verify.find(r=>r.key==='multiSkillMap'):null;
-      if(!row)throw new Error('Saved Multi Skill mapping could not be reloaded');
-      const confirmed=JSON.parse(row.value||'{}');
-      if(JSON.stringify(confirmed)!==JSON.stringify(nextMap))throw new Error('Saved Multi Skill mapping does not match');
-      multiSkillMap=confirmed;
+      if(SQL_TABLES.multi_skill_assignments){
+        const remote=await dbRequest('multi_skill_assignments','GET','select=task_sl,backup_person');
+        const remoteMap=Object.fromEntries((remote||[]).map(r=>[String(Number(r.task_sl)),String(r.backup_person||'')]));
+        for(const key of Object.keys(remoteMap)){
+          if(!(key in nextMap))await dbRequest('multi_skill_assignments','DELETE','task_sl=eq.'+encodeURIComponent(key));
+        }
+        const rows=Object.entries(nextMap).filter(([,person])=>person).map(([task_sl,backup_person])=>({task_sl:Number(task_sl),backup_person}));
+        if(rows.length)await dbRequest('multi_skill_assignments','POST','on_conflict=task_sl',rows,'resolution=merge-duplicates,return=representation');
+        const verify=await dbRequest('multi_skill_assignments','GET','select=task_sl,backup_person');
+        const confirmed=Object.fromEntries((verify||[]).map(r=>[String(Number(r.task_sl)),String(r.backup_person||'')]));
+        if(JSON.stringify(confirmed)!==JSON.stringify(nextMap))throw new Error('Saved Multi Skill mapping does not match');
+        multiSkillMap=confirmed;
+      }else{
+        const rows=await dbRequest('meta','POST','on_conflict=key',
+          [{key:'multiSkillMap',value:JSON.stringify(nextMap)}],'resolution=merge-duplicates,return=representation');
+        if(!Array.isArray(rows)||!rows.some(r=>r.key==='multiSkillMap'))throw new Error('Multi Skill mapping was not confirmed');
+        multiSkillMap={...nextMap};
+      }
       await notifySaved();
     });
     toast('Multi Skill assignment saved','success');
