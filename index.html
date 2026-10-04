@@ -565,7 +565,7 @@ let nextSl=1;
 
 const SB_URL  = 'https://hqlowjnbugaehpxrqtzc.supabase.co';
 const SB_KEY  = 'sb_publishable_CyiA3Ls1wbctt1VCc3DOAA_NeOfPCfx';
-const POLL_INTERVAL_MS = 8000;
+const POLL_INTERVAL_MS = 5 * 60 * 1000;
 
 let _pollTimer = null;
 let _isSyncing = false;
@@ -3015,8 +3015,8 @@ function buildOverview(c){
   const filterNote=document.createElement('p');
   filterNote.style.cssText='font-size:.75rem;color:var(--muted);margin-bottom:16px';
   filterNote.textContent=overviewDate
-    ? 'Status for '+formatDateDisplay(overviewDate)+' · Based on saved actual completion dates. Pending = current tasks without completion on this date. Auto-refresh every 8 seconds.'
-    : 'All saved completion dates · Auto-refresh every 8 seconds.';
+    ? 'Status for '+formatDateDisplay(overviewDate)+' · Based on saved actual completion dates. Pending = current tasks without completion on this date. Auto-refresh every 5 minutes.'
+    : 'All saved completion dates · Auto-refresh every 5 minutes.';
   c.appendChild(filterNote);
 
   // Global stats strip
