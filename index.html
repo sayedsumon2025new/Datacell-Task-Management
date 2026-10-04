@@ -2535,22 +2535,100 @@ function leaveDateTimeDisplay(application,which){
 function leaveEmployeeOptions(){
   return [...new Set(userRegistry.map(u=>u.name).filter(Boolean))];
 }
+function leaveApplicationSqlRow(a){
+  return {
+    id:String(a.id),employee:String(a.employee||''),employee_role:String(a.employeeRole||getUserJobRole(a.employee)||'Team Member'),
+    leave_type:String(a.leaveType||''),duration:String(a.duration||'single'),from_date:a.fromDate,to_date:a.toDate,
+    days:Number(a.days||0),short_start_time:a.shortStartTime||null,short_end_time:a.shortEndTime||null,
+    short_minutes:Number(a.shortMinutes||0),reason:String(a.reason||''),
+    supervisor_status:String(a.supervisorStatus||'Pending'),supervisor_by:String(a.supervisorBy||''),
+    supervisor_at:a.supervisorAt||null,section_status:String(a.sectionStatus||'Pending'),
+    section_by:String(a.sectionBy||''),section_at:a.sectionAt||null,rejected_stage:String(a.rejectedStage||''),
+    status:String(a.status||'Pending'),balancing_complete:!!a.balancingComplete,
+    applied_by:String(a.appliedBy||''),applied_at:a.appliedAt||new Date().toISOString(),
+    balanced_by:String(a.balancedBy||''),balanced_at:a.balancedAt||null
+  };
+}
+function leaveCoverageSqlRows(a){
+  const assignments=(a&&a.reportAssignments&&typeof a.reportAssignments==='object')?a.reportAssignments:{};
+  const acceptance=(a&&a.reportAcceptance&&typeof a.reportAcceptance==='object')?a.reportAcceptance:{};
+  return Object.entries(assignments).filter(([,person])=>String(person||'').trim()).map(([taskSl,person])=>{
+    const acc=acceptance[String(taskSl)]||{};
+    return {
+      application_id:String(a.id),task_sl:Number(taskSl),assignee:String(person||''),
+      acceptance_status:['Pending','Accepted','Rejected'].includes(String(acc.status))?String(acc.status):'Pending',
+      responded_at:acc.respondedAt||null,responded_by:String(acc.respondedBy||'')
+    };
+  }).filter(r=>Number.isFinite(r.task_sl));
+}
+async function persistLeaveApplication(application){
+  if(SQL_TABLES.leave_applications&&SQL_TABLES.leave_report_coverage){
+    const rows=await dbRequest('leave_applications','POST','on_conflict=id',
+      [leaveApplicationSqlRow(application)],'resolution=merge-duplicates,return=representation');
+    if(!Array.isArray(rows)||!rows.some(r=>String(r.id)===String(application.id)))throw new Error('Leave application SQL row was not confirmed');
+
+    const coverageRows=leaveCoverageSqlRows(application);
+    const existing=await dbRequest('leave_report_coverage','GET','select=application_id,task_sl&application_id=eq.'+encodeURIComponent(application.id));
+    const wanted=new Set(coverageRows.map(r=>String(r.task_sl)));
+    for(const row of (existing||[])){
+      if(!wanted.has(String(row.task_sl))){
+        await dbRequest('leave_report_coverage','DELETE',
+          'application_id=eq.'+encodeURIComponent(application.id)+'&task_sl=eq.'+encodeURIComponent(row.task_sl));
+      }
+    }
+    if(coverageRows.length){
+      await dbRequest('leave_report_coverage','POST','on_conflict=application_id,task_sl',
+        coverageRows,'resolution=merge-duplicates,return=representation');
+    }
+    const verify=await dbRequest('leave_applications','GET','select=id,status&'+'id=eq.'+encodeURIComponent(application.id));
+    if(!Array.isArray(verify)||verify.length!==1||String(verify[0].status)!==String(application.status||'Pending')){
+      throw new Error('Leave application SQL read-back did not match');
+    }
+    return application;
+  }
+
+  const key='leaveApplication:'+application.id;
+  const rows=await dbRequest('meta','POST','on_conflict=key',
+    [{key,value:JSON.stringify(application)}],'resolution=merge-duplicates,return=representation');
+  if(!Array.isArray(rows)||!rows.some(r=>r.key===key))throw new Error('Leave application was not confirmed');
+  return application;
+}
 async function loadLeaveApplicationsRemote(){
   try{
+    if(SQL_TABLES.leave_applications){
+      const appRows=await dbRequest('leave_applications','GET','select=*&order=applied_at.desc');
+      const covRows=SQL_TABLES.leave_report_coverage
+        ?await dbRequest('leave_report_coverage','GET','select=*&order=application_id.asc,task_sl.asc')
+        :[];
+      const cov={};
+      (covRows||[]).forEach(r=>{
+        const id=String(r.application_id||'');if(!cov[id])cov[id]={assignments:{},acceptance:{}};
+        const key=String(Number(r.task_sl));
+        cov[id].assignments[key]=String(r.assignee||'');
+        cov[id].acceptance[key]={assignee:String(r.assignee||''),status:String(r.acceptance_status||'Pending'),respondedAt:r.responded_at||'',respondedBy:String(r.responded_by||'')};
+      });
+      leaveApplications=(appRows||[]).map(r=>{
+        const c=cov[String(r.id)]||{assignments:{},acceptance:{}};
+        return {
+          id:String(r.id),employee:String(r.employee||''),employeeRole:String(r.employee_role||'Team Member'),
+          leaveType:String(r.leave_type||''),duration:String(r.duration||'single'),fromDate:r.from_date||'',toDate:r.to_date||'',
+          days:Number(r.days||0),shortStartTime:r.short_start_time||'',shortEndTime:r.short_end_time||'',shortMinutes:Number(r.short_minutes||0),
+          reason:String(r.reason||''),supervisorStatus:String(r.supervisor_status||'Pending'),supervisorBy:String(r.supervisor_by||''),
+          supervisorAt:r.supervisor_at||'',sectionStatus:String(r.section_status||'Pending'),sectionBy:String(r.section_by||''),
+          sectionAt:r.section_at||'',rejectedStage:String(r.rejected_stage||''),status:String(r.status||'Pending'),
+          balancingComplete:!!r.balancing_complete,appliedBy:String(r.applied_by||''),appliedAt:r.applied_at||'',
+          balancedBy:String(r.balanced_by||''),balancedAt:r.balanced_at||'',
+          reportAssignments:c.assignments,reportAcceptance:c.acceptance
+        };
+      });
+      return true;
+    }
     const rows=await dbRequest('meta','GET','select=key,value&key=like.leaveApplication:*&order=key.desc');
     if(!Array.isArray(rows))return false;
-    const parsed=rows.flatMap(r=>{
-      try{
-        const a=JSON.parse(r.value);
-        return a&&a.id&&a.employee&&a.fromDate&&a.toDate?[a]:[];
-      }catch(e){return [];}
-    }).sort((a,b)=>String(b.appliedAt||'').localeCompare(String(a.appliedAt||'')));
-    leaveApplications=parsed;
+    leaveApplications=rows.flatMap(r=>{try{const a=JSON.parse(r.value);return a&&a.id&&a.employee&&a.fromDate&&a.toDate?[a]:[];}catch(e){return [];}})
+      .sort((a,b)=>String(b.appliedAt||'').localeCompare(String(a.appliedAt||'')));
     return true;
-  }catch(e){
-    console.error('Leave application refresh failed:',e);
-    return false;
-  }
+  }catch(e){console.error('Leave application refresh failed:',e);return false;}
 }
 async function loadMultiSkillMapRemote(){
   try{
@@ -2587,25 +2665,13 @@ async function refreshLeaveCoverageRemote(force=false){
 }
 
 async function saveLeaveApplication(application,button){
-  const key='leaveApplication:'+application.id;
   const label=button.textContent;
   button.disabled=true;button.textContent='SUBMITTING...';
   try{
     await queueTaskWrite(async()=>{
       setSyncStatus('syncing');
-      const rows=await dbRequest('meta','POST','on_conflict=key',
-        [{key,value:JSON.stringify(application)}],'resolution=merge-duplicates,return=representation');
-      if(!Array.isArray(rows)||!rows.some(r=>r.key===key))throw new Error('Leave application was not confirmed');
-
-      // Verify the exact saved record before reporting success.
-      const confirmed=await dbRequest('meta','GET','select=key,value&key=eq.'+encodeURIComponent(key));
-      const saved=Array.isArray(confirmed)?confirmed.find(r=>r.key===key):null;
-      if(!saved)throw new Error('Saved leave application could not be reloaded');
-      let savedApplication;
-      try{savedApplication=JSON.parse(saved.value);}catch(e){throw new Error('Saved leave application is invalid');}
-      if(!savedApplication||savedApplication.id!==application.id)throw new Error('Saved leave application did not match');
-
-      leaveApplications=[savedApplication,...leaveApplications.filter(a=>a.id!==savedApplication.id)];
+      await persistLeaveApplication(application);
+      await loadLeaveApplicationsRemote();
       await notifySaved();
     });
     toast('Leave application submitted for approval','success');
@@ -2740,31 +2806,18 @@ async function saveLeaveBalancing(application,assignments,button){
   });
   updated.balancedBy=currentUser;
   updated.balancedAt=new Date().toISOString();
-  const key='leaveApplication:'+updated.id,label=button?.textContent||'';
+  const label=button?.textContent||'';
   if(button){button.disabled=true;button.textContent='SAVING...';}
   try{
     await queueTaskWrite(async()=>{
-      const rows=await dbRequest('meta','POST','on_conflict=key',
-        [{key,value:JSON.stringify(updated)}],'resolution=merge-duplicates,return=representation');
-      if(!Array.isArray(rows)||!rows.some(r=>r.key===key))throw new Error('Report balancing was not confirmed');
-      const verify=await dbRequest('meta','GET','select=key,value&key=eq.'+encodeURIComponent(key));
-      const row=Array.isArray(verify)?verify.find(r=>r.key===key):null;
-      if(!row)throw new Error('Saved balancing could not be reloaded');
-      const confirmed=JSON.parse(row.value);
-      if(JSON.stringify(confirmed.reportAssignments||{})!==JSON.stringify(updated.reportAssignments||{})){
-        throw new Error('Saved balancing does not match selection');
-      }
-      leaveApplications=leaveApplications.map(a=>a.id===confirmed.id?confirmed:a);
+      await persistLeaveApplication(updated);
+      await loadLeaveApplicationsRemote();
       await notifySaved();
     });
     toast(updated.balancingComplete?'Report balancing complete':'Report balancing saved · assignment still incomplete',updated.balancingComplete?'success':'info');
     return true;
-  }catch(e){
-    toast('Report balancing not saved: '+e.message,'error');
-    return false;
-  }finally{
-    if(button){button.disabled=false;button.textContent=label;}
-  }
+  }catch(e){toast('Report balancing not saved: '+e.message,'error');return false;}
+  finally{if(button){button.disabled=false;button.textContent=label;}}
 }
 function renderLeaveBalancingPanel(panel){
   panel.innerHTML='';
@@ -2840,19 +2893,14 @@ async function updateLeaveApproval(application,decision,button){
       updated.status='Approved';
     }
   }
-  const key='leaveApplication:'+updated.id,label=button?.textContent||'';
+  const label=button?.textContent||'';
   if(button){button.disabled=true;button.textContent='SAVING...';}
   try{
     await queueTaskWrite(async()=>{
-      const rows=await dbRequest('meta','POST','on_conflict=key',
-        [{key,value:JSON.stringify(updated)}],'resolution=merge-duplicates,return=representation');
-      if(!Array.isArray(rows)||!rows.some(r=>r.key===key))throw new Error('Approval update was not confirmed');
-      const verify=await dbRequest('meta','GET','select=key,value&key=eq.'+encodeURIComponent(key));
-      const row=Array.isArray(verify)?verify.find(r=>r.key===key):null;
-      if(!row)throw new Error('Approval could not be verified');
-      const confirmed=JSON.parse(row.value);
-      if(confirmed.status!==updated.status)throw new Error('Approval status did not persist');
-      leaveApplications=leaveApplications.map(a=>a.id===confirmed.id?confirmed:a);
+      await persistLeaveApplication(updated);
+      await loadLeaveApplicationsRemote();
+      const confirmed=leaveApplications.find(a=>a.id===updated.id);
+      if(!confirmed||confirmed.status!==updated.status)throw new Error('Approval status did not persist');
       await notifySaved();
     });
     toast((stage==='supervisor'?'Supervisor':'Section Incharge')+' '+decision.toLowerCase()+' saved','success');
@@ -3242,13 +3290,14 @@ async function respondToMultiSkill(application,taskSl,decision,button){
   acceptance[key]={...current,status:decision,respondedAt:new Date().toISOString(),respondedBy:currentUser};
   const updated={...application,reportAssignments:assignments,reportAcceptance:acceptance};
   updated.balancingComplete=leaveBalancingComplete(updated);
-  const metaKey='leaveApplication:'+updated.id,label=button?.textContent||'';
+  const label=button?.textContent||'';
   if(button){button.disabled=true;button.textContent='SAVING...';}
   try{
-    const rows=await dbRequest('meta','POST','on_conflict=key',[{key:metaKey,value:JSON.stringify(updated)}],'resolution=merge-duplicates,return=representation');
-    if(!Array.isArray(rows)||!rows.some(r=>r.key===metaKey))throw new Error('Response was not confirmed');
-    leaveApplications=leaveApplications.map(a=>a.id===updated.id?updated:a);
-    await notifySaved();
+    await queueTaskWrite(async()=>{
+      await persistLeaveApplication(updated);
+      await loadLeaveApplicationsRemote();
+      await notifySaved();
+    });
     toast('Report coverage '+decision.toLowerCase(),'success');
     return true;
   }catch(e){toast('Response not saved: '+e.message,'error');return false;}
