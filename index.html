@@ -1337,7 +1337,10 @@ async function initFromSheets() {
   const data = await sbFetchAll();
   if (data) {
     applyRemoteData(data); _lastVersion = data.version || '0';
-    if(currentUser)setTimeout(showPendingMultiSkillPopup,120);
+    if(currentUser)setTimeout(async()=>{
+      await refreshLeaveCoverageRemote(true);
+      showPendingMultiSkillPopup();
+    },120);
     if (data.users && data.users.length > 0) {
       PERSONS = data.users.filter(u => u.name !== 'admin').map(u => u.name);
       const sel = document.getElementById('loginUser');
@@ -2319,6 +2322,8 @@ function renderAdmin(allowedModules = null){
 
 // ── LEAVE MANAGEMENT ──
 let leaveSubTab='application';
+let _leaveCoverageRefreshInFlight=false;
+let _lastLeaveCoverageRefresh=0;
 
 function leaveInclusiveDays(fromDate,toDate){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(fromDate)||!/^\d{4}-\d{2}-\d{2}$/.test(toDate))return 0;
@@ -2347,6 +2352,40 @@ async function loadLeaveApplicationsRemote(){
     return false;
   }
 }
+async function loadMultiSkillMapRemote(){
+  try{
+    const rows=await dbRequest('meta','GET','select=key,value&key=eq.multiSkillMap');
+    if(!Array.isArray(rows))return false;
+    const row=rows.find(r=>r.key==='multiSkillMap');
+    let parsed={};
+    if(row){
+      try{parsed=JSON.parse(row.value||'{}')||{};}catch(e){parsed={};}
+    }
+    if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))parsed={};
+    const changed=JSON.stringify(parsed)!==JSON.stringify(multiSkillMap);
+    multiSkillMap=parsed;
+    return changed;
+  }catch(e){
+    console.error('Multi Skill refresh failed:',e);
+    return false;
+  }
+}
+async function refreshLeaveCoverageRemote(force=false){
+  const now=Date.now();
+  if(_leaveCoverageRefreshInFlight)return false;
+  if(!force&&now-_lastLeaveCoverageRefresh<2000)return false;
+  _leaveCoverageRefreshInFlight=true;
+  try{
+    const beforeApps=JSON.stringify(leaveApplications);
+    const beforeMap=JSON.stringify(multiSkillMap);
+    await Promise.all([loadLeaveApplicationsRemote(),loadMultiSkillMapRemote()]);
+    _lastLeaveCoverageRefresh=Date.now();
+    return beforeApps!==JSON.stringify(leaveApplications)||beforeMap!==JSON.stringify(multiSkillMap);
+  }finally{
+    _leaveCoverageRefreshInFlight=false;
+  }
+}
+
 async function saveLeaveApplication(application,button){
   const key='leaveApplication:'+application.id;
   const label=button.textContent;
@@ -2511,8 +2550,17 @@ async function saveLeaveBalancing(application,assignments,button){
 function renderLeaveBalancingPanel(panel){
   panel.innerHTML='';
   const head=document.createElement('div');head.className='leave-panel';head.style.marginBottom='14px';
-  head.innerHTML='<div class="leave-panel-title">Report Balancing</div><div class="leave-panel-sub">// LIVE MULTI SKILL ASSIGNMENT + ACCEPTANCE STATUS</div><div style="font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted)">Current Multi Skill mapping is used automatically. Leave approval stays blocked until every designated backup accepts.</div>';
+  head.innerHTML='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><div class="leave-panel-title">Report Balancing</div><div class="leave-panel-sub">// LIVE MULTI SKILL ASSIGNMENT + ACCEPTANCE STATUS</div><div style="font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted)">Current Multi Skill mapping is used automatically. Leave approval stays blocked until every designated backup accepts.</div></div><button type="button" class="fbtn" id="refreshMultiSkillCoverage">REFRESH COVERAGE</button></div>';
   panel.appendChild(head);
+  const refreshCoverageBtn=head.querySelector('#refreshMultiSkillCoverage');
+  if(refreshCoverageBtn)refreshCoverageBtn.onclick=async()=>{
+    refreshCoverageBtn.disabled=true;refreshCoverageBtn.textContent='REFRESHING...';
+    await refreshLeaveCoverageRemote(true);
+    if(panel.isConnected){
+      renderContent();
+      setTimeout(showPendingMultiSkillPopup,120);
+    }
+  };
   const list=document.createElement('div');panel.appendChild(list);
   const draw=()=>{
     list.innerHTML='';
@@ -2981,6 +3029,16 @@ function showPendingMultiSkillPopup(){
 }
 
 function buildLeaveManagement(c){
+  // Always refresh leave + Multi Skill coverage when opening this module.
+  // The cooldown prevents a refresh/rerender loop.
+  setTimeout(async()=>{
+    const changed=await refreshLeaveCoverageRemote(false);
+    if(changed&&currentUser&&adminTab==='leave'){
+      renderContent();
+      return;
+    }
+    showPendingMultiSkillPopup();
+  },120);
   c.insertAdjacentHTML('beforeend',
     '<div style="font-family:Syne,sans-serif;font-size:1.5rem;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Leave <span style="color:#f5c842">Management</span></div>'
     +'<div style="font-size:.72rem;font-family:DM Mono,monospace;color:var(--muted);margin-bottom:18px">// APPLICATION · STATUS · BALANCING · APPROVAL</div>'
