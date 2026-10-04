@@ -1398,6 +1398,15 @@ let leaveApplications=[];
 let multiSkillMap={}; // task sl -> designated backup person
 function remarkKey(date,sl){return date+':'+Number(sl);}
 function taskRemark(date,sl){return taskRemarks[remarkKey(date,sl)]||'';}
+function taskRemarkWithFallback(date,sl){
+  const exact=taskRemark(date,sl);
+  if(exact)return exact;
+  const suffix=':'+Number(sl);
+  const matches=Object.entries(taskRemarks)
+    .filter(([key,value])=>key.endsWith(suffix)&&String(value||'').trim())
+    .sort((a,b)=>String(b[0]).localeCompare(String(a[0])));
+  return matches.length?String(matches[0][1]||'').trim():'';
+}
 function taskForDate(task,date){
   return taskCompletionHistory[date+':'+task.sl]||task;
 }
@@ -2237,7 +2246,7 @@ function openLateDoneModal(person,lateTasks){
     const actual=k.actualTime?formatTime12(k.actualTime):'—';
     const lateBy=formatLateMinutes(selectedDateLateMinutes(k));
     const remarkDate=k.actualDate||overviewDate||localISODate();
-    const reason=(taskRemark(remarkDate,k.sl)||'—').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const reason=(taskRemarkWithFallback(remarkDate,k.sl)||'—').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     return '<tr><td class="report">'+k.task+'</td><td class="plan">'+plan+'</td><td class="actual">'+actual+'</td><td class="lateby">'+lateBy+'</td><td class="reason">'+reason+'</td></tr>';
   }).join('');
   overlay.innerHTML='<div class="kpi-late-modal">'
