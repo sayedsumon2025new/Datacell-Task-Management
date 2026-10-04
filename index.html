@@ -2236,13 +2236,15 @@ function openLateDoneModal(person,lateTasks){
     const plan=k.planTime?formatTime12(k.planTime):'Not set';
     const actual=k.actualTime?formatTime12(k.actualTime):'—';
     const lateBy=formatLateMinutes(selectedDateLateMinutes(k));
-    return '<tr><td class="report">'+k.task+'</td><td class="plan">'+plan+'</td><td class="actual">'+actual+'</td><td class="lateby">'+lateBy+'</td></tr>';
+    const remarkDate=k.actualDate||overviewDate||localISODate();
+    const reason=(taskRemark(remarkDate,k.sl)||'—').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return '<tr><td class="report">'+k.task+'</td><td class="plan">'+plan+'</td><td class="actual">'+actual+'</td><td class="lateby">'+lateBy+'</td><td class="reason">'+reason+'</td></tr>';
   }).join('');
   overlay.innerHTML='<div class="kpi-late-modal">'
     +'<div class="kpi-late-modal-head"><div><div class="kpi-late-modal-title">Delayed DONE Reports</div><div class="kpi-late-modal-sub">'+person+' · '+lateTasks.length+' delayed report'+(lateTasks.length!==1?'s':'')+'</div></div>'
     +'<button type="button" class="kpi-late-modal-close">CLOSE ✕</button></div>'
-    +'<div class="kpi-late-modal-body"><table class="kpi-late-table"><thead><tr><th>Report Name</th><th>Plan Time</th><th>Actual Time</th><th>Late By</th></tr></thead><tbody>'+rows+'</tbody>'
-    +'<tfoot><tr><td colspan="3" class="total-label">TOTAL LATE TIME</td><td class="total-late">'+formatLateMinutes(totalLateMinutes)+'</td></tr></tfoot>'
+    +'<div class="kpi-late-modal-body"><table class="kpi-late-table"><thead><tr><th>Report Name</th><th>Plan Time</th><th>Actual Time</th><th>Late By</th><th>Delayed Reason</th></tr></thead><tbody>'+rows+'</tbody>'
+    +'<tfoot><tr><td colspan="3" class="total-label">TOTAL LATE TIME</td><td class="total-late">'+formatLateMinutes(totalLateMinutes)+'</td><td></td></tr></tfoot>'
     +'</table></div>'
     +'</div>';
   const close=()=>{
