@@ -112,6 +112,12 @@ insert into public.app_state(key,value)
 select key,value from public.meta where key in ('version','nextSl')
 on conflict (key) do update set value=excluded.value, updated_at=now();
 
+insert into public.app_state(key,value)
+values
+  ('version','0'),
+  ('nextSl',coalesce((select (max(sl)+1)::text from public.tasks),'1'))
+on conflict (key) do nothing;
+
 -- Migrate legacy completion snapshots.
 insert into public.task_completions(task_sl,actual_date,task,person,priority,plan_date,plan_time,actual_time,lead_time)
 select
@@ -166,6 +172,11 @@ cross join lateral jsonb_each_text(
 ) e
 where m.key='workingHours'
 on conflict (person) do update set minutes=excluded.minutes, updated_at=now();
+
+-- Ensure every active user has an SQL default even if no legacy JSON existed.
+insert into public.working_hours_defaults(person,minutes)
+select name,480 from public.users where name<>'admin'
+on conflict (person) do nothing;
 
 -- Migrate Multi Skill JSON.
 insert into public.multi_skill_assignments(task_sl,backup_person)
