@@ -193,6 +193,26 @@ body::before{content:'';position:fixed;inset:0;background:linear-gradient(135deg
 .kpi-late-table tfoot .total-late{color:#f5c842;white-space:nowrap;font-size:.76rem;}
 @media(max-width:700px){.apc.kpi-late-click-card:hover,.apc.kpi-late-click-card:focus{transform:none}.kpi-late-modal-overlay{padding:10px}.kpi-late-modal{max-height:88vh}}
 
+/* leave application */
+.leave-app-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(500px,.95fr);gap:18px;align-items:start;}
+.leave-panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;}
+.leave-panel-title{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;margin-bottom:4px;}
+.leave-panel-sub{font-family:'DM Mono',monospace;font-size:.64rem;color:var(--muted);margin-bottom:18px;}
+.leave-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.leave-form-grid .full{grid-column:1/-1;}
+.leave-radio-row{display:flex;gap:18px;align-items:center;min-height:41px;}
+.leave-radio-row label{display:flex;align-items:center;gap:7px;font-size:.8rem;cursor:pointer;}
+.leave-total{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 13px;font-family:'DM Mono',monospace;font-size:.78rem;color:#60a5fa;}
+.leave-actions{display:flex;gap:10px;margin-top:18px;}
+.leave-status{display:inline-flex;align-items:center;border-radius:20px;padding:3px 9px;font-family:'DM Mono',monospace;font-size:.62rem;font-weight:700;}
+.leave-status.pending{background:rgba(245,200,66,.1);color:#f5c842;border:1px solid rgba(245,200,66,.25);}
+.leave-status.approved{background:rgba(62,240,176,.1);color:#3ef0b0;border:1px solid rgba(62,240,176,.25);}
+.leave-status.rejected{background:rgba(248,113,113,.1);color:#f87171;border:1px solid rgba(248,113,113,.25);}
+.leave-recent-wrap{overflow:auto;max-height:540px;}
+.leave-recent-wrap .pct-table{min-width:760px;}
+@media(max-width:1180px){.leave-app-layout{grid-template-columns:1fr}.leave-recent-wrap{max-height:none}}
+@media(max-width:650px){.leave-form-grid{grid-template-columns:1fr}.leave-form-grid .full{grid-column:auto}.leave-actions{flex-direction:column}.leave-actions button{width:100%;justify-content:center}}
+
 /* add form */
 .add-panel{background:var(--surface);border:1px solid rgba(245,200,66,0.18);border-radius:16px;padding:22px 24px;margin-bottom:24px;}
 .add-panel h3{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;color:#f5c842;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
@@ -817,6 +837,9 @@ function applyRemoteData(data) {
   if(data.taskRemarks){
     if(JSON.stringify(taskRemarks)!==JSON.stringify(data.taskRemarks)){taskRemarks=data.taskRemarks;changed=true;}
   }
+  if(Array.isArray(data.leaveApplications)){
+    if(JSON.stringify(leaveApplications)!==JSON.stringify(data.leaveApplications)){leaveApplications=data.leaveApplications;changed=true;}
+  }
   if (data.dailyWorkingHours) {
     if(JSON.stringify(dailyWorkingHours)!==JSON.stringify(data.dailyWorkingHours)){dailyWorkingHours=data.dailyWorkingHours;changed=true;}
   }
@@ -870,6 +893,7 @@ async function sbFetchAll() {
   return {
     taskCompletionHistory:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('taskCompletion:')).flatMap(r=>{try{const t=JSON.parse(r.value);return t&&t.actualDate&&t.actualTime?[[r.key.slice('taskCompletion:'.length),t]]:[];}catch(e){return [];}})),
     taskRemarks:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('taskRemark:')).map(r=>[r.key.slice('taskRemark:'.length),String(r.value||'')])),
+    leaveApplications:metaRows.filter(r=>r.key.startsWith('leaveApplication:')).flatMap(r=>{try{const a=JSON.parse(r.value);return a&&a.id&&a.employee&&a.fromDate&&a.toDate?[a]:[];}catch(e){return [];}}).sort((a,b)=>String(b.appliedAt||'').localeCompare(String(a.appliedAt||''))),
     tasks: fetchedTasks, doneState: fetchedDone, users: fetchedUsers, moduleAccess: fetchedAccess,
     workingHours: fetchedWorkingHours,
     dailyWorkingHours:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('workingHoursDaily:')&&r.value!==''&&Number.isFinite(Number(r.value))&&Number(r.value)>=0&&Number(r.value)<=1440).map(r=>[r.key,Number(r.value)])),
@@ -1215,6 +1239,7 @@ const doneState={};
 
 let taskCompletionHistory={};
 let taskRemarks={};
+let leaveApplications=[];
 function remarkKey(date,sl){return date+':'+Number(sl);}
 function taskRemark(date,sl){return taskRemarks[remarkKey(date,sl)]||'';}
 function taskForDate(task,date){
@@ -2140,43 +2165,168 @@ function renderAdmin(allowedModules = null){
 
 // ── LEAVE MANAGEMENT ──
 let leaveSubTab='application';
+
+function leaveInclusiveDays(fromDate,toDate){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(fromDate)||!/^\d{4}-\d{2}-\d{2}$/.test(toDate))return 0;
+  const [fy,fm,fd]=fromDate.split('-').map(Number),[ty,tm,td]=toDate.split('-').map(Number);
+  const a=Date.UTC(fy,fm-1,fd),b=Date.UTC(ty,tm-1,td);
+  if(b<a)return 0;
+  return Math.floor((b-a)/86400000)+1;
+}
+function leaveEmployeeOptions(){
+  return [...new Set(userRegistry.map(u=>u.name).filter(Boolean))];
+}
+async function saveLeaveApplication(application,button){
+  const key='leaveApplication:'+application.id;
+  const label=button.textContent;
+  button.disabled=true;button.textContent='SUBMITTING...';
+  try{
+    await queueTaskWrite(async()=>{
+      setSyncStatus('syncing');
+      const rows=await dbRequest('meta','POST','on_conflict=key',
+        [{key,value:JSON.stringify(application)}],'resolution=merge-duplicates,return=representation');
+      if(!Array.isArray(rows)||!rows.some(r=>r.key===key))throw new Error('Leave application was not confirmed');
+      leaveApplications=[application,...leaveApplications.filter(a=>a.id!==application.id)];
+      await notifySaved();
+    });
+    toast('Leave application submitted for approval','success');
+    return true;
+  }catch(e){
+    setSyncStatus('error');
+    toast('Leave application not saved: '+e.message,'error');
+    return false;
+  }finally{button.disabled=false;button.textContent=label;}
+}
+function renderLeaveApplicationPanel(panel){
+  panel.innerHTML='';
+  const layout=document.createElement('div');layout.className='leave-app-layout';
+  const formPanel=document.createElement('div');formPanel.className='leave-panel';
+  const recentPanel=document.createElement('div');recentPanel.className='leave-panel';
+  layout.append(formPanel,recentPanel);panel.appendChild(layout);
+
+  formPanel.innerHTML='<div class="leave-panel-title">Leave Application Form</div>'
+    +'<div class="leave-panel-sub">// SUBMIT YOUR LEAVE REQUEST FOR APPROVAL</div>';
+  const form=document.createElement('form');
+  const employeeChoices=currentUser==='admin'?leaveEmployeeOptions():[currentUser];
+  form.innerHTML='<div class="leave-form-grid">'
+    +'<div class="fg"><label for="leaveEmployee">EMPLOYEE NAME *</label><select class="fi-sel" id="leaveEmployee" required>'
+    +employeeChoices.map(name=>'<option value="'+name+'">'+name+'</option>').join('')+'</select></div>'
+    +'<div class="fg"><label for="leaveType">LEAVE TYPE *</label><select class="fi-sel" id="leaveType" required>'
+    +'<option value="Casual Leave">Casual Leave</option><option value="Sick Leave">Sick Leave</option><option value="Annual Leave">Annual Leave</option><option value="Emergency Leave">Emergency Leave</option><option value="Other">Other</option></select></div>'
+    +'<div class="fg"><label>LEAVE DURATION *</label><div class="leave-radio-row">'
+    +'<label><input type="radio" name="leaveDuration" value="single" checked> Single Day</label>'
+    +'<label><input type="radio" name="leaveDuration" value="multiple"> Multiple Days</label></div></div>'
+    +'<div class="fg"><label for="leaveFrom">FROM DATE *</label><input type="date" class="fi" id="leaveFrom" required></div>'
+    +'<div class="fg"><label for="leaveTo">TO DATE *</label><input type="date" class="fi" id="leaveTo" required></div>'
+    +'<div class="fg"><label>TOTAL DAYS</label><div class="leave-total" id="leaveTotalDays">0 day</div></div>'
+    +'<div class="fg full"><label for="leaveReason">REASON FOR LEAVE *</label><textarea class="fi" id="leaveReason" rows="4" maxlength="500" required placeholder="Write the reason for leave..." style="resize:vertical;min-height:96px"></textarea></div>'
+    +'</div>'
+    +'<div class="leave-actions"><button type="submit" class="add-btn" id="leaveSubmit">SUBMIT LEAVE APPLICATION</button><button type="button" class="fbtn" id="leaveClear">CLEAR FORM</button></div>';
+  formPanel.appendChild(form);
+
+  const employee=form.querySelector('#leaveEmployee'),from=form.querySelector('#leaveFrom'),to=form.querySelector('#leaveTo');
+  const total=form.querySelector('#leaveTotalDays'),reason=form.querySelector('#leaveReason');
+  const today=localISODate();
+  from.min=today;to.min=today;
+  if(currentUser!=='admin'){employee.value=currentUser;employee.disabled=true;}
+  const updateDays=()=>{
+    const duration=form.querySelector('input[name="leaveDuration"]:checked')?.value||'single';
+    if(duration==='single'&&from.value){to.value=from.value;to.disabled=true;}
+    else to.disabled=false;
+    if(from.value)to.min=from.value;
+    const days=leaveInclusiveDays(from.value,to.value);
+    total.textContent=days+(days===1?' day':' days');
+  };
+  form.querySelectorAll('input[name="leaveDuration"]').forEach(r=>r.onchange=updateDays);
+  from.onchange=()=>{updateDays();};
+  to.onchange=updateDays;
+  const clearForm=()=>{
+    form.reset();
+    if(currentUser!=='admin'){employee.value=currentUser;employee.disabled=true;}
+    from.min=today;to.min=today;to.disabled=true;total.textContent='0 day';
+  };
+  form.querySelector('#leaveClear').onclick=clearForm;
+
+  const drawRecent=()=>{
+    recentPanel.innerHTML='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px"><div><div class="leave-panel-title">Recent Leave Applications</div>'
+      +'<div class="leave-panel-sub">// YOUR RECENT REQUESTS AND CURRENT STATUS</div></div></div>';
+    const visible=(currentUser==='admin'?leaveApplications:leaveApplications.filter(a=>a.employee===currentUser))
+      .slice().sort((a,b)=>String(b.appliedAt||'').localeCompare(String(a.appliedAt||''))).slice(0,20);
+    const wrap=document.createElement('div');wrap.className='leave-recent-wrap';
+    const table=document.createElement('table');table.className='pct-table';
+    table.innerHTML='<thead><tr><th>#</th><th>Employee</th><th>Leave Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Status</th><th>Applied On</th></tr></thead>';
+    const tbody=document.createElement('tbody');
+    visible.forEach((a,i)=>{
+      const tr=document.createElement('tr');
+      const values=[i+1,a.employee,a.leaveType,formatDateDisplay(a.fromDate),formatDateDisplay(a.toDate),a.days,a.reason];
+      values.forEach(v=>{const td=document.createElement('td');td.textContent=v;tr.appendChild(td);});
+      const statusTd=document.createElement('td');const badge=document.createElement('span');
+      const status=String(a.status||'Pending');badge.className='leave-status '+status.toLowerCase();badge.textContent=status;statusTd.appendChild(badge);tr.appendChild(statusTd);
+      const applied=document.createElement('td');applied.textContent=formatDateDisplay(String(a.appliedAt||'').slice(0,10));tr.appendChild(applied);
+      tbody.appendChild(tr);
+    });
+    if(!visible.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=9;td.textContent='No leave applications yet';td.style.cssText='text-align:center;padding:28px;color:var(--muted);font-family:DM Mono,monospace';tr.appendChild(td);tbody.appendChild(tr);}
+    table.appendChild(tbody);wrap.appendChild(table);recentPanel.appendChild(wrap);
+  };
+  drawRecent();
+
+  form.onsubmit=async e=>{
+    e.preventDefault();
+    if(!form.reportValidity())return;
+    const duration=form.querySelector('input[name="leaveDuration"]:checked')?.value||'single';
+    if(duration==='single')to.value=from.value;
+    const days=leaveInclusiveDays(from.value,to.value);
+    if(!days){toast('Choose a valid leave date range','error');return;}
+    if(from.value<today){toast('Leave date cannot be in the past','error');return;}
+    if(reason.value.trim().length<3){toast('Enter a leave reason','error');reason.focus();return;}
+    const now=new Date();
+    const id=String(now.getTime())+'-'+Math.random().toString(36).slice(2,8);
+    const application={
+      id,
+      employee:employee.value,
+      leaveType:form.querySelector('#leaveType').value,
+      duration,
+      fromDate:from.value,
+      toDate:to.value,
+      days,
+      reason:reason.value.trim(),
+      status:'Pending',
+      appliedBy:currentUser,
+      appliedAt:now.toISOString()
+    };
+    const submit=form.querySelector('#leaveSubmit');
+    if(await saveLeaveApplication(application,submit)){clearForm();drawRecent();}
+  };
+  clearForm();
+}
 function buildLeaveManagement(c){
   c.insertAdjacentHTML('beforeend',
     '<div style="font-family:Syne,sans-serif;font-size:1.5rem;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Leave <span style="color:#f5c842">Management</span></div>'
     +'<div style="font-size:.72rem;font-family:DM Mono,monospace;color:var(--muted);margin-bottom:18px">// APPLICATION · STATUS · BALANCING · APPROVAL</div>'
   );
-
   const subDefs=[
     {id:'application',label:'LEAVE APPLICATION FORM'},
     {id:'status',label:'LEAVE STATUS SUMMARY'},
     {id:'balancing',label:'REPORT BALANCING'},
     {id:'approval',label:'LEAVE APPROVAL'}
   ];
-  const subNav=document.createElement('div');
-  subNav.className='admin-tabs';
-  subNav.style.marginBottom='18px';
+  const subNav=document.createElement('div');subNav.className='admin-tabs';subNav.style.marginBottom='18px';
   subDefs.forEach(item=>{
-    const btn=document.createElement('button');
-    btn.className='atab'+(leaveSubTab===item.id?' active':'');
-    btn.textContent=item.label;
-    btn.onclick=()=>{leaveSubTab=item.id;renderContent();};
-    subNav.appendChild(btn);
+    const btn=document.createElement('button');btn.className='atab'+(leaveSubTab===item.id?' active':'');btn.textContent=item.label;
+    btn.onclick=()=>{leaveSubTab=item.id;renderContent();};subNav.appendChild(btn);
   });
   c.appendChild(subNav);
-
   const panel=document.createElement('div');
-  panel.className='chart-full';
-  panel.style.cssText='padding:24px;min-height:260px;';
+  if(leaveSubTab==='application'){c.appendChild(panel);renderLeaveApplicationPanel(panel);return;}
+  panel.className='chart-full';panel.style.cssText='padding:24px;min-height:260px;';
   const content={
-    application:{title:'Leave Application Form',sub:'Submit and manage employee leave requests.',icon:'📝'},
     status:{title:'Leave Status Summary',sub:'View leave status, balances and request summaries.',icon:'📊'},
     balancing:{title:'Report Balancing',sub:'Review workload/report balancing during leave periods.',icon:'⚖️'},
     approval:{title:'Leave Approval',sub:'Review and approve or reject leave requests.',icon:'✅'}
-  }[leaveSubTab]||{title:'Leave Application Form',sub:'Submit and manage employee leave requests.',icon:'📝'};
+  }[leaveSubTab]||{title:'Leave Status Summary',sub:'View leave request status.',icon:'📊'};
   panel.innerHTML='<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'
     +'<div style="width:42px;height:42px;border-radius:11px;background:rgba(245,200,66,.08);border:1px solid rgba(245,200,66,.2);display:flex;align-items:center;justify-content:center;font-size:1.15rem">'+content.icon+'</div>'
-    +'<div><div style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">'+content.title+'</div>'
-    +'<div style="font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted);margin-top:3px">'+content.sub+'</div></div></div>'
+    +'<div><div style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">'+content.title+'</div><div style="font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted);margin-top:3px">'+content.sub+'</div></div></div>'
     +'<div style="border:1px dashed var(--border);border-radius:12px;padding:28px;text-align:center;font-family:DM Mono,monospace;font-size:.7rem;color:var(--muted)">This section is ready for the next functional setup.</div>';
   c.appendChild(panel);
 }
