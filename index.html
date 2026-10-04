@@ -222,6 +222,13 @@ body::before{content:'';position:fixed;inset:0;background:linear-gradient(135deg
 .leave-flow-step{padding:4px 8px;border-radius:20px;border:1px solid var(--border);background:var(--surface2);}
 .leave-flow-step.done{color:#3ef0b0;border-color:rgba(62,240,176,.25);}
 .leave-flow-step.current{color:#f5c842;border-color:rgba(245,200,66,.25);}
+.leave-balance-status{display:inline-flex;align-items:center;border-radius:20px;padding:3px 8px;font-family:'DM Mono',monospace;font-size:.6rem;font-weight:700;}
+.leave-balance-status.complete{color:#3ef0b0;background:rgba(62,240,176,.08);border:1px solid rgba(62,240,176,.25);}
+.leave-balance-status.incomplete{color:#f87171;background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.25);}
+.leave-balance-select{min-width:175px;height:34px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:'Outfit',sans-serif;font-size:.75rem;padding:5px 8px;}
+.leave-balance-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;}
+.leave-balance-card:last-child{margin-bottom:0;}
+.leave-balance-meta{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:7px 0 12px;font-family:'DM Mono',monospace;font-size:.62rem;color:var(--muted);}
 .leave-recent-wrap{overflow:auto;max-height:540px;}
 .leave-recent-wrap .pct-table{min-width:760px;}
 @media(max-width:1180px){.leave-app-layout{grid-template-columns:1fr}.leave-recent-wrap{max-height:none}}
@@ -2384,9 +2391,145 @@ function canActOnLeave(application){
   }
   return false;
 }
+function leaveReportTasks(application){
+  const employee=String(application?.employee||'').trim();
+  if(!employee)return [];
+  return tasks.filter(t=>{
+    const owners=String(t.person||'').split('/').map(x=>x.trim()).filter(Boolean);
+    return t.person===employee||owners.includes(employee);
+  }).sort((a,b)=>Number(a.sl)-Number(b.sl));
+}
+function leaveReportAssignments(application){
+  const a=application&&application.reportAssignments;
+  return a&&typeof a==='object'&&!Array.isArray(a)?a:{};
+}
+function leaveBalancingComplete(application){
+  const reportTasks=leaveReportTasks(application);
+  if(!reportTasks.length)return true;
+  const assignments=leaveReportAssignments(application);
+  return reportTasks.every(t=>{
+    const backup=String(assignments[String(t.sl)]||assignments[t.sl]||'').trim();
+    return !!backup&&backup!==application.employee;
+  });
+}
+async function saveLeaveBalancing(application,assignments,button){
+  const updated={...application,reportAssignments:{...assignments}};
+  const reports=leaveReportTasks(updated);
+  updated.balancingComplete=reports.length===0||reports.every(t=>{
+    const backup=String(updated.reportAssignments[String(t.sl)]||'').trim();
+    return !!backup&&backup!==updated.employee;
+  });
+  updated.balancedBy=currentUser;
+  updated.balancedAt=new Date().toISOString();
+  const key='leaveApplication:'+updated.id,label=button?.textContent||'';
+  if(button){button.disabled=true;button.textContent='SAVING...';}
+  try{
+    await queueTaskWrite(async()=>{
+      const rows=await dbRequest('meta','POST','on_conflict=key',
+        [{key,value:JSON.stringify(updated)}],'resolution=merge-duplicates,return=representation');
+      if(!Array.isArray(rows)||!rows.some(r=>r.key===key))throw new Error('Report balancing was not confirmed');
+      const verify=await dbRequest('meta','GET','select=key,value&key=eq.'+encodeURIComponent(key));
+      const row=Array.isArray(verify)?verify.find(r=>r.key===key):null;
+      if(!row)throw new Error('Saved balancing could not be reloaded');
+      const confirmed=JSON.parse(row.value);
+      if(JSON.stringify(confirmed.reportAssignments||{})!==JSON.stringify(updated.reportAssignments||{})){
+        throw new Error('Saved balancing does not match selection');
+      }
+      leaveApplications=leaveApplications.map(a=>a.id===confirmed.id?confirmed:a);
+      await notifySaved();
+    });
+    toast(updated.balancingComplete?'Report balancing complete':'Report balancing saved · assignment still incomplete',updated.balancingComplete?'success':'info');
+    return true;
+  }catch(e){
+    toast('Report balancing not saved: '+e.message,'error');
+    return false;
+  }finally{
+    if(button){button.disabled=false;button.textContent=label;}
+  }
+}
+function renderLeaveBalancingPanel(panel){
+  panel.innerHTML='';
+  const role=currentUser==='admin'?'Admin':getUserJobRole(currentUser);
+  const canEdit=currentUser==='admin'||role==='Supervisor'||role==='Section Incharge';
+  const head=document.createElement('div');head.className='leave-panel';head.style.marginBottom='14px';
+  head.innerHTML='<div class="leave-panel-title">Report Balancing</div>'
+    +'<div class="leave-panel-sub">// ASSIGN EVERY REPORT BEFORE LEAVE CAN BE APPROVED</div>'
+    +'<div style="font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted)">For each pending leave request, assign a backup owner for every report/task. Approval remains blocked until balancing is complete.</div>';
+  panel.appendChild(head);
+
+  const list=document.createElement('div');panel.appendChild(list);
+  const draw=()=>{
+    list.innerHTML='';
+    const active=leaveApplications.filter(a=>String(a.status)!=='Approved'&&String(a.status)!=='Rejected')
+      .sort((a,b)=>String(a.appliedAt||'').localeCompare(String(b.appliedAt||'')));
+    if(!active.length){
+      list.innerHTML='<div class="leave-panel" style="text-align:center;padding:30px;font-family:DM Mono,monospace;font-size:.7rem;color:var(--muted)">No pending leave applications for report balancing.</div>';
+      return;
+    }
+    active.forEach(a=>{
+      const reports=leaveReportTasks(a);
+      const savedAssignments=leaveReportAssignments(a);
+      const card=document.createElement('div');card.className='leave-balance-card';
+      const complete=leaveBalancingComplete(a);
+      card.innerHTML='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">'
+        +'<div><div style="font-family:Syne,sans-serif;font-size:.92rem;font-weight:700">'+a.employee+'</div>'
+        +'<div class="leave-balance-meta"><span>'+leaveApplicantRole(a)+'</span><span>'+formatDateDisplay(a.fromDate)+' → '+formatDateDisplay(a.toDate)+'</span><span>'+a.days+' day'+(Number(a.days)!==1?'s':'')+'</span></div></div>'
+        +'<span class="leave-balance-status '+(complete?'complete':'incomplete')+'">'+(complete?'BALANCED':'ASSIGNMENT REQUIRED')+'</span></div>';
+      const wrap=document.createElement('div');wrap.className='leave-recent-wrap';
+      const table=document.createElement('table');table.className='pct-table';table.style.minWidth='760px';
+      table.innerHTML='<thead><tr><th>#</th><th>Report / Task</th><th>Current Owner</th><th>Backup Assignee During Leave</th></tr></thead>';
+      const tbody=document.createElement('tbody');
+      if(!reports.length){
+        const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=4;
+        td.textContent='No reports/tasks are currently assigned to this employee. Balancing is automatically complete.';
+        td.style.cssText='text-align:center;padding:22px;color:#3ef0b0;font-family:DM Mono,monospace;font-size:.68rem';
+        tr.appendChild(td);tbody.appendChild(tr);
+      }else{
+        const backups=teamPersons().filter(p=>p&&p!==a.employee&&p!=='admin');
+        reports.forEach(t=>{
+          const tr=document.createElement('tr');
+          const id=document.createElement('td');id.textContent=t.sl;tr.appendChild(id);
+          const task=document.createElement('td');task.textContent=t.task;tr.appendChild(task);
+          const owner=document.createElement('td');owner.textContent=a.employee;tr.appendChild(owner);
+          const assignTd=document.createElement('td');
+          const select=document.createElement('select');select.className='leave-balance-select';select.dataset.sl=t.sl;
+          select.disabled=!canEdit;
+          const empty=document.createElement('option');empty.value='';empty.textContent='Select backup assignee';select.appendChild(empty);
+          backups.forEach(p=>{const opt=document.createElement('option');opt.value=p;opt.textContent=p;if(String(savedAssignments[String(t.sl)]||'')===p)opt.selected=true;select.appendChild(opt);});
+          assignTd.appendChild(select);tr.appendChild(assignTd);tbody.appendChild(tr);
+        });
+      }
+      table.appendChild(tbody);wrap.appendChild(table);card.appendChild(wrap);
+      if(canEdit&&reports.length){
+        const actions=document.createElement('div');actions.style.cssText='display:flex;justify-content:flex-end;margin-top:12px';
+        const save=document.createElement('button');save.className='add-btn';save.type='button';save.textContent='SAVE REPORT ASSIGNMENT';
+        save.onclick=async()=>{
+          const assignments={...savedAssignments};
+          card.querySelectorAll('.leave-balance-select').forEach(sel=>{
+            if(sel.value)assignments[String(sel.dataset.sl)]=sel.value;
+            else delete assignments[String(sel.dataset.sl)];
+          });
+          if(await saveLeaveBalancing(a,assignments,save)){
+            await loadLeaveApplicationsRemote();
+            draw();
+          }
+        };
+        actions.appendChild(save);card.appendChild(actions);
+      }
+      list.appendChild(card);
+    });
+  };
+  draw();
+  loadLeaveApplicationsRemote().then(ok=>{if(ok&&panel.isConnected)draw();});
+}
+
 async function updateLeaveApproval(application,decision,button){
   if(!['Approved','Rejected'].includes(decision)||!canActOnLeave(application)){
     toast('You are not authorized for this approval stage','error');return false;
+  }
+  if(decision==='Approved'&&!leaveBalancingComplete(application)){
+    toast('Assign all reports in Report Balancing before approving leave','error');
+    return false;
   }
   const stage=leaveStage(application);
   const updated={...application};
@@ -2462,7 +2605,7 @@ function renderLeaveApprovalPanel(panel){
 
     const wrap=document.createElement('div');wrap.className='leave-recent-wrap';
     const table=document.createElement('table');table.className='pct-table';table.style.minWidth='1050px';
-    table.innerHTML='<thead><tr><th>#</th><th>Employee</th><th>Role</th><th>Leave Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Stage</th><th>Action</th></tr></thead>';
+    table.innerHTML='<thead><tr><th>#</th><th>Employee</th><th>Role</th><th>Leave Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Stage</th><th>Balancing</th><th>Action</th></tr></thead>';
     const tbody=document.createElement('tbody');
     queue.forEach((a,i)=>{
       const tr=document.createElement('tr');
@@ -2474,6 +2617,10 @@ function renderLeaveApprovalPanel(panel){
       stageTd.textContent=stage==='supervisor'?'Supervisor Approval':'Section Incharge Approval';
       stageTd.style.color=stage==='supervisor'?'#f5c842':'#60a5fa';
       tr.appendChild(stageTd);
+      const balanceTd=document.createElement('td');
+      const balanced=leaveBalancingComplete(a);
+      balanceTd.innerHTML='<span class="leave-balance-status '+(balanced?'complete':'incomplete')+'">'+(balanced?'READY':'REQUIRED')+'</span>';
+      tr.appendChild(balanceTd);
       const actionTd=document.createElement('td');
       const actions=document.createElement('div');actions.className='leave-approval-actions';
       const approve=document.createElement('button');approve.type='button';approve.className='leave-approve-btn';approve.textContent='APPROVE';
@@ -2483,6 +2630,9 @@ function renderLeaveApprovalPanel(panel){
         approve.disabled=true;reject.disabled=true;
         approve.title='Approval requires Supervisor or Section Incharge role for this stage';
         reject.title=approve.title;
+      }else if(!balanced){
+        approve.disabled=true;
+        approve.title='Complete Report Balancing before approval';
       }
       approve.onclick=async()=>{if(!canAct)return;reject.disabled=true;if(await updateLeaveApproval(a,'Approved',approve)){await loadLeaveApplicationsRemote();draw();}else reject.disabled=false;};
       reject.onclick=async()=>{if(!canAct)return;approve.disabled=true;if(await updateLeaveApproval(a,'Rejected',reject)){await loadLeaveApplicationsRemote();draw();}else approve.disabled=false;};
@@ -2490,7 +2640,7 @@ function renderLeaveApprovalPanel(panel){
       tbody.appendChild(tr);
     });
     if(!queue.length){
-      const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=10;
+      const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=11;
       td.textContent=role==='Team Member'?'No approval action is assigned to Team Member role.':'No leave applications are waiting for your approval.';
       td.style.cssText='text-align:center;padding:30px;color:var(--muted);font-family:DM Mono,monospace';
       tr.appendChild(td);tbody.appendChild(tr);
@@ -2643,6 +2793,7 @@ function buildLeaveManagement(c){
   c.appendChild(subNav);
   const panel=document.createElement('div');
   if(leaveSubTab==='application'){c.appendChild(panel);renderLeaveApplicationPanel(panel);return;}
+  if(leaveSubTab==='balancing'){c.appendChild(panel);renderLeaveBalancingPanel(panel);return;}
   if(leaveSubTab==='approval'){c.appendChild(panel);renderLeaveApprovalPanel(panel);return;}
   panel.className='chart-full';panel.style.cssText='padding:24px;min-height:260px;';
   const content={
