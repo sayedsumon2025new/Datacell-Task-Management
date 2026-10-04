@@ -2626,7 +2626,6 @@ function renderLeaveApprovalPanel(panel){
       const approve=document.createElement('button');approve.type='button';approve.className='leave-approve-btn';approve.textContent='APPROVE';
       const reject=document.createElement('button');reject.type='button';reject.className='leave-reject-btn';reject.textContent='REJECT';
       const canAct=canActOnLeave(a);
-      const balanced=leaveBalancingComplete(a);
       if(!canAct){
         approve.disabled=true;reject.disabled=true;
         approve.title='Approval requires Supervisor or Section Incharge role for this stage';
