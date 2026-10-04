@@ -1159,15 +1159,31 @@ async function saveUserJobRole(name,role,button){
   const key=userRoleKey(name),label=button?.textContent||'';
   if(button){button.disabled=true;button.textContent='SAVING...';}
   try{
-    const rows=await dbRequest('meta','POST','on_conflict=key',
-      [{key,value:role}],'resolution=merge-duplicates,return=representation');
-    if(!Array.isArray(rows)||!rows.some(r=>r.key===key&&String(r.value||'')===role))throw new Error('Job role was not confirmed');
-    userJobRoles[name]=role;
-    await notifySaved();
-    toast('Job role saved: '+name+' → '+role,'success');
+    let confirmedRole='';
+    await queueTaskWrite(async()=>{
+      setSyncStatus('syncing');
+      const rows=await dbRequest('meta','POST','on_conflict=key',
+        [{key,value:role}],'resolution=merge-duplicates,return=representation');
+      if(!Array.isArray(rows)||!rows.some(r=>r.key===key&&String(r.value||'')===role)){
+        throw new Error('Job role write was not confirmed');
+      }
+      const verify=await dbRequest('meta','GET','select=key,value&key=eq.'+encodeURIComponent(key));
+      const saved=Array.isArray(verify)?verify.find(r=>r.key===key):null;
+      if(!saved)throw new Error('Saved job role could not be reloaded');
+      confirmedRole=String(saved.value||'');
+      if(confirmedRole!==role)throw new Error('Saved job role does not match selection');
+      userJobRoles[name]=confirmedRole;
+      await notifySaved();
+    });
+    toast('Job role saved: '+name+' → '+confirmedRole,'success');
     return true;
-  }catch(e){toast('Job role not saved: '+e.message,'error');return false;}
-  finally{if(button){button.disabled=false;button.textContent=label;}}
+  }catch(e){
+    setSyncStatus('error');
+    toast('Job role not saved: '+e.message,'error');
+    return false;
+  }finally{
+    if(button){button.disabled=false;button.textContent=label;}
+  }
 }
 async function deleteUserJobRole(name){
   const key=userRoleKey(name);
@@ -3702,9 +3718,10 @@ function renderSettingsUsers(body){
       +'<div class="user-card-info">'
       +'<div class="user-card-name" style="color:'+u.color+'">'+u.name+'</div>'
       +'<div class="user-card-pass">Password hidden · use reset/change</div>'
-      +'<div style="margin-top:7px"><select class="fi-sel user-role-select" data-name="'+u.name+'" style="height:30px;padding:4px 8px;font-size:.68rem;min-width:145px">'
+      +'<div style="margin-top:4px;font-family:DM Mono,monospace;font-size:.58rem;color:var(--muted)">Current role: <span style="color:#f5c842">'+getUserJobRole(u.name)+'</span></div>'
+      +'<div style="margin-top:7px;display:flex;align-items:center;gap:6px;flex-wrap:wrap"><select class="fi-sel user-role-select" data-name="'+u.name+'" style="height:30px;padding:4px 8px;font-size:.68rem;min-width:145px">'
       +JOB_ROLES.map(role=>'<option value="'+role+'"'+(getUserJobRole(u.name)===role?' selected':'')+'>'+role+'</option>').join('')
-      +'</select></div>'
+      +'</select><button type="button" class="fbtn user-role-save" data-name="'+u.name+'" style="height:30px;padding:4px 9px;font-size:.6rem">SAVE ROLE</button></div>'
       +'</div>'
       +'<button class="user-card-pw-btn" data-name="'+u.name+'" title="Change password">🔑</button>'
       +'<button class="user-card-del" data-name="'+u.name+'" title="Remove user">✕</button>';
@@ -3712,14 +3729,31 @@ function renderSettingsUsers(body){
   });
   body.appendChild(grid);
 
-  // Job role change handler
+  // Job role change handler — explicit save prevents accidental/reverted onchange writes.
   grid.querySelectorAll('.user-role-select').forEach(select=>{
-    const original=getUserJobRole(select.dataset.name);
-    select.onchange=async()=>{
-      const name=select.dataset.name,role=select.value;
+    const name=select.dataset.name;
+    const saveBtn=grid.querySelector('.user-role-save[data-name="'+CSS.escape(name)+'"]');
+    const confirmed=getUserJobRole(name);
+    select.onchange=()=>{
+      if(saveBtn){
+        const dirty=select.value!==getUserJobRole(name);
+        saveBtn.style.borderColor=dirty?'rgba(245,200,66,.45)':'';
+        saveBtn.style.color=dirty?'#f5c842':'';
+      }
+    };
+    if(saveBtn)saveBtn.onclick=async()=>{
+      const chosen=select.value;
       select.disabled=true;
-      const ok=await saveUserJobRole(name,role);
-      if(!ok)select.value=userJobRoles[name]||original||'Team Member';
+      const ok=await saveUserJobRole(name,chosen,saveBtn);
+      if(ok){
+        // Reload roles from Supabase to ensure UI reflects the confirmed database state.
+        const data=await sbFetchAll();
+        if(data)applyRemoteData(data);
+        select.value=getUserJobRole(name);
+        saveBtn.style.borderColor='';saveBtn.style.color='';
+      }else{
+        select.value=getUserJobRole(name)||confirmed||'Team Member';
+      }
       select.disabled=false;
     };
   });
