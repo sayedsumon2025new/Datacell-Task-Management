@@ -3026,218 +3026,93 @@ function buildOverview(c){
   });
   c.appendChild(grid);
 
-  // ── CALENDAR ──
-  const calLbl=document.createElement('div');calLbl.className='section-title';calLbl.style.marginTop='24px';calLbl.textContent='TASK CALENDAR';c.appendChild(calLbl);
+  // ── PENDING REPORTS ──
+  const pendingDate=overviewDate||localISODate();
+  const pendingTasks=tasks.map(k=>taskForDate(k,pendingDate)).filter(k=>!completedOnDate(k));
 
-  // Legend
-  const legend=document.createElement('div');legend.className='ovcal-legend';
-  legend.innerHTML=
-    '<div class="ovcal-legend-item"><div class="ovcal-legend-dot" style="background:#3ef0b0"></div>Completed</div>'
-    +'<div class="ovcal-legend-item"><div class="ovcal-legend-dot" style="background:#f5c842"></div>Today</div>'
-    +'<div class="ovcal-legend-item"><div class="ovcal-legend-dot" style="background:#f87171;border-radius:2px"></div>Overdue</div>';
-  c.appendChild(legend);
+  function pendingDeadlineState(task){
+    if(!task.planTime)return {status:'NO PLAN TIME',overdue:false,label:'—',minutes:0};
+    const [y,m,d]=pendingDate.split('-').map(Number);
+    const [hh,mm]=String(task.planTime).split(':').map(Number);
+    if(![y,m,d,hh,mm].every(Number.isFinite))return {status:'NO PLAN TIME',overdue:false,label:'—',minutes:0};
+    const deadline=new Date(y,m-1,d,hh,mm,0,0);
+    const now=new Date();
+    const diff=Math.round((now-deadline)/60000);
+    if(diff>0){
+      return {status:'OVERDUE',overdue:true,label:formatLateMinutes(diff),minutes:diff};
+    }
+    return {status:'ON TRACK',overdue:false,label:formatLateMinutes(Math.abs(diff)),minutes:diff};
+  }
 
-  const ovCalBox=document.createElement('div');ovCalBox.className='cal-wrap';c.appendChild(ovCalBox);
-  const ovDayWrap=document.createElement('div');ovDayWrap.id='ovDayWrap';c.appendChild(ovDayWrap);
+  const pendingLbl=document.createElement('div');
+  pendingLbl.className='section-title';
+  pendingLbl.style.marginTop='24px';
+  pendingLbl.textContent='PENDING REPORTS';
+  c.appendChild(pendingLbl);
 
-  function buildOvCal(){
-    ovCalBox.innerHTML='';
-    const today=localISODate();
-    const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
-    const DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const pendingWrap=document.createElement('div');
+  pendingWrap.className='task-list';
+  pendingWrap.style.marginBottom='26px';
 
-    // Build date maps
-    // Calendar is based only on actual completion dates.
-    const planMap={},actualMap={};
-    tasks.forEach(k=>{
-      if(k.actualDate&&isTaskComplete(k)){if(!actualMap[k.actualDate])actualMap[k.actualDate]=[];actualMap[k.actualDate].push(k);}
+  const pendingHdr=document.createElement('div');
+  pendingHdr.className='tlh';
+  pendingHdr.style.gridTemplateColumns='42px minmax(260px,1.6fr) minmax(150px,.8fr) 130px 120px 130px';
+  pendingHdr.innerHTML='<span>#</span><span>REPORT / TASK</span><span>PERSON</span><span>PLAN TIME</span><span>STATUS</span><span>OVERDUE / TIME LEFT</span>';
+  pendingWrap.appendChild(pendingHdr);
+
+  const sortedPending=pendingTasks.slice().sort((a,b)=>{
+    const sa=pendingDeadlineState(a),sb=pendingDeadlineState(b);
+    if(sa.overdue!==sb.overdue)return sa.overdue?-1:1;
+    if(a.planTime&&b.planTime)return a.planTime.localeCompare(b.planTime);
+    if(a.planTime)return -1;if(b.planTime)return 1;
+    return Number(a.sl)-Number(b.sl);
+  });
+
+  if(!sortedPending.length){
+    const empty=document.createElement('div');
+    empty.className='empty-msg';
+    empty.style.padding='28px';
+    empty.textContent='No pending reports for '+formatDateDisplay(pendingDate);
+    pendingWrap.appendChild(empty);
+  }else{
+    sortedPending.forEach((k,i)=>{
+      const t2=th(k.person);
+      const state=pendingDeadlineState(k);
+      const row=document.createElement('div');
+      row.className='trow';
+      row.style.gridTemplateColumns='42px minmax(260px,1.6fr) minmax(150px,.8fr) 130px 120px 130px';
+      row.style.animationDelay=(i*0.015)+'s';
+      if(state.overdue)row.style.borderLeft='3px solid #f87171';
+
+      const statusColor=state.status==='OVERDUE'?'#f87171':state.status==='ON TRACK'?'#3ef0b0':'#94a3b8';
+      const timeLabel=state.status==='OVERDUE'
+        ? state.label+' late'
+        : state.status==='ON TRACK'
+          ? state.label+' left'
+          : '—';
+
+      row.innerHTML='<span class="tsl">'+k.sl+'</span>'
+        +'<span class="tname">'+(k.priority?'<span style="color:'+t2.accent+'">★ </span>':'')+k.task+'</span>'
+        +'<span style="display:flex;align-items:center;gap:6px;min-width:0"><span style="width:20px;height:20px;border-radius:5px;background:'+t2.bg+';color:'+t2.color+';display:inline-flex;align-items:center;justify-content:center;font-size:.56rem;font-weight:700;font-family:Syne,sans-serif;flex-shrink:0">'+ini(k.person)+'</span><span style="color:'+t2.color+';font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+k.person+'</span></span>'
+        +'<span>'+(k.planTime?'<span class="time-badge plan" style="font-size:.62rem">◷ '+formatTime12(k.planTime)+'</span>':'<span class="time-badge unset" style="font-size:.62rem">Not set</span>')+'</span>'
+        +'<span style="font-family:DM Mono,monospace;font-size:.64rem;font-weight:700;color:'+statusColor+'">'+state.status+'</span>'
+        +'<span style="font-family:DM Mono,monospace;font-size:.64rem;color:'+statusColor+'">'+timeLabel+'</span>';
+      pendingWrap.appendChild(row);
     });
-
-    // Header
-    const hdr=document.createElement('div');hdr.className='cal-header';
-    hdr.innerHTML='<button class="cal-nav" id="ovCalPrev">&#8592;</button>'
-      +'<div class="cal-title">'+MONTHS[ovCalMonth]+' '+ovCalYear+'</div>'
-      +'<button class="cal-nav" id="ovCalNext">&#8594;</button>';
-    ovCalBox.appendChild(hdr);
-
-    // Day names
-    const daysHdr=document.createElement('div');daysHdr.className='cal-days-hdr';
-    DAYS.forEach(d=>{const el=document.createElement('div');el.className='cal-day-hdr';el.textContent=d;daysHdr.appendChild(el);});
-    ovCalBox.appendChild(daysHdr);
-
-    // Grid
-    const calGrid=document.createElement('div');calGrid.className='cal-grid';
-    const firstDay=new Date(ovCalYear,ovCalMonth,1).getDay();
-    const daysInMonth=new Date(ovCalYear,ovCalMonth+1,0).getDate();
-    const daysInPrev=new Date(ovCalYear,ovCalMonth,0).getDate();
-
-    // Prev month filler
-    for(let i=firstDay-1;i>=0;i--){
-      const cell=document.createElement('div');cell.className='cal-cell other-month';
-      cell.innerHTML='<div class="cal-date-num">'+(daysInPrev-i)+'</div>';
-      calGrid.appendChild(cell);
-    }
-
-    // Days
-    for(let d=1;d<=daysInMonth;d++){
-      const dateStr=ovCalYear+'-'+String(ovCalMonth+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
-      const planTasks=planMap[dateStr]||[];
-      const actualTasks=actualMap[dateStr]||[];
-      const isToday=dateStr===today;
-      const isSelected=dateStr===ovCalSelected;
-      const hasAny=planTasks.length||actualTasks.length;
-
-      const cell=document.createElement('div');
-      cell.className='cal-cell'+(isToday?' today':'')+(hasAny?' has-tasks':'')+(isSelected?' selected':'');
-      cell.dataset.date=dateStr;
-
-      let html='<div class="cal-date-num">'+d+'</div>';
-      if(hasAny){
-        html+='<div class="cal-dot-row">';
-        // Plan dots (blue)
-        planTasks.slice(0,3).forEach(k=>{
-          const overdue=k.planDate<today&&!k.actualDate;
-          html+='<div class="cal-dot" style="background:'+(overdue?'#f87171':'#3b82f6')+'" title="Plan: '+k.task+'"></div>';
-        });
-        if(planTasks.length>3)html+='<span style="font-size:.48rem;font-family:DM Mono,monospace;color:#60a5fa">+'+( planTasks.length-3)+'</span>';
-        // Actual dots (green)
-        actualTasks.slice(0,3).forEach(k=>{
-          const t2=th(k.person);
-          html+='<div class="cal-dot" style="background:'+t2.accent+';border:1px solid rgba(255,255,255,.2)" title="Done: '+k.task+'"></div>';
-        });
-        if(actualTasks.length>3)html+='<span style="font-size:.48rem;font-family:DM Mono,monospace;color:#3ef0b0">+'+( actualTasks.length-3)+'</span>';
-        html+='</div>';
-        // count line
-        const parts=[];
-        if(planTasks.length)parts.push('<span style="color:#60a5fa">'+planTasks.length+'p</span>');
-        if(actualTasks.length)parts.push('<span style="color:#3ef0b0">'+actualTasks.length+'d</span>');
-        html+='<div style="font-family:DM Mono,monospace;font-size:.55rem;margin-top:2px;display:flex;gap:3px">'+parts.join('')+'</div>';
-      } else if(isToday){
-        html+='<div style="font-family:DM Mono,monospace;font-size:.56rem;color:#f5c842;margin-top:3px">TODAY</div>';
-      }
-      cell.innerHTML=html;
-      cell.onclick=()=>selectDate(dateStr);
-      calGrid.appendChild(cell);
-    }
-
-    // Next month filler
-    const cellsUsed=firstDay+daysInMonth;
-    const remaining=(7-cellsUsed%7)%7;
-    for(let d=1;d<=remaining;d++){
-      const cell=document.createElement('div');cell.className='cal-cell other-month';
-      cell.innerHTML='<div class="cal-date-num">'+d+'</div>';
-      calGrid.appendChild(cell);
-    }
-    ovCalBox.appendChild(calGrid);
-
-    document.getElementById('ovCalPrev').onclick=()=>{
-      ovCalMonth--;if(ovCalMonth<0){ovCalMonth=11;ovCalYear--;}
-      buildOvCal();
-      if(ovCalSelected){
-        const pT=planMap[ovCalSelected]||[],aT=actualMap[ovCalSelected]||[];
-        buildOvDayDetail(ovCalSelected,pT,aT,ovCalSelected===localISODate());
-      }
-    };
-    document.getElementById('ovCalNext').onclick=()=>{
-      ovCalMonth++;if(ovCalMonth>11){ovCalMonth=0;ovCalYear++;}
-      buildOvCal();
-      if(ovCalSelected){
-        const pT=planMap[ovCalSelected]||[],aT=actualMap[ovCalSelected]||[];
-        buildOvDayDetail(ovCalSelected,pT,aT,ovCalSelected===localISODate());
-      }
-    };
-
-    // Restore the selected day's detail after every live refresh.
-    if(!ovCalSelected)ovCalSelected=overviewDate||today;
-    buildOvDayDetail(ovCalSelected,planMap[ovCalSelected]||[],actualMap[ovCalSelected]||[],ovCalSelected===today);
   }
 
-  function buildOvDayDetail(dateStr,planTasks,actualTasks,isToday){
-    ovDayWrap.innerHTML='';
-    const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
-    const [y,mo,d]=dateStr.split('-');
-    const dateLabel=d+' '+MONTHS[+mo-1]+' '+y;
-    const today=localISODate();
-    const isPast=dateStr<today;
-
-    const panel=document.createElement('div');panel.className='day-detail';
-
-    // Header
-    const phdr=document.createElement('div');phdr.className='day-detail-hdr';
-    phdr.innerHTML='<div class="day-detail-title">'
-      +'<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>'
-      +dateLabel
-      +(isToday?'<span class="day-today-badge">TODAY</span>':'')
-      +(isPast&&!isToday?'<span class="day-readonly-badge">PAST</span>':'')
-      +'</div>'
-      +'<div style="display:flex;gap:10px">'
-      +(planTasks.length?'<span style="font-family:DM Mono,monospace;font-size:.68rem;background:rgba(59,130,246,.1);color:#60a5fa;border:1px solid rgba(59,130,246,.2);border-radius:20px;padding:2px 10px">'+planTasks.length+' deadline'+(planTasks.length>1?'s':'')+'</span>':'')
-      +(actualTasks.length?'<span style="font-family:DM Mono,monospace;font-size:.68rem;background:rgba(62,240,176,.1);color:#3ef0b0;border:1px solid rgba(62,240,176,.2);border-radius:20px;padding:2px 10px">'+actualTasks.length+' completed</span>':'')
-      +'</div>';
-    panel.appendChild(phdr);
-
-    if(!planTasks.length&&!actualTasks.length){
-      panel.insertAdjacentHTML('beforeend','<div class="empty-msg" style="padding:28px">No tasks planned or completed on this date</div>');
-      ovDayWrap.appendChild(panel);return;
-    }
-
-    const body=document.createElement('div');body.style.cssText='padding:14px 16px;display:flex;flex-direction:column;gap:8px;';
-
-    // Plan deadline tasks
-    if(planTasks.length){
-      const sh=document.createElement('div');sh.className='ovcal-section-hdr';
-      sh.innerHTML='<span style="color:#60a5fa">◈ PLAN DEADLINES — '+planTasks.length+' task'+(planTasks.length>1?'s':'')+'</span>';
-      body.appendChild(sh);
-      planTasks.forEach(k=>{
-        const t2=th(k.person);
-        const isOverdue=dateStr<today&&!k.actualDate;
-        const isCompleted=!!k.actualDate;
-        const card=document.createElement('div');card.className='ovcal-detail-task has-plan';
-        if(isCompleted)card.classList.add('has-both');
-        card.style.borderLeftColor=isOverdue?'#f87171':isCompleted?'#3ef0b0':'#3b82f6';
-        card.innerHTML='<div style="flex:1;min-width:0">'
-          +'<div style="font-size:.83rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px">'
-          +(k.priority?'<span style="color:'+t2.accent+'">★ </span>':'')+k.task+'</div>'
-          +'<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap">'
-          +'<span class="ovcal-person-chip"><span style="width:18px;height:18px;border-radius:4px;background:'+t2.bg+';color:'+t2.color+';display:inline-flex;align-items:center;justify-content:center;font-size:.52rem;font-weight:700;font-family:Syne,sans-serif">'+ini(k.person)+'</span><span style="color:'+t2.color+';font-size:.75rem">'+k.person+'</span></span>'
-          +(k.planTime?'<span class="time-badge plan" style="font-size:.6rem;padding:2px 6px">⏱ '+k.planTime+'</span>':'')
-          +(isCompleted?'<span class="time-badge actual" style="font-size:.6rem;padding:2px 6px">✓ '+formatTime12(k.actualTime)+'</span>':'')
-          +(isOverdue?'<span class="time-badge overdue" style="font-size:.6rem;padding:2px 6px">OVERDUE</span>':'')
-          +'</div>'
-          +'</div>';
-        body.appendChild(card);
-      });
-    }
-
-    // Actual completion tasks (deduplicate from plan list)
-    const actualOnly=actualTasks;
-    if(actualOnly.length){
-      const sh2=document.createElement('div');sh2.className='ovcal-section-hdr';sh2.style.marginTop='10px';
-      sh2.innerHTML='<span style="color:#3ef0b0">✓ COMPLETED — '+actualOnly.length+' task'+(actualOnly.length>1?'s':'')+'</span>';
-      body.appendChild(sh2);
-      actualOnly.forEach(k=>{
-        const t2=th(k.person);
-        const cmp=timeCmp(k.planDate,k.planTime,k.actualDate,k.actualTime);
-        const card=document.createElement('div');card.className='ovcal-detail-task has-actual';
-        card.innerHTML='<div style="flex:1;min-width:0">'
-          +'<div style="font-size:.83rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:4px">'
-          +(k.priority?'<span style="color:'+t2.accent+'">★ </span>':'')+k.task+'</div>'
-          +'<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap">'
-          +'<span class="ovcal-person-chip"><span style="width:18px;height:18px;border-radius:4px;background:'+t2.bg+';color:'+t2.color+';display:inline-flex;align-items:center;justify-content:center;font-size:.52rem;font-weight:700;font-family:Syne,sans-serif">'+ini(k.person)+'</span><span style="color:'+t2.color+';font-size:.75rem">'+k.person+'</span></span>'
-          +(k.actualTime?'<span class="time-badge actual" style="font-size:.6rem;padding:2px 6px">✓ '+formatTime12(k.actualTime)+'</span>':'')
-          +(cmp==='late'?'<span class="time-badge overdue" style="font-size:.6rem;padding:2px 6px">LATE</span>':'')
-          +(cmp==='early'||cmp==='ontime'?'<span style="font-family:DM Mono,monospace;font-size:.6rem;color:#3ef0b0">ON TIME</span>':'')
-          +'</div>'
-          +'</div>';
-        body.appendChild(card);
-      });
-    }
-
-    panel.appendChild(body);
-    ovDayWrap.appendChild(panel);
-  }
-
-  buildOvCal();
+  const pendingSummary=document.createElement('div');
+  pendingSummary.style.cssText='display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 0';
+  const overdueCount=sortedPending.filter(k=>pendingDeadlineState(k).overdue).length;
+  const onTrackCount=sortedPending.filter(k=>pendingDeadlineState(k).status==='ON TRACK').length;
+  const noPlanCount=sortedPending.filter(k=>pendingDeadlineState(k).status==='NO PLAN TIME').length;
+  pendingSummary.innerHTML=
+    '<span style="font-family:DM Mono,monospace;font-size:.64rem;color:#f5c842">'+sortedPending.length+' PENDING</span>'
+    +'<span style="font-family:DM Mono,monospace;font-size:.64rem;color:#f87171">'+overdueCount+' OVERDUE</span>'
+    +'<span style="font-family:DM Mono,monospace;font-size:.64rem;color:#3ef0b0">'+onTrackCount+' ON TRACK</span>'
+    +(noPlanCount?'<span style="font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted)">'+noPlanCount+' NO PLAN TIME</span>':'');
+  pendingWrap.appendChild(pendingSummary);
+  c.appendChild(pendingWrap);
 }
 
 // ── ADD TASK ──
