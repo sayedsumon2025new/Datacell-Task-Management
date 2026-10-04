@@ -565,7 +565,7 @@ let nextSl=1;
 
 const SB_URL  = 'https://hqlowjnbugaehpxrqtzc.supabase.co';
 const SB_KEY  = 'sb_publishable_CyiA3Ls1wbctt1VCc3DOAA_NeOfPCfx';
-const POLL_INTERVAL_MS = 5 * 60 * 1000;
+const POLL_INTERVAL_MS = 30 * 1000;
 
 let _pollTimer = null;
 let _isSyncing = false;
@@ -1456,6 +1456,13 @@ function startPolling() {
   _pollTimer = setInterval(pollSheets, POLL_INTERVAL_MS);
 }
 function stopPolling() { clearInterval(_pollTimer); _pollTimer = null; }
+
+// Near-live cross-user refresh: poll every 30 seconds and refresh immediately
+// when the user returns to the tab/window.
+window.addEventListener('focus',()=>{ if(currentUser) pollSheets(); });
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible'&&currentUser)pollSheets();
+});
 
 // ── Initial load on login ────────────────────────────────────────
 async function initFromSheets() {
