@@ -874,6 +874,9 @@ function applyRemoteData(data) {
   if(Array.isArray(data.leaveApplications)){
     if(JSON.stringify(leaveApplications)!==JSON.stringify(data.leaveApplications)){leaveApplications=data.leaveApplications;changed=true;}
   }
+  if(data.multiSkillMap){
+    if(JSON.stringify(multiSkillMap)!==JSON.stringify(data.multiSkillMap)){multiSkillMap=data.multiSkillMap;changed=true;}
+  }
   if(data.userJobRoles){
     if(JSON.stringify(userJobRoles)!==JSON.stringify(data.userJobRoles)){userJobRoles=data.userJobRoles;changed=true;}
   }
@@ -936,6 +939,11 @@ async function sbFetchAll() {
     taskCompletionHistory:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('taskCompletion:')).flatMap(r=>{try{const t=JSON.parse(r.value);return t&&t.actualDate&&t.actualTime?[[r.key.slice('taskCompletion:'.length),t]]:[];}catch(e){return [];}})),
     taskRemarks:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('taskRemark:')).map(r=>[r.key.slice('taskRemark:'.length),String(r.value||'')])),
     leaveApplications:metaRows.filter(r=>r.key.startsWith('leaveApplication:')).flatMap(r=>{try{const a=JSON.parse(r.value);return a&&a.id&&a.employee&&a.fromDate&&a.toDate?[a]:[];}catch(e){return [];}}).sort((a,b)=>String(b.appliedAt||'').localeCompare(String(a.appliedAt||''))),
+    multiSkillMap:(()=>{
+      const row=metaRows.find(r=>r.key==='multiSkillMap');
+      if(!row)return {};
+      try{const parsed=JSON.parse(row.value||'{}');return parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?parsed:{};}catch(e){return {};}
+    })(),
     userJobRoles:(()=>{
       const roles={},rank={};
       metaRows.filter(r=>r.key.startsWith('userRole:')).forEach(r=>{
@@ -1378,6 +1386,7 @@ const doneState={};
 let taskCompletionHistory={};
 let taskRemarks={};
 let leaveApplications=[];
+let multiSkillMap={}; // task sl -> designated backup person
 function remarkKey(date,sl){return date+':'+Number(sl);}
 function taskRemark(date,sl){return taskRemarks[remarkKey(date,sl)]||'';}
 function taskForDate(task,date){
@@ -1729,6 +1738,7 @@ function renderContent(){
       renderPersonal();
     }
   }
+  setTimeout(showPendingMultiSkillPopup,80);
 }
 
 // ═══════════════════════════════════════════
@@ -2249,7 +2259,7 @@ function renderAdmin(allowedModules = null){
     {id:'master',label:'MASTER TASKS',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg>'},
     {id:'delete',label:'DELETE',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M9 6V4h6v2"/></svg>'},
     {id:'kpi',label:'KPI',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>'},
-    {id:'plantime',label:'PLAN TIME',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'},
+    {id:'plantime',label:'MULTI SKILL',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>'},
     {id:'all',label:'ALL TASKS',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><polyline points="3 6 4 7 6 5"/><polyline points="3 12 4 13 6 11"/></svg>'},
     {id:'workinghours',label:'WORKING HOURS',icon:'🕒'},
     {id:'leave',label:'LEAVE MANAGEMENT',icon:'<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 15h8"/></svg>'},
@@ -2415,13 +2425,20 @@ function leaveReportAssignments(application){
   const a=application&&application.reportAssignments;
   return a&&typeof a==='object'&&!Array.isArray(a)?a:{};
 }
+function leaveReportAcceptance(application){
+  const a=application&&application.reportAcceptance;
+  return a&&typeof a==='object'&&!Array.isArray(a)?a:{};
+}
 function leaveBalancingComplete(application){
   const reportTasks=leaveReportTasks(application);
   if(!reportTasks.length)return true;
   const assignments=leaveReportAssignments(application);
+  const acceptance=leaveReportAcceptance(application);
   return reportTasks.every(t=>{
-    const backup=String(assignments[String(t.sl)]||assignments[t.sl]||'').trim();
-    return !!backup&&backup!==application.employee;
+    const key=String(t.sl);
+    const backup=String(assignments[key]||'').trim();
+    const accepted=acceptance[key]&&String(acceptance[key].status)==='Accepted';
+    return !!backup&&backup!==application.employee&&accepted;
   });
 }
 async function saveLeaveBalancing(application,assignments,button){
@@ -2461,74 +2478,30 @@ async function saveLeaveBalancing(application,assignments,button){
 }
 function renderLeaveBalancingPanel(panel){
   panel.innerHTML='';
-  const role=currentUser==='admin'?'Admin':getUserJobRole(currentUser);
-  const canEdit=currentUser==='admin'||role==='Supervisor'||role==='Section Incharge';
   const head=document.createElement('div');head.className='leave-panel';head.style.marginBottom='14px';
-  head.innerHTML='<div class="leave-panel-title">Report Balancing</div>'
-    +'<div class="leave-panel-sub">// ASSIGN EVERY REPORT BEFORE LEAVE CAN BE APPROVED</div>'
-    +'<div style="font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted)">For each pending leave request, assign a backup owner for every report/task. Approval remains blocked until balancing is complete.</div>';
+  head.innerHTML='<div class="leave-panel-title">Report Balancing</div><div class="leave-panel-sub">// MULTI SKILL ACCEPTANCE STATUS FOR LEAVE COVERAGE</div><div style="font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted)">Assignments come from Multi Skill. Leave approval stays blocked until every designated backup accepts.</div>';
   panel.appendChild(head);
-
   const list=document.createElement('div');panel.appendChild(list);
   const draw=()=>{
     list.innerHTML='';
-    const active=leaveApplications.filter(a=>String(a.status)!=='Approved'&&String(a.status)!=='Rejected')
-      .sort((a,b)=>String(a.appliedAt||'').localeCompare(String(b.appliedAt||'')));
-    if(!active.length){
-      list.innerHTML='<div class="leave-panel" style="text-align:center;padding:30px;font-family:DM Mono,monospace;font-size:.7rem;color:var(--muted)">No pending leave applications for report balancing.</div>';
-      return;
-    }
+    const active=leaveApplications.filter(a=>!['Approved','Rejected'].includes(String(a.status)));
+    if(!active.length){list.innerHTML='<div class="leave-panel" style="text-align:center;padding:30px;color:var(--muted)">No pending leave applications.</div>';return;}
     active.forEach(a=>{
-      const reports=leaveReportTasks(a);
-      const savedAssignments=leaveReportAssignments(a);
+      const reports=leaveReportTasks(a),assignments=leaveReportAssignments(a),acceptance=leaveReportAcceptance(a),complete=leaveBalancingComplete(a);
       const card=document.createElement('div');card.className='leave-balance-card';
-      const complete=leaveBalancingComplete(a);
-      card.innerHTML='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">'
-        +'<div><div style="font-family:Syne,sans-serif;font-size:.92rem;font-weight:700">'+a.employee+'</div>'
-        +'<div class="leave-balance-meta"><span>'+leaveApplicantRole(a)+'</span><span>'+formatDateDisplay(a.fromDate)+' → '+formatDateDisplay(a.toDate)+'</span><span>'+a.days+' day'+(Number(a.days)!==1?'s':'')+'</span></div></div>'
-        +'<span class="leave-balance-status '+(complete?'complete':'incomplete')+'">'+(complete?'BALANCED':'ASSIGNMENT REQUIRED')+'</span></div>';
+      card.innerHTML='<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><div style="font-family:Syne,sans-serif;font-size:.92rem;font-weight:700">'+a.employee+'</div><div class="leave-balance-meta"><span>'+leaveApplicantRole(a)+'</span><span>'+formatDateDisplay(a.fromDate)+' → '+formatDateDisplay(a.toDate)+'</span><span>'+a.days+' day'+(Number(a.days)!==1?'s':'')+'</span></div></div><span class="leave-balance-status '+(complete?'complete':'incomplete')+'">'+(complete?'READY':'WAITING ACCEPTANCE')+'</span></div>';
       const wrap=document.createElement('div');wrap.className='leave-recent-wrap';
-      const table=document.createElement('table');table.className='pct-table';table.style.minWidth='760px';
-      table.innerHTML='<thead><tr><th>#</th><th>Report / Task</th><th>Current Owner</th><th>Backup Assignee During Leave</th></tr></thead>';
+      const table=document.createElement('table');table.className='pct-table';table.style.minWidth='900px';
+      table.innerHTML='<thead><tr><th>#</th><th>Report / Task</th><th>Current Owner</th><th>Multi Skill Backup</th><th>Acceptance</th></tr></thead>';
       const tbody=document.createElement('tbody');
-      if(!reports.length){
-        const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=4;
-        td.textContent='No reports/tasks are currently assigned to this employee. Balancing is automatically complete.';
-        td.style.cssText='text-align:center;padding:22px;color:#3ef0b0;font-family:DM Mono,monospace;font-size:.68rem';
-        tr.appendChild(td);tbody.appendChild(tr);
-      }else{
-        const backups=teamPersons().filter(p=>p&&p!==a.employee&&p!=='admin');
-        reports.forEach(t=>{
-          const tr=document.createElement('tr');
-          const id=document.createElement('td');id.textContent=t.sl;tr.appendChild(id);
-          const task=document.createElement('td');task.textContent=t.task;tr.appendChild(task);
-          const owner=document.createElement('td');owner.textContent=a.employee;tr.appendChild(owner);
-          const assignTd=document.createElement('td');
-          const select=document.createElement('select');select.className='leave-balance-select';select.dataset.sl=t.sl;
-          select.disabled=!canEdit;
-          const empty=document.createElement('option');empty.value='';empty.textContent='Select backup assignee';select.appendChild(empty);
-          backups.forEach(p=>{const opt=document.createElement('option');opt.value=p;opt.textContent=p;if(String(savedAssignments[String(t.sl)]||'')===p)opt.selected=true;select.appendChild(opt);});
-          assignTd.appendChild(select);tr.appendChild(assignTd);tbody.appendChild(tr);
-        });
-      }
-      table.appendChild(tbody);wrap.appendChild(table);card.appendChild(wrap);
-      if(canEdit&&reports.length){
-        const actions=document.createElement('div');actions.style.cssText='display:flex;justify-content:flex-end;margin-top:12px';
-        const save=document.createElement('button');save.className='add-btn';save.type='button';save.textContent='SAVE REPORT ASSIGNMENT';
-        save.onclick=async()=>{
-          const assignments={...savedAssignments};
-          card.querySelectorAll('.leave-balance-select').forEach(sel=>{
-            if(sel.value)assignments[String(sel.dataset.sl)]=sel.value;
-            else delete assignments[String(sel.dataset.sl)];
-          });
-          if(await saveLeaveBalancing(a,assignments,save)){
-            await loadLeaveApplicationsRemote();
-            draw();
-          }
-        };
-        actions.appendChild(save);card.appendChild(actions);
-      }
-      list.appendChild(card);
+      reports.forEach(t=>{
+        const key=String(t.sl),backup=assignments[key]||'Not Assigned',st=acceptance[key]?.status||'Pending';
+        const tr=document.createElement('tr');
+        [t.sl,t.task,a.employee,backup].forEach(v=>{const td=document.createElement('td');td.textContent=v;tr.appendChild(td);});
+        const td=document.createElement('td');td.textContent=st;td.style.color=st==='Accepted'?'#3ef0b0':st==='Rejected'?'#f87171':'#f5c842';tr.appendChild(td);tbody.appendChild(tr);
+      });
+      if(!reports.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=5;td.textContent='No reports/tasks assigned. Balancing is automatically READY.';tr.appendChild(td);tbody.appendChild(tr);}
+      table.appendChild(tbody);wrap.appendChild(table);card.appendChild(wrap);list.appendChild(card);
     });
   };
   draw();
@@ -2881,6 +2854,14 @@ function renderLeaveApplicationPanel(panel){
     if(reason.value.trim().length<3){toast('Enter a leave reason','error');reason.focus();return;}
     const now=new Date();
     const id=String(now.getTime())+'-'+Math.random().toString(36).slice(2,8);
+    const leaveReports=leaveReportTasks({employee:employee.value});
+    const missingMultiSkill=leaveReports.filter(t=>!multiSkillMap[String(t.sl)]||multiSkillMap[String(t.sl)]===employee.value);
+    if(missingMultiSkill.length){
+      toast('Leave cannot be submitted. Multi Skill backup missing for '+missingMultiSkill.length+' report(s).','error');
+      return;
+    }
+    const reportAssignments=Object.fromEntries(leaveReports.map(t=>[String(t.sl),multiSkillMap[String(t.sl)]]));
+    const reportAcceptance=Object.fromEntries(leaveReports.map(t=>[String(t.sl),{assignee:multiSkillMap[String(t.sl)],status:'Pending',respondedAt:'',respondedBy:''}]));
     const application={
       id,
       employee:employee.value,
@@ -2893,6 +2874,9 @@ function renderLeaveApplicationPanel(panel){
       employeeRole:getUserJobRole(employee.value),
       supervisorStatus:getUserJobRole(employee.value)==='Team Member'?'Pending':'Not Required',
       sectionStatus:'Pending',
+      reportAssignments,
+      reportAcceptance,
+      balancingComplete:leaveReports.length===0,
       status:getUserJobRole(employee.value)==='Team Member'?'Pending Supervisor':'Pending Section Incharge',
       appliedBy:currentUser,
       appliedAt:now.toISOString()
@@ -2908,6 +2892,56 @@ function renderLeaveApplicationPanel(panel){
   };
   clearForm();
 }
+async function respondToMultiSkill(application,taskSl,decision,button){
+  const key=String(taskSl);
+  if(!['Accepted','Rejected'].includes(decision))return false;
+  const acceptance={...leaveReportAcceptance(application)};
+  const current=acceptance[key];
+  if(!current||current.assignee!==currentUser){toast('This request is not assigned to you','error');return false;}
+  acceptance[key]={...current,status:decision,respondedAt:new Date().toISOString(),respondedBy:currentUser};
+  const updated={...application,reportAcceptance:acceptance};
+  updated.balancingComplete=leaveBalancingComplete(updated);
+  const metaKey='leaveApplication:'+updated.id,label=button?.textContent||'';
+  if(button){button.disabled=true;button.textContent='SAVING...';}
+  try{
+    const rows=await dbRequest('meta','POST','on_conflict=key',[{key:metaKey,value:JSON.stringify(updated)}],'resolution=merge-duplicates,return=representation');
+    if(!Array.isArray(rows)||!rows.some(r=>r.key===metaKey))throw new Error('Response was not confirmed');
+    leaveApplications=leaveApplications.map(a=>a.id===updated.id?updated:a);
+    await notifySaved();
+    toast('Report coverage '+decision.toLowerCase(),'success');
+    return true;
+  }catch(e){toast('Response not saved: '+e.message,'error');return false;}
+  finally{if(button){button.disabled=false;button.textContent=label;}}
+}
+function showPendingMultiSkillPopup(){
+  if(!currentUser||currentUser==='admin'||document.querySelector('.multi-skill-modal-overlay'))return;
+  const requests=[];
+  leaveApplications.filter(a=>!['Approved','Rejected'].includes(String(a.status))).forEach(a=>{
+    const acceptance=leaveReportAcceptance(a);
+    leaveReportTasks(a).forEach(t=>{
+      const r=acceptance[String(t.sl)];
+      if(r&&r.assignee===currentUser&&r.status==='Pending')requests.push({application:a,task:t});
+    });
+  });
+  if(!requests.length)return;
+  const overlay=document.createElement('div');overlay.className='multi-skill-modal-overlay';
+  overlay.style.cssText='position:fixed;inset:0;z-index:800;background:rgba(4,10,20,.76);display:flex;align-items:center;justify-content:center;padding:20px';
+  const modal=document.createElement('div');modal.style.cssText='width:min(780px,96vw);max-height:84vh;overflow:auto;background:#111c2d;border:1px solid rgba(96,165,250,.35);border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.55)';
+  modal.innerHTML='<div style="padding:16px 18px;border-bottom:1px solid var(--border)"><div style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700;color:#60a5fa">Multi Skill Coverage Request</div><div style="font-family:DM Mono,monospace;font-size:.62rem;color:var(--muted);margin-top:3px">Accept reports you can cover while the owner is on leave.</div></div>';
+  const body=document.createElement('div');body.style.padding='14px 18px';
+  requests.forEach(req=>{
+    const row=document.createElement('div');row.style.cssText='border:1px solid var(--border);border-radius:12px;padding:12px;margin-bottom:10px';
+    row.innerHTML='<div style="font-family:Syne,sans-serif;font-size:.86rem;font-weight:700">'+req.task.task+'</div><div style="font-family:DM Mono,monospace;font-size:.62rem;color:var(--muted);margin:4px 0 9px">Owner: '+req.application.employee+' · Leave: '+formatDateDisplay(req.application.fromDate)+' → '+formatDateDisplay(req.application.toDate)+'</div>';
+    const acts=document.createElement('div');acts.className='leave-approval-actions';
+    const accept=document.createElement('button');accept.className='leave-approve-btn';accept.textContent='ACCEPT';
+    const reject=document.createElement('button');reject.className='leave-reject-btn';reject.textContent='REJECT';
+    accept.onclick=async()=>{reject.disabled=true;if(await respondToMultiSkill(req.application,req.task.sl,'Accepted',accept)){overlay.remove();setTimeout(showPendingMultiSkillPopup,80);}else reject.disabled=false;};
+    reject.onclick=async()=>{accept.disabled=true;if(await respondToMultiSkill(req.application,req.task.sl,'Rejected',reject)){overlay.remove();setTimeout(showPendingMultiSkillPopup,80);}else accept.disabled=false;};
+    acts.append(accept,reject);row.appendChild(acts);body.appendChild(row);
+  });
+  modal.appendChild(body);overlay.appendChild(modal);document.body.appendChild(overlay);
+}
+
 function buildLeaveManagement(c){
   c.insertAdjacentHTML('beforeend',
     '<div style="font-family:Syne,sans-serif;font-size:1.5rem;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Leave <span style="color:#f5c842">Management</span></div>'
@@ -3286,96 +3320,83 @@ function buildDelete(c){
 // ── ASSIGN ──
 function buildAssign(c){renderMasterTasks(c);}
 
-// ── PLAN TIME (Admin only) ──
+// ── MULTI SKILL (Admin only) ──
+async function saveMultiSkillMap(nextMap,button){
+  const label=button?.textContent||'';
+  if(button){button.disabled=true;button.textContent='SAVING...';}
+  try{
+    await queueTaskWrite(async()=>{
+      const rows=await dbRequest('meta','POST','on_conflict=key',
+        [{key:'multiSkillMap',value:JSON.stringify(nextMap)}],'resolution=merge-duplicates,return=representation');
+      if(!Array.isArray(rows)||!rows.some(r=>r.key==='multiSkillMap'))throw new Error('Multi Skill mapping was not confirmed');
+      const verify=await dbRequest('meta','GET','select=key,value&key=eq.multiSkillMap');
+      const row=Array.isArray(verify)?verify.find(r=>r.key==='multiSkillMap'):null;
+      if(!row)throw new Error('Saved Multi Skill mapping could not be reloaded');
+      const confirmed=JSON.parse(row.value||'{}');
+      if(JSON.stringify(confirmed)!==JSON.stringify(nextMap))throw new Error('Saved Multi Skill mapping does not match');
+      multiSkillMap=confirmed;
+      await notifySaved();
+    });
+    toast('Multi Skill assignment saved','success');
+    return true;
+  }catch(e){toast('Multi Skill not saved: '+e.message,'error');return false;}
+  finally{if(button){button.disabled=false;button.textContent=label;}}
+}
 function buildPlanTime(c){
-  c.insertAdjacentHTML('beforeend',`<div style="font-family:'Syne',sans-serif;font-size:1.1rem;font-weight:700;margin-bottom:4px">
-    <span style="color:#60a5fa">Plan Time</span> Manager
-    <span style="font-size:0.68rem;font-family:'DM Mono',monospace;background:rgba(245,200,66,0.1);color:#f5c842;border:1px solid rgba(245,200,66,0.25);border-radius:20px;padding:2px 10px;margin-left:10px;vertical-align:middle">ADMIN ONLY</span>
-  </div>
-  <div style="font-size:0.72rem;font-family:'DM Mono',monospace;color:var(--muted);margin-bottom:18px">// SET DEADLINE TIMES FOR EACH TASK · USERS CAN ONLY VIEW THESE</div>`);
+  c.insertAdjacentHTML('beforeend','<div style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:700;margin-bottom:4px"><span style="color:#60a5fa">Multi Skill</span> Manager <span style="font-size:.68rem;font-family:DM Mono,monospace;background:rgba(245,200,66,.1);color:#f5c842;border:1px solid rgba(245,200,66,.25);border-radius:20px;padding:2px 10px;margin-left:10px">ADMIN ONLY</span></div><div style="font-size:.72rem;font-family:DM Mono,monospace;color:var(--muted);margin-bottom:18px">// ASSIGN WHO ELSE CAN HANDLE EACH REPORT DURING LEAVE</div>');
 
-  const pOpts='<option value="">All Persons</option>'+PERSONS.map(p=>`<option value="${p}">${p}</option>`).join('');
+  const persons=teamPersons().filter(p=>p&&p!=='admin');
+  const pOpts='<option value="">All Persons</option>'+persons.map(p=>'<option value="'+p+'">'+p+'</option>').join('');
   const fr=document.createElement('div');fr.className='filter-row';
-  fr.innerHTML=`<div class="search-wrap"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><input type="text" id="ptQ" placeholder="Search tasks..."></div>
-    <select class="field-select" id="ptPF">${pOpts}</select>
-    <button class="fbtn" id="ptShowAll">Show All</button>
-    <button class="fbtn" id="ptShowUnset">Unset Only</button>`;
+  fr.innerHTML='<div class="search-wrap"><svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><input type="text" id="msQ" placeholder="Search reports..."></div><select class="field-select" id="msPF">'+pOpts+'</select><button class="fbtn" id="msUnset">Unassigned Only</button><button class="fbtn" id="msAll">Show All</button>';
   c.appendChild(fr);
 
-  // summary strip
-  const totalWithPlan=tasks.filter(t=>t.planTime).length;
-  const strip=document.createElement('div');
-  strip.style.cssText='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;';
-  const chips2=[
-    {label:'With Plan Time',val:totalWithPlan,color:'#60a5fa'},
-  ];
-  chips2.forEach(ch=>{
-    const el=document.createElement('div');
-    el.style.cssText=`background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 16px;display:flex;align-items:center;gap:10px;`;
-    el.innerHTML=`<span style="font-family:'Syne',sans-serif;font-size:1.2rem;font-weight:700;color:${ch.color}">${ch.val}</span>
-      <span style="font-size:0.68rem;font-family:'DM Mono',monospace;color:var(--muted);letter-spacing:0.06em">${ch.label}</span>`;
-    strip.appendChild(el);
-  });
+  const strip=document.createElement('div');strip.style.cssText='display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px';
+  const assignedCount=tasks.filter(t=>multiSkillMap[String(t.sl)]).length;
+  strip.innerHTML='<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 16px"><span style="font-family:Syne,sans-serif;font-size:1.2rem;font-weight:700;color:#3ef0b0">'+assignedCount+'</span><span style="font-size:.68rem;font-family:DM Mono,monospace;color:var(--muted);margin-left:8px">MULTI SKILL ASSIGNED</span></div>';
   c.appendChild(strip);
 
   const wrap=document.createElement('div');c.appendChild(wrap);
-
-  let showUnsetOnly=false;
+  let unsetOnly=false;
   const draw=()=>{
-    const q=(document.getElementById('ptQ')?.value||'').toLowerCase();
-    const pf=document.getElementById('ptPF')?.value||'';
-    let fil=tasks.filter(k=>{
+    const q=(document.getElementById('msQ')?.value||'').toLowerCase();
+    const pf=document.getElementById('msPF')?.value||'';
+    const fil=tasks.filter(k=>{
       if(q&&!k.task.toLowerCase().includes(q)&&!k.person.toLowerCase().includes(q))return false;
       if(pf&&k.person!==pf)return false;
-      if(showUnsetOnly&&k.planTime)return false;
+      if(unsetOnly&&multiSkillMap[String(k.sl)])return false;
       return true;
     });
     wrap.innerHTML='';
     const list=document.createElement('div');list.className='task-list';
-    const cols='36px 1fr 160px 180px';
+    const cols='42px minmax(280px,1.6fr) minmax(170px,.8fr) minmax(250px,1fr)';
     const hdr=document.createElement('div');hdr.className='tlh';hdr.style.gridTemplateColumns=cols;
-    hdr.innerHTML=`<span>#</span><span>Task</span><span>Person</span>
-      <span style="color:#60a5fa;display:flex;align-items:center;gap:4px">${clockIcon()} PLAN TIME SET</span>`;
+    hdr.innerHTML='<span>#</span><span>REPORT / TASK</span><span>CURRENT OWNER</span><span>MULTI SKILL ASSIGN</span>';
     list.appendChild(hdr);
-    if(!fil.length){list.innerHTML+='<div class="empty-msg">NO TASKS FOUND</div>';wrap.appendChild(list);return;}
-    fil.forEach((k,i)=>{
-      const t2=th(k.person);
-      const row=document.createElement('div');
-      row.className='trow'+(k.priority?' priority':'');
-      row.style.gridTemplateColumns=cols;row.style.animationDelay=i*0.01+'s';
-      if(k.priority)row.style.borderLeftColor=t2.accent;
-      row.innerHTML=`
-        <span class="tsl">${k.sl}</span>
-        <span class="tname" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${k.task}${k.priority?` <span style="color:${t2.accent}">★</span>`:''}</span>
-        <span style="display:flex;align-items:center;gap:5px">
-          <span style="width:20px;height:20px;border-radius:5px;background:${t2.bg};color:${t2.color};display:inline-flex;align-items:center;justify-content:center;font-size:0.56rem;font-weight:700;font-family:'Syne',sans-serif">${ini(k.person)}</span>
-          <span style="color:${t2.color};font-size:0.78rem">${k.person}</span>
-        </span>
-        <div class="time-input-wrap">
-          <input type="time" class="time-inp pt-inp" id="pt-${k.sl}" value="${k.planTime||''}" data-sl="${k.sl}" style="width:88px;" title="Plan Time">
-          <button class="time-save-btn pt-save" data-sl="${k.sl}">SET</button>
-        </div>`;
-      list.appendChild(row);
+    if(!fil.length){list.innerHTML+='<div class="empty-msg">NO REPORTS FOUND</div>';wrap.appendChild(list);return;}
+    fil.forEach(k=>{
+      const t2=th(k.person),row=document.createElement('div');row.className='trow';row.style.gridTemplateColumns=cols;
+      const candidates=persons.filter(p=>p!==k.person);
+      row.innerHTML='<span class="tsl">'+k.sl+'</span><span class="tname">'+k.task+'</span><span style="color:'+t2.color+'">'+k.person+'</span>';
+      const cell=document.createElement('div');cell.style.cssText='display:flex;gap:7px;align-items:center';
+      const sel=document.createElement('select');sel.className='field-select';sel.style.cssText='min-width:190px;padding:6px 28px 6px 9px;font-size:.72rem';
+      sel.innerHTML='<option value="">Select backup person</option>'+candidates.map(p=>'<option value="'+p+'"'+(multiSkillMap[String(k.sl)]===p?' selected':'')+'>'+p+'</option>').join('');
+      const btn=document.createElement('button');btn.className='time-save-btn';btn.textContent='SAVE';
+      btn.onclick=async()=>{
+        const next={...multiSkillMap};
+        if(sel.value)next[String(k.sl)]=sel.value;else delete next[String(k.sl)];
+        if(await saveMultiSkillMap(next,btn)&&wrap.isConnected)draw();
+      };
+      cell.append(sel,btn);row.appendChild(cell);list.appendChild(row);
     });
     wrap.appendChild(list);
-    // save plan time
-    wrap.querySelectorAll('.pt-save').forEach(btn=>{
-      btn.onclick=async()=>{
-        const sl=+btn.dataset.sl;
-        const timeEl=document.getElementById('pt-'+sl);
-        if(!timeEl || !timeEl.reportValidity())return;
-        const saved=await savePlanTime(sl,timeEl.value,btn);
-        if(saved && wrap.isConnected)draw();
-      };
-    });
   };
   draw();
-  document.getElementById('ptQ').oninput=draw;
-  document.getElementById('ptPF').onchange=draw;
-  document.getElementById('ptShowAll').onclick=()=>{showUnsetOnly=false;draw();};
-  document.getElementById('ptShowUnset').onclick=()=>{showUnsetOnly=true;draw();};
+  document.getElementById('msQ').oninput=draw;
+  document.getElementById('msPF').onchange=draw;
+  document.getElementById('msUnset').onclick=()=>{unsetOnly=true;draw();};
+  document.getElementById('msAll').onclick=()=>{unsetOnly=false;draw();};
 }
-
 
 // ── KPI DASHBOARD ──
 function personWorkloadMetrics(person,date){
@@ -4170,7 +4191,7 @@ function renderSettingsAccess(body){
     {id:'kpi',label:'KPI Dashboard',desc:'View analytics'},
     {id:'overview',label:'Team Overview',desc:'See all users progress'},
     {id:'all',label:'All Tasks',desc:'View full task list'},
-    {id:'plantime',label:'Plan Time',desc:'View deadlines panel'},
+    {id:'plantime',label:'Multi Skill',desc:'Manage backup skill assignment by report'},
     {id:'workinghours',label:'Working Hours',desc:'View and update daily working hours'},
     {id:'leave',label:'Leave Management',desc:'View leave management'},
   ];
