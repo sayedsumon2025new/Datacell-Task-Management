@@ -1946,7 +1946,8 @@ function openApp(){startPolling();
   ovCalYear=new Date().getFullYear();ovCalMonth=new Date().getMonth();ovCalSelected='';
   renderContent();
 }
-document.getElementById('logoutBtn').onclick=()=>{closeSidebar();{
+document.getElementById('logoutBtn').onclick=()=>{
+  closeSidebar();
   stopPolling();currentUser=null;
   try { localStorage.removeItem('fts_session'); } catch(e){}
   document.getElementById('appScreen').style.display='none';
