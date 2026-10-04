@@ -814,6 +814,10 @@ async function createTaskRecord(fields){
       if(!Array.isArray(rows)||rows.length!==1||Number(rows[0].sl)!==sl)throw new Error('New task was not confirmed. Refresh before retrying.');
       const task=rowToTask(rows[0]);
       tasks.push(task);tasks.sort((a,b)=>a.sl-b.sl);rememberTask(task);nextSl=sl+1;
+      if(SQL_TABLES.app_state){
+        await dbRequest('app_state','POST','on_conflict=key',
+          [{key:'nextSl',value:String(nextSl)}],'resolution=merge-duplicates,return=representation');
+      }
       return task;
     }catch(e){if(e.status===409&&e.code==='23505')continue;throw e;}
   }
@@ -3725,6 +3729,16 @@ function buildDelete(c){
 function buildAssign(c){renderMasterTasks(c);}
 
 // ── MULTI SKILL (Admin only) ──
+async function syncActiveLeaveCoverageFromMultiSkill(){
+  if(!(SQL_TABLES.leave_applications&&SQL_TABLES.leave_report_coverage))return;
+  for(const application of leaveApplications.filter(a=>!['Approved','Rejected'].includes(String(a.status)))){
+    const coverage=leaveCoverageState(application);
+    const updated={...application,reportAssignments:coverage.assignments,reportAcceptance:coverage.acceptance};
+    updated.balancingComplete=leaveBalancingComplete(updated);
+    await persistLeaveApplication(updated);
+  }
+  await loadLeaveApplicationsRemote();
+}
 async function saveMultiSkillMap(nextMap,button){
   const label=button?.textContent||'';
   if(button){button.disabled=true;button.textContent='SAVING...';}
@@ -3742,6 +3756,7 @@ async function saveMultiSkillMap(nextMap,button){
         const confirmed=Object.fromEntries((verify||[]).map(r=>[String(Number(r.task_sl)),String(r.backup_person||'')]));
         if(JSON.stringify(confirmed)!==JSON.stringify(nextMap))throw new Error('Saved Multi Skill mapping does not match');
         multiSkillMap=confirmed;
+        await syncActiveLeaveCoverageFromMultiSkill();
       }else{
         const rows=await dbRequest('meta','POST','on_conflict=key',
           [{key:'multiSkillMap',value:JSON.stringify(nextMap)}],'resolution=merge-duplicates,return=representation');
