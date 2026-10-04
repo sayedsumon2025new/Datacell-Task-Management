@@ -1622,9 +1622,14 @@ function renderContent(){
   if (currentUser === 'admin') {
     renderAdmin();
   } else {
-    const allowed = moduleAccess[currentUser] || [];
+    // Leave Management is role-driven and must not depend on manual Module Access.
+    // Team Members apply; Supervisors review first; Section Incharges give final approval.
+    const savedModules = moduleAccess[currentUser] || [];
+    const role = getUserJobRole(currentUser);
+    const autoModules = JOB_ROLES.includes(role) ? ['leave'] : [];
+    const allowed = [...new Set([...savedModules,...autoModules])];
     if (allowed.length > 0) {
-      // User has been granted some admin modules → show restricted admin view
+      // Restricted admin-style navigation: My Tasks + explicitly granted/role-driven modules.
       renderAdmin(allowed);
     } else {
       renderPersonal();
@@ -2535,12 +2540,15 @@ function buildLeaveManagement(c){
     '<div style="font-family:Syne,sans-serif;font-size:1.5rem;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Leave <span style="color:#f5c842">Management</span></div>'
     +'<div style="font-size:.72rem;font-family:DM Mono,monospace;color:var(--muted);margin-bottom:18px">// APPLICATION · STATUS · BALANCING · APPROVAL</div>'
   );
+  const leaveRole=currentUser==='admin'?'Admin':getUserJobRole(currentUser);
   const subDefs=[
     {id:'application',label:'LEAVE APPLICATION FORM'},
     {id:'status',label:'LEAVE STATUS SUMMARY'},
     {id:'balancing',label:'REPORT BALANCING'},
-    {id:'approval',label:'LEAVE APPROVAL'}
+    ...((currentUser==='admin'||leaveRole==='Supervisor'||leaveRole==='Section Incharge')
+      ?[{id:'approval',label:'LEAVE APPROVAL'}]:[])
   ];
+  if(leaveSubTab==='approval'&&!subDefs.some(x=>x.id==='approval'))leaveSubTab='application';
   const subNav=document.createElement('div');subNav.className='admin-tabs';subNav.style.marginBottom='18px';
   subDefs.forEach(item=>{
     const btn=document.createElement('button');btn.className='atab'+(leaveSubTab===item.id?' active':'');btn.textContent=item.label;
