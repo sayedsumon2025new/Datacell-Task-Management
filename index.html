@@ -2366,7 +2366,8 @@ function renderLeaveApprovalPanel(panel){
   head.innerHTML='<div class="leave-panel-title">Leave Approval</div>'
     +'<div class="leave-panel-sub">// TWO-STEP FLOW · TEAM MEMBER → SUPERVISOR → SECTION INCHARGE</div>'
     +'<div class="leave-flow"><span class="leave-flow-step">Team Member applies</span><span>→</span><span class="leave-flow-step">Supervisor review</span><span>→</span><span class="leave-flow-step">Section Incharge final approval</span></div>'
-    +'<div style="margin-top:10px;font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted)">Signed in as: '+currentUser+' · '+role+'</div>';
+    +'<div style="margin-top:10px;font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted)">Signed in as: '+currentUser+' · Job Role: <strong style="color:'+(role==='Section Incharge'?'#60a5fa':role==='Supervisor'?'#f5c842':'#adbed2')+'">'+role+'</strong></div>'
+    +(role==='Team Member'?'<div style="margin-top:8px;font-family:DM Mono,monospace;font-size:.62rem;color:#f87171">Approval buttons are disabled because this account is currently saved as Team Member. Admin must change Job Role in Settings → User Management.</div>':'');
   panel.appendChild(head);
 
   const box=document.createElement('div');box.className='leave-panel';panel.appendChild(box);
@@ -2380,7 +2381,8 @@ function renderLeaveApprovalPanel(panel){
       if(currentUser==='admin')return true;
       if(role==='Supervisor')return stage==='supervisor'&&leaveApplicantRole(a)==='Team Member';
       if(role==='Section Incharge')return stage==='section';
-      return false;
+      // Team Member/read-only users can see only their own pending applications here.
+      return a.employee===currentUser;
     }).sort((a,b)=>String(a.appliedAt||'').localeCompare(String(b.appliedAt||'')));
 
     const wrap=document.createElement('div');wrap.className='leave-recent-wrap';
@@ -2401,8 +2403,14 @@ function renderLeaveApprovalPanel(panel){
       const actions=document.createElement('div');actions.className='leave-approval-actions';
       const approve=document.createElement('button');approve.type='button';approve.className='leave-approve-btn';approve.textContent='APPROVE';
       const reject=document.createElement('button');reject.type='button';reject.className='leave-reject-btn';reject.textContent='REJECT';
-      approve.onclick=async()=>{reject.disabled=true;if(await updateLeaveApproval(a,'Approved',approve)){await loadLeaveApplicationsRemote();draw();}else reject.disabled=false;};
-      reject.onclick=async()=>{approve.disabled=true;if(await updateLeaveApproval(a,'Rejected',reject)){await loadLeaveApplicationsRemote();draw();}else approve.disabled=false;};
+      const canAct=canActOnLeave(a);
+      if(!canAct){
+        approve.disabled=true;reject.disabled=true;
+        approve.title='Approval requires Supervisor or Section Incharge role for this stage';
+        reject.title=approve.title;
+      }
+      approve.onclick=async()=>{if(!canAct)return;reject.disabled=true;if(await updateLeaveApproval(a,'Approved',approve)){await loadLeaveApplicationsRemote();draw();}else reject.disabled=false;};
+      reject.onclick=async()=>{if(!canAct)return;approve.disabled=true;if(await updateLeaveApproval(a,'Rejected',reject)){await loadLeaveApplicationsRemote();draw();}else approve.disabled=false;};
       actions.append(approve,reject);actionTd.appendChild(actions);tr.appendChild(actionTd);
       tbody.appendChild(tr);
     });
@@ -2550,10 +2558,8 @@ function buildLeaveManagement(c){
     {id:'application',label:'LEAVE APPLICATION FORM'},
     {id:'status',label:'LEAVE STATUS SUMMARY'},
     {id:'balancing',label:'REPORT BALANCING'},
-    ...((currentUser==='admin'||leaveRole==='Supervisor'||leaveRole==='Section Incharge')
-      ?[{id:'approval',label:'LEAVE APPROVAL'}]:[])
+    {id:'approval',label:'LEAVE APPROVAL'}
   ];
-  if(leaveSubTab==='approval'&&!subDefs.some(x=>x.id==='approval'))leaveSubTab='application';
   const subNav=document.createElement('div');subNav.className='admin-tabs';subNav.style.marginBottom='18px';
   subDefs.forEach(item=>{
     const btn=document.createElement('button');btn.className='atab'+(leaveSubTab===item.id?' active':'');btn.textContent=item.label;
