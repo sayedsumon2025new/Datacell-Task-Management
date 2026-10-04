@@ -2139,17 +2139,45 @@ function renderAdmin(allowedModules = null){
 }
 
 // ── LEAVE MANAGEMENT ──
+let leaveSubTab='application';
 function buildLeaveManagement(c){
   c.insertAdjacentHTML('beforeend',
     '<div style="font-family:Syne,sans-serif;font-size:1.5rem;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Leave <span style="color:#f5c842">Management</span></div>'
-    +'<div style="font-size:.72rem;font-family:DM Mono,monospace;color:var(--muted);margin-bottom:18px">// LEAVE REQUESTS · APPROVAL · HISTORY</div>'
+    +'<div style="font-size:.72rem;font-family:DM Mono,monospace;color:var(--muted);margin-bottom:18px">// APPLICATION · STATUS · BALANCING · APPROVAL</div>'
   );
+
+  const subDefs=[
+    {id:'application',label:'LEAVE APPLICATION FORM'},
+    {id:'status',label:'LEAVE STATUS SUMMARY'},
+    {id:'balancing',label:'REPORT BALANCING'},
+    {id:'approval',label:'LEAVE APPROVAL'}
+  ];
+  const subNav=document.createElement('div');
+  subNav.className='admin-tabs';
+  subNav.style.marginBottom='18px';
+  subDefs.forEach(item=>{
+    const btn=document.createElement('button');
+    btn.className='atab'+(leaveSubTab===item.id?' active':'');
+    btn.textContent=item.label;
+    btn.onclick=()=>{leaveSubTab=item.id;renderContent();};
+    subNav.appendChild(btn);
+  });
+  c.appendChild(subNav);
+
   const panel=document.createElement('div');
   panel.className='chart-full';
-  panel.style.cssText='padding:28px;min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;';
-  panel.innerHTML='<div style="width:46px;height:46px;border-radius:12px;background:rgba(245,200,66,.08);border:1px solid rgba(245,200,66,.2);display:flex;align-items:center;justify-content:center;font-size:1.25rem;margin-bottom:12px">📅</div>'
-    +'<div style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700;margin-bottom:6px">Leave Management</div>'
-    +'<div style="font-family:DM Mono,monospace;font-size:.68rem;color:var(--muted);max-width:520px;line-height:1.6">Navigation module is ready. Leave request, approval workflow, balance and history can be added inside this section.</div>';
+  panel.style.cssText='padding:24px;min-height:260px;';
+  const content={
+    application:{title:'Leave Application Form',sub:'Submit and manage employee leave requests.',icon:'📝'},
+    status:{title:'Leave Status Summary',sub:'View leave status, balances and request summaries.',icon:'📊'},
+    balancing:{title:'Report Balancing',sub:'Review workload/report balancing during leave periods.',icon:'⚖️'},
+    approval:{title:'Leave Approval',sub:'Review and approve or reject leave requests.',icon:'✅'}
+  }[leaveSubTab]||{title:'Leave Application Form',sub:'Submit and manage employee leave requests.',icon:'📝'};
+  panel.innerHTML='<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">'
+    +'<div style="width:42px;height:42px;border-radius:11px;background:rgba(245,200,66,.08);border:1px solid rgba(245,200,66,.2);display:flex;align-items:center;justify-content:center;font-size:1.15rem">'+content.icon+'</div>'
+    +'<div><div style="font-family:Syne,sans-serif;font-size:1rem;font-weight:700">'+content.title+'</div>'
+    +'<div style="font-family:DM Mono,monospace;font-size:.66rem;color:var(--muted);margin-top:3px">'+content.sub+'</div></div></div>'
+    +'<div style="border:1px dashed var(--border);border-radius:12px;padding:28px;text-align:center;font-family:DM Mono,monospace;font-size:.7rem;color:var(--muted)">This section is ready for the next functional setup.</div>';
   c.appendChild(panel);
 }
 
