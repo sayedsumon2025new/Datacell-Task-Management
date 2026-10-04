@@ -2176,6 +2176,23 @@ function leaveInclusiveDays(fromDate,toDate){
 function leaveEmployeeOptions(){
   return [...new Set(userRegistry.map(u=>u.name).filter(Boolean))];
 }
+async function loadLeaveApplicationsRemote(){
+  try{
+    const rows=await dbRequest('meta','GET','select=key,value&key=like.leaveApplication:*&order=key.desc');
+    if(!Array.isArray(rows))return false;
+    const parsed=rows.flatMap(r=>{
+      try{
+        const a=JSON.parse(r.value);
+        return a&&a.id&&a.employee&&a.fromDate&&a.toDate?[a]:[];
+      }catch(e){return [];}
+    }).sort((a,b)=>String(b.appliedAt||'').localeCompare(String(a.appliedAt||'')));
+    leaveApplications=parsed;
+    return true;
+  }catch(e){
+    console.error('Leave application refresh failed:',e);
+    return false;
+  }
+}
 async function saveLeaveApplication(application,button){
   const key='leaveApplication:'+application.id;
   const label=button.textContent;
@@ -2186,7 +2203,16 @@ async function saveLeaveApplication(application,button){
       const rows=await dbRequest('meta','POST','on_conflict=key',
         [{key,value:JSON.stringify(application)}],'resolution=merge-duplicates,return=representation');
       if(!Array.isArray(rows)||!rows.some(r=>r.key===key))throw new Error('Leave application was not confirmed');
-      leaveApplications=[application,...leaveApplications.filter(a=>a.id!==application.id)];
+
+      // Verify the exact saved record before reporting success.
+      const confirmed=await dbRequest('meta','GET','select=key,value&key=eq.'+encodeURIComponent(key));
+      const saved=Array.isArray(confirmed)?confirmed.find(r=>r.key===key):null;
+      if(!saved)throw new Error('Saved leave application could not be reloaded');
+      let savedApplication;
+      try{savedApplication=JSON.parse(saved.value);}catch(e){throw new Error('Saved leave application is invalid');}
+      if(!savedApplication||savedApplication.id!==application.id)throw new Error('Saved leave application did not match');
+
+      leaveApplications=[savedApplication,...leaveApplications.filter(a=>a.id!==savedApplication.id)];
       await notifySaved();
     });
     toast('Leave application submitted for approval','success');
@@ -2249,7 +2275,8 @@ function renderLeaveApplicationPanel(panel){
 
   const drawRecent=()=>{
     recentPanel.innerHTML='<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px"><div><div class="leave-panel-title">Recent Leave Applications</div>'
-      +'<div class="leave-panel-sub">// YOUR RECENT REQUESTS AND CURRENT STATUS</div></div></div>';
+      +'<div class="leave-panel-sub">// YOUR RECENT REQUESTS AND CURRENT STATUS</div></div>'
+      +'<button type="button" class="fbtn" id="leaveRefreshRecent">REFRESH</button></div>';
     const visible=(currentUser==='admin'?leaveApplications:leaveApplications.filter(a=>a.employee===currentUser))
       .slice().sort((a,b)=>String(b.appliedAt||'').localeCompare(String(a.appliedAt||''))).slice(0,20);
     const wrap=document.createElement('div');wrap.className='leave-recent-wrap';
@@ -2267,8 +2294,16 @@ function renderLeaveApplicationPanel(panel){
     });
     if(!visible.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=9;td.textContent='No leave applications yet';td.style.cssText='text-align:center;padding:28px;color:var(--muted);font-family:DM Mono,monospace';tr.appendChild(td);tbody.appendChild(tr);}
     table.appendChild(tbody);wrap.appendChild(table);recentPanel.appendChild(wrap);
+    const refresh=recentPanel.querySelector('#leaveRefreshRecent');
+    if(refresh)refresh.onclick=async()=>{
+      refresh.disabled=true;refresh.textContent='REFRESHING...';
+      const ok=await loadLeaveApplicationsRemote();
+      if(ok){drawRecent();toast('Leave applications refreshed','success');}
+      else{refresh.disabled=false;refresh.textContent='REFRESH';toast('Could not refresh leave applications','error');}
+    };
   };
   drawRecent();
+  loadLeaveApplicationsRemote().then(ok=>{if(ok&&panel.isConnected)drawRecent();});
 
   form.onsubmit=async e=>{
     e.preventDefault();
@@ -2295,7 +2330,13 @@ function renderLeaveApplicationPanel(panel){
       appliedAt:now.toISOString()
     };
     const submit=form.querySelector('#leaveSubmit');
-    if(await saveLeaveApplication(application,submit)){clearForm();drawRecent();}
+    if(await saveLeaveApplication(application,submit)){
+      clearForm();
+      drawRecent();
+      // Re-read all leave applications so the recent table always reflects Supabase.
+      const refreshed=await loadLeaveApplicationsRemote();
+      if(refreshed&&panel.isConnected)drawRecent();
+    }
   };
   clearForm();
 }
