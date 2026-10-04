@@ -896,8 +896,13 @@ async function sbFetchAll() {
   }));
 
   const fetchedAccess = {};
+  const fetchedRoleMarkers = {};
   (accessRows || []).forEach(r => {
-    fetchedAccess[r.username] = r.modules ? r.modules.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const mods=r.modules ? r.modules.split(',').map(s => s.trim()).filter(Boolean) : [];
+    fetchedAccess[r.username]=mods;
+    const marker=mods.find(x=>x.startsWith(ROLE_MARKER_PREFIX));
+    const role=marker?marker.slice(ROLE_MARKER_PREFIX.length):'';
+    if(JOB_ROLES.includes(role))fetchedRoleMarkers[r.username]=role;
   });
 
   const metaNext = (metaRows || []).find(r => r.key === 'nextSl');
@@ -921,15 +926,8 @@ async function sbFetchAll() {
         const priority=suffix===name?2:1;
         if(!rank[name]||priority>=rank[name]){roles[name]=String(r.value||'Team Member');rank[name]=priority;}
       });
-      const aggregate=metaRows.find(r=>r.key==='userRoles');
-      if(aggregate){
-        try{
-          const parsed=JSON.parse(aggregate.value||'{}');
-          if(parsed&&typeof parsed==='object')Object.entries(parsed).forEach(([name,role])=>{
-            if(JOB_ROLES.includes(String(role)))roles[name]=String(role);
-          });
-        }catch(e){console.warn('Invalid userRoles aggregate',e);}
-      }
+      // Legacy meta roles are migration fallback only; module_access role markers are authoritative.
+      Object.entries(fetchedRoleMarkers).forEach(([name,role])=>{roles[name]=role;});
       return roles;
     })(),
     tasks: fetchedTasks, doneState: fetchedDone, users: fetchedUsers, moduleAccess: fetchedAccess,
@@ -1170,9 +1168,16 @@ async function syncUsers() {
 
 // ── WRITE: module access ─────────────────────────────────────────
 const JOB_ROLES=['Section Incharge','Supervisor','Team Member'];
+const ROLE_MARKER_PREFIX='__role__:';
 function userRoleKey(name){return 'userRole:'+String(name||'').trim();}
 function legacyUserRoleKey(name){return 'userRole:'+encodeURIComponent(String(name||'').trim());}
-function getUserJobRole(name){return userJobRoles[name]||'Team Member';}
+function roleMarker(role){return ROLE_MARKER_PREFIX+role;}
+function roleFromModuleAccess(name){
+  const marker=(moduleAccess[name]||[]).find(x=>String(x).startsWith(ROLE_MARKER_PREFIX));
+  const role=marker?String(marker).slice(ROLE_MARKER_PREFIX.length):'';
+  return JOB_ROLES.includes(role)?role:'';
+}
+function getUserJobRole(name){return roleFromModuleAccess(name)||userJobRoles[name]||'Team Member';}
 async function saveUserJobRole(name,role,button){
   if(!JOB_ROLES.includes(role)){toast('Select a valid job role','error');return false;}
   const label=button?.textContent||'';
@@ -1182,38 +1187,38 @@ async function saveUserJobRole(name,role,button){
     await queueTaskWrite(async()=>{
       setSyncStatus('syncing');
 
-      // Use one fixed meta key for the full mapping. This avoids username encoding/filter conflicts.
-      const currentRows=await dbRequest('meta','GET','select=key,value&key=eq.userRoles');
-      let roles={};
-      const current=Array.isArray(currentRows)?currentRows.find(r=>r.key==='userRoles'):null;
-      if(current){
-        try{roles=JSON.parse(current.value||'{}')||{};}catch(e){roles={};}
+      const previous=[...(moduleAccess[name]||[])];
+      const next=[...previous.filter(x=>!String(x).startsWith(ROLE_MARKER_PREFIX)),roleMarker(role)];
+      const modulesValue=next.join(',');
+
+      const rows=await dbRequest('module_access','POST','on_conflict=username',
+        [{username:name,modules:modulesValue}],'resolution=merge-duplicates,return=representation');
+      if(!Array.isArray(rows)||!rows.some(r=>r.username===name&&String(r.modules||'')===modulesValue)){
+        throw new Error('Job role write was not confirmed');
       }
-      // Preserve any legacy roles already loaded into memory during migration.
-      roles={...userJobRoles,...roles,[name]:role};
 
-      const rows=await dbRequest('meta','POST','on_conflict=key',
-        [{key:'userRoles',value:JSON.stringify(roles)}],'resolution=merge-duplicates,return=representation');
-      if(!Array.isArray(rows)||!rows.some(r=>r.key==='userRoles'))throw new Error('Job role mapping write was not confirmed');
+      const verify=await dbRequest('module_access','GET',
+        'select=username,modules&username=eq.'+encodeURIComponent(name));
+      const saved=Array.isArray(verify)?verify.find(r=>r.username===name):null;
+      if(!saved)throw new Error('Saved job role could not be reloaded');
 
-      const verify=await dbRequest('meta','GET','select=key,value&key=eq.userRoles');
-      const saved=Array.isArray(verify)?verify.find(r=>r.key==='userRoles'):null;
-      if(!saved)throw new Error('Saved job role mapping could not be reloaded');
-      let confirmed={};
-      try{confirmed=JSON.parse(saved.value||'{}')||{};}catch(e){throw new Error('Saved job role mapping is invalid');}
-      confirmedRole=String(confirmed[name]||'');
+      const confirmedModules=String(saved.modules||'').split(',').map(x=>x.trim()).filter(Boolean);
+      const marker=confirmedModules.find(x=>x.startsWith(ROLE_MARKER_PREFIX));
+      confirmedRole=marker?marker.slice(ROLE_MARKER_PREFIX.length):'';
       if(confirmedRole!==role)throw new Error('Saved job role does not match selection');
 
-      userJobRoles={...userJobRoles,...confirmed};
+      moduleAccess[name]=confirmedModules;
+      userJobRoles[name]=confirmedRole;
 
-      // Clean up old per-user role keys after aggregate save succeeds.
-      const rawKey=userRoleKey(name),legacyKey=legacyUserRoleKey(name);
-      try{await dbRequest('meta','DELETE','key=eq.'+encodeURIComponent(rawKey));}catch(e){}
-      if(legacyKey!==rawKey){
-        try{await dbRequest('meta','DELETE','key=eq.'+encodeURIComponent(legacyKey));}catch(e){}
-      }
+      // Best-effort cleanup of old meta-based role records after the reliable save.
+      try{
+        const rawKey=userRoleKey(name),legacyKey=legacyUserRoleKey(name);
+        await dbRequest('meta','DELETE','key=eq.'+encodeURIComponent(rawKey));
+        if(legacyKey!==rawKey)await dbRequest('meta','DELETE','key=eq.'+encodeURIComponent(legacyKey));
+      }catch(e){}
       await notifySaved();
     });
+
     toast('Job role saved: '+name+' → '+confirmedRole,'success');
     return true;
   }catch(e){
@@ -1226,17 +1231,18 @@ async function saveUserJobRole(name,role,button){
 }
 async function deleteUserJobRole(name){
   try{
-    const currentRows=await dbRequest('meta','GET','select=key,value&key=eq.userRoles');
-    const current=Array.isArray(currentRows)?currentRows.find(r=>r.key==='userRoles'):null;
-    let roles={};
-    if(current){try{roles=JSON.parse(current.value||'{}')||{};}catch(e){}}
-    delete roles[name];
-    await dbRequest('meta','POST','on_conflict=key',
-      [{key:'userRoles',value:JSON.stringify(roles)}],'resolution=merge-duplicates,return=representation');
+    const previous=[...(moduleAccess[name]||[])];
+    const next=previous.filter(x=>!String(x).startsWith(ROLE_MARKER_PREFIX));
+    const modulesValue=next.join(',');
+    await dbRequest('module_access','POST','on_conflict=username',
+      [{username:name,modules:modulesValue}],'resolution=merge-duplicates,return=representation');
+    moduleAccess[name]=next;
     delete userJobRoles[name];
-    const rawKey=userRoleKey(name),legacyKey=legacyUserRoleKey(name);
-    try{await dbRequest('meta','DELETE','key=eq.'+encodeURIComponent(rawKey));}catch(e){}
-    if(legacyKey!==rawKey){try{await dbRequest('meta','DELETE','key=eq.'+encodeURIComponent(legacyKey));}catch(e){}}
+    try{
+      const rawKey=userRoleKey(name),legacyKey=legacyUserRoleKey(name);
+      await dbRequest('meta','DELETE','key=eq.'+encodeURIComponent(rawKey));
+      if(legacyKey!==rawKey)await dbRequest('meta','DELETE','key=eq.'+encodeURIComponent(legacyKey));
+    }catch(e){}
     await notifySaved();
     return true;
   }catch(e){console.error('Job role cleanup failed:',e);return false;}
@@ -1244,6 +1250,7 @@ async function deleteUserJobRole(name){
 
 async function syncModuleAccess() {
   if (!sbConfigured()) return false;
+  // moduleAccess arrays may contain hidden __role__ markers; preserve them on sync.
   const rows = Object.entries(moduleAccess).map(([user, mods]) => ({
     username: user, modules: Array.isArray(mods) ? mods.join(',') : ''
   }));
