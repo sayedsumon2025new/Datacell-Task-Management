@@ -2306,7 +2306,12 @@ function canActOnLeave(application){
   if(String(application.status)==='Approved'||String(application.status)==='Rejected')return false;
   if(currentUser==='admin')return true;
   if(stage==='supervisor')return role==='Supervisor';
-  if(stage==='section')return role==='Section Incharge';
+  if(stage==='section'){
+    if(role!=='Section Incharge')return false;
+    // Section Incharge cannot approve their own leave request.
+    if(application.employee===currentUser)return false;
+    return true;
+  }
   return false;
 }
 async function updateLeaveApproval(application,decision,button){
@@ -2364,7 +2369,7 @@ function renderLeaveApprovalPanel(panel){
   const head=document.createElement('div');head.className='leave-panel';
   head.style.marginBottom='14px';
   head.innerHTML='<div class="leave-panel-title">Leave Approval</div>'
-    +'<div class="leave-panel-sub">// TWO-STEP FLOW · TEAM MEMBER → SUPERVISOR → SECTION INCHARGE</div>'
+    +'<div class="leave-panel-sub">// TEAM MEMBER → SUPERVISOR → SECTION INCHARGE · SUPERVISOR → SECTION INCHARGE</div>'
     +'<div class="leave-flow"><span class="leave-flow-step">Team Member applies</span><span>→</span><span class="leave-flow-step">Supervisor review</span><span>→</span><span class="leave-flow-step">Section Incharge final approval</span></div>'
     +'<div style="margin-top:10px;font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted)">Signed in as: '+currentUser+' · Job Role: <strong style="color:'+(role==='Section Incharge'?'#60a5fa':role==='Supervisor'?'#f5c842':'#adbed2')+'">'+role+'</strong></div>'
     +(role==='Team Member'?'<div style="margin-top:8px;font-family:DM Mono,monospace;font-size:.62rem;color:#f87171">Approval buttons are disabled because this account is currently saved as Team Member. Admin must change Job Role in Settings → User Management.</div>':'');
@@ -2380,7 +2385,7 @@ function renderLeaveApprovalPanel(panel){
       const stage=leaveStage(a);
       if(currentUser==='admin')return true;
       if(role==='Supervisor')return stage==='supervisor'&&leaveApplicantRole(a)==='Team Member';
-      if(role==='Section Incharge')return stage==='section';
+      if(role==='Section Incharge')return stage==='section'&&a.employee!==currentUser;
       // Team Member/read-only users can see only their own pending applications here.
       return a.employee===currentUser;
     }).sort((a,b)=>String(a.appliedAt||'').localeCompare(String(b.appliedAt||'')));
