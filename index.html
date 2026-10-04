@@ -571,6 +571,17 @@ let _pollTimer = null;
 let _isSyncing = false;
 let _syncDebounce = null;
 let _lastVersion = null;
+const SQL_TABLES={
+  app_state:false,
+  task_completions:false,
+  task_remarks:false,
+  working_hours_defaults:false,
+  working_hours_daily:false,
+  multi_skill_assignments:false,
+  user_roles:false,
+  leave_applications:false,
+  leave_report_coverage:false
+};
 
 // ── Low-level REST helpers ───────────────────────────────────────
 // Supabase publishable keys are API keys, not JWTs.
@@ -611,6 +622,25 @@ async function sbGet(table, select = '*') {
   } finally {
     req.clear();
   }
+}
+
+async function sbGetOptionalTable(table, select='*') {
+  if (!sbConfigured()) return {exists:false,rows:[]};
+  const req=sbFetchOptions('GET',{headers:sbHeaders()});
+  try{
+    const res=await fetch(`${SB_URL}/rest/v1/${table}?select=${encodeURIComponent(select)}`,req.options);
+    if(res.status===404)return {exists:false,rows:[]};
+    if(!res.ok){
+      let body='';try{body=await res.text();}catch(e){}
+      if(/PGRST205|Could not find the table|schema cache/i.test(body))return {exists:false,rows:[]};
+      console.error('Supabase optional GET '+table+' failed ['+res.status+']:',body);
+      return {exists:false,rows:[]};
+    }
+    return {exists:true,rows:await res.json()};
+  }catch(e){
+    console.error('Supabase optional GET '+table+' error:',e);
+    return {exists:false,rows:[]};
+  }finally{req.clear();}
 }
 
 async function sbUpsert(table, rows) {
@@ -784,6 +814,10 @@ async function createTaskRecord(fields){
       if(!Array.isArray(rows)||rows.length!==1||Number(rows[0].sl)!==sl)throw new Error('New task was not confirmed. Refresh before retrying.');
       const task=rowToTask(rows[0]);
       tasks.push(task);tasks.sort((a,b)=>a.sl-b.sl);rememberTask(task);nextSl=sl+1;
+      if(SQL_TABLES.app_state){
+        await dbRequest('app_state','POST','on_conflict=key',
+          [{key:'nextSl',value:String(nextSl)}],'resolution=merge-duplicates,return=representation');
+      }
       return task;
     }catch(e){if(e.status===409&&e.code==='23505')continue;throw e;}
   }
@@ -825,8 +859,14 @@ async function saveDailyHours(person,date,hours,button){
   try{
     await queueTaskWrite(async()=>{
       setSyncStatus('syncing');
-      const rows=await dbRequest('meta','POST','on_conflict=key',[{key,value:String(minutes)}],'resolution=merge-duplicates,return=representation');
-      if(!Array.isArray(rows)||!rows.some(r=>r.key===key&&Number(r.value)===minutes))throw new Error('Working hours were not confirmed');
+      if(SQL_TABLES.working_hours_daily){
+        const rows=await dbRequest('working_hours_daily','POST','on_conflict=person,work_date',
+          [{person,work_date:date,minutes}],'resolution=merge-duplicates,return=representation');
+        if(!Array.isArray(rows)||!rows.some(r=>r.person===person&&r.work_date===date&&Number(r.minutes)===minutes))throw new Error('Working hours were not confirmed');
+      }else{
+        const rows=await dbRequest('meta','POST','on_conflict=key',[{key,value:String(minutes)}],'resolution=merge-duplicates,return=representation');
+        if(!Array.isArray(rows)||!rows.some(r=>r.key===key&&Number(r.value)===minutes))throw new Error('Working hours were not confirmed');
+      }
       dailyWorkingHours[key]=minutes;
       await notifySaved();
     });
@@ -891,7 +931,6 @@ function applyRemoteData(data) {
   if (data.workingHours) {
     const n=JSON.stringify(data.workingHours),c=JSON.stringify(workingHours);
     if(n!==c){workingHours=data.workingHours;changed=true;}
-    try{localStorage.setItem('fts_working_hours',JSON.stringify(workingHours));}catch(e){}
   }
   return changed;
 }
@@ -899,13 +938,40 @@ function applyRemoteData(data) {
 // ── READ: fetch all data from Supabase ──────────────────────────
 async function sbFetchAll() {
   if (!sbConfigured()) return null;
-  const results = await Promise.all([
+  const corePromise=Promise.all([
     sbGet('tasks'), sbGet('done_state'), sbGet('users'), sbGet('module_access'), sbGet('meta')
   ]);
-  // A failed request is not the same as an empty table.
-  if (results.some(x => x === null)) return null;
+  const optionalPromise=Promise.all([
+    sbGetOptionalTable('app_state'),
+    sbGetOptionalTable('task_completions'),
+    sbGetOptionalTable('task_remarks'),
+    sbGetOptionalTable('working_hours_defaults'),
+    sbGetOptionalTable('working_hours_daily'),
+    sbGetOptionalTable('multi_skill_assignments'),
+    sbGetOptionalTable('user_roles'),
+    sbGetOptionalTable('leave_applications'),
+    sbGetOptionalTable('leave_report_coverage')
+  ]);
+  const [core,optional]=await Promise.all([corePromise,optionalPromise]);
+  if (core.some(x => x === null)) return null;
 
-  const [taskRows, doneRows, userRows, accessRows, metaRows] = results;
+  const [taskRows, doneRows, userRows, accessRows, metaRows] = core;
+  const [
+    appStateRes,completionRes,remarksRes,workingDefaultsRes,workingDailyRes,
+    multiSkillRes,userRolesRes,leaveAppsRes,leaveCoverageRes
+  ]=optional;
+  Object.assign(SQL_TABLES,{
+    app_state:appStateRes.exists,
+    task_completions:completionRes.exists,
+    task_remarks:remarksRes.exists,
+    working_hours_defaults:workingDefaultsRes.exists,
+    working_hours_daily:workingDailyRes.exists,
+    multi_skill_assignments:multiSkillRes.exists,
+    user_roles:userRolesRes.exists,
+    leave_applications:leaveAppsRes.exists,
+    leave_report_coverage:leaveCoverageRes.exists
+  });
+
   const fetchedTasks = (taskRows || []).map(r => ({
     sl: Number(r.sl), task: r.task || '', person: r.person || '', priority: !!r.priority,
     planDate: r.plan_date || '', planTime: r.plan_time || '',
@@ -931,41 +997,117 @@ async function sbFetchAll() {
     if(JOB_ROLES.includes(role))fetchedRoleMarkers[r.username]=role;
   });
 
-  const metaNext = (metaRows || []).find(r => r.key === 'nextSl');
-  const metaVer = (metaRows || []).find(r => r.key === 'version');
-  const metaWorkingHours = (metaRows || []).find(r => r.key === 'workingHours');
-  const fetchedNextSl = metaNext ? Number(metaNext.value) : 1;
+  const metaNext=(metaRows||[]).find(r=>r.key==='nextSl');
+  const metaVer=(metaRows||[]).find(r=>r.key==='version');
+  const metaWorkingHours=(metaRows||[]).find(r=>r.key==='workingHours');
+  const appState=Object.fromEntries((appStateRes.rows||[]).map(r=>[r.key,String(r.value??'')]));
+  const fetchedNextSl=Number(SQL_TABLES.app_state?appState.nextSl:(metaNext?.value||1));
+  const fetchedVersion=String(SQL_TABLES.app_state?(appState.version||'0'):(metaVer?.value||'0'));
+
   let fetchedWorkingHours={};
-  if(metaWorkingHours&&metaWorkingHours.value){
-    try{const parsed=JSON.parse(metaWorkingHours.value);if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))fetchedWorkingHours=parsed;}catch(e){console.error('Invalid workingHours metadata:',e);}
+  if(SQL_TABLES.working_hours_defaults){
+    (workingDefaultsRes.rows||[]).forEach(r=>{
+      const mins=Number(r.minutes);
+      if(r.person&&Number.isFinite(mins))fetchedWorkingHours[r.person]=mins/60;
+    });
+  }else if(metaWorkingHours&&metaWorkingHours.value){
+    try{const parsed=JSON.parse(metaWorkingHours.value);if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))fetchedWorkingHours=parsed;}catch(e){}
+  }
+
+  let fetchedCompletionHistory={};
+  if(SQL_TABLES.task_completions){
+    (completionRes.rows||[]).forEach(r=>{
+      if(!r.actual_date||!r.actual_time)return;
+      fetchedCompletionHistory[String(r.actual_date)+':'+Number(r.task_sl)]={
+        sl:Number(r.task_sl),task:r.task||'',person:r.person||'',priority:!!r.priority,
+        planDate:r.plan_date||'',planTime:r.plan_time||'',actualDate:r.actual_date||'',
+        actualTime:r.actual_time||'',leadTime:r.lead_time||''
+      };
+    });
+  }else{
+    fetchedCompletionHistory=Object.fromEntries((metaRows||[]).filter(r=>r.key.startsWith('taskCompletion:')).flatMap(r=>{try{const t=JSON.parse(r.value);return t&&t.actualDate&&t.actualTime?[[r.key.slice('taskCompletion:'.length),t]]:[];}catch(e){return [];}}));
+  }
+
+  let fetchedRemarks={};
+  if(SQL_TABLES.task_remarks){
+    (remarksRes.rows||[]).forEach(r=>{if(r.remark_date&&Number.isFinite(Number(r.task_sl)))fetchedRemarks[String(r.remark_date)+':'+Number(r.task_sl)]=String(r.remark||'');});
+  }else{
+    fetchedRemarks=Object.fromEntries((metaRows||[]).filter(r=>r.key.startsWith('taskRemark:')).map(r=>[r.key.slice('taskRemark:'.length),String(r.value||'')]));
+  }
+
+  let fetchedDailyHours={};
+  if(SQL_TABLES.working_hours_daily){
+    (workingDailyRes.rows||[]).forEach(r=>{
+      const mins=Number(r.minutes);
+      if(r.work_date&&r.person&&Number.isFinite(mins))fetchedDailyHours[dailyHoursKey(r.work_date,r.person)]=mins;
+    });
+  }else{
+    fetchedDailyHours=Object.fromEntries((metaRows||[]).filter(r=>r.key.startsWith('workingHoursDaily:')&&r.value!==''&&Number.isFinite(Number(r.value))&&Number(r.value)>=0&&Number(r.value)<=1440).map(r=>[r.key,Number(r.value)]));
+  }
+
+  let fetchedMultiSkill={};
+  if(SQL_TABLES.multi_skill_assignments){
+    (multiSkillRes.rows||[]).forEach(r=>{if(Number.isFinite(Number(r.task_sl))&&r.backup_person)fetchedMultiSkill[String(Number(r.task_sl))]=String(r.backup_person);});
+  }else{
+    const row=(metaRows||[]).find(r=>r.key==='multiSkillMap');
+    if(row){try{const parsed=JSON.parse(row.value||'{}');if(parsed&&typeof parsed==='object'&&!Array.isArray(parsed))fetchedMultiSkill=parsed;}catch(e){}}
+  }
+
+  const fetchedRoles={};
+  if(SQL_TABLES.user_roles){
+    (userRolesRes.rows||[]).forEach(r=>{if(r.username&&JOB_ROLES.includes(String(r.role)))fetchedRoles[String(r.username)]=String(r.role);});
+  }else{
+    (metaRows||[]).filter(r=>r.key.startsWith('userRole:')).forEach(r=>{
+      const suffix=r.key.slice('userRole:'.length);let name=suffix;try{name=decodeURIComponent(suffix);}catch(e){}
+      if(JOB_ROLES.includes(String(r.value)))fetchedRoles[name]=String(r.value);
+    });
+    Object.entries(fetchedRoleMarkers).forEach(([name,role])=>{fetchedRoles[name]=role;});
+  }
+
+  let fetchedLeaves=[];
+  if(SQL_TABLES.leave_applications&&SQL_TABLES.leave_report_coverage){
+    const coverageByApp={};
+    (leaveCoverageRes.rows||[]).forEach(r=>{
+      const id=String(r.application_id||'');if(!id)return;
+      if(!coverageByApp[id])coverageByApp[id]={assignments:{},acceptance:{}};
+      const key=String(Number(r.task_sl));
+      coverageByApp[id].assignments[key]=String(r.assignee||'');
+      coverageByApp[id].acceptance[key]={
+        assignee:String(r.assignee||''),
+        status:String(r.acceptance_status||'Pending'),
+        respondedAt:r.responded_at||'',
+        respondedBy:String(r.responded_by||'')
+      };
+    });
+    fetchedLeaves=(leaveAppsRes.rows||[]).map(r=>{
+      const cov=coverageByApp[String(r.id)]||{assignments:{},acceptance:{}};
+      return {
+        id:String(r.id),employee:String(r.employee||''),leaveType:String(r.leave_type||''),
+        duration:String(r.duration||'single'),fromDate:r.from_date||'',toDate:r.to_date||'',
+        days:Number(r.days||0),shortStartTime:r.short_start_time||'',shortEndTime:r.short_end_time||'',
+        shortMinutes:Number(r.short_minutes||0),reason:String(r.reason||''),
+        supervisorStatus:String(r.supervisor_status||'Pending'),sectionStatus:String(r.section_status||'Pending'),
+        status:String(r.status||'Pending'),balancingComplete:!!r.balancing_complete,
+        appliedBy:String(r.applied_by||''),appliedAt:r.applied_at||'',
+        balancedBy:String(r.balanced_by||''),balancedAt:r.balanced_at||'',
+        reportAssignments:cov.assignments,reportAcceptance:cov.acceptance
+      };
+    }).sort((a,b)=>String(b.appliedAt||'').localeCompare(String(a.appliedAt||'')));
+  }else{
+    fetchedLeaves=(metaRows||[]).filter(r=>r.key.startsWith('leaveApplication:')).flatMap(r=>{try{const a=JSON.parse(r.value);return a&&a.id&&a.employee&&a.fromDate&&a.toDate?[a]:[];}catch(e){return [];}}).sort((a,b)=>String(b.appliedAt||'').localeCompare(String(a.appliedAt||'')));
   }
 
   return {
-    taskCompletionHistory:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('taskCompletion:')).flatMap(r=>{try{const t=JSON.parse(r.value);return t&&t.actualDate&&t.actualTime?[[r.key.slice('taskCompletion:'.length),t]]:[];}catch(e){return [];}})),
-    taskRemarks:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('taskRemark:')).map(r=>[r.key.slice('taskRemark:'.length),String(r.value||'')])),
-    leaveApplications:metaRows.filter(r=>r.key.startsWith('leaveApplication:')).flatMap(r=>{try{const a=JSON.parse(r.value);return a&&a.id&&a.employee&&a.fromDate&&a.toDate?[a]:[];}catch(e){return [];}}).sort((a,b)=>String(b.appliedAt||'').localeCompare(String(a.appliedAt||''))),
-    multiSkillMap:(()=>{
-      const row=metaRows.find(r=>r.key==='multiSkillMap');
-      if(!row)return {};
-      try{const parsed=JSON.parse(row.value||'{}');return parsed&&typeof parsed==='object'&&!Array.isArray(parsed)?parsed:{};}catch(e){return {};}
-    })(),
-    userJobRoles:(()=>{
-      const roles={},rank={};
-      metaRows.filter(r=>r.key.startsWith('userRole:')).forEach(r=>{
-        const suffix=r.key.slice('userRole:'.length);
-        let name=suffix;try{name=decodeURIComponent(suffix);}catch(e){}
-        const priority=suffix===name?2:1;
-        if(!rank[name]||priority>=rank[name]){roles[name]=String(r.value||'Team Member');rank[name]=priority;}
-      });
-      // Legacy meta roles are migration fallback only; module_access role markers are authoritative.
-      Object.entries(fetchedRoleMarkers).forEach(([name,role])=>{roles[name]=role;});
-      return roles;
-    })(),
-    tasks: fetchedTasks, doneState: fetchedDone, users: fetchedUsers, moduleAccess: fetchedAccess,
-    workingHours: fetchedWorkingHours,
-    dailyWorkingHours:Object.fromEntries(metaRows.filter(r=>r.key.startsWith('workingHoursDaily:')&&r.value!==''&&Number.isFinite(Number(r.value))&&Number(r.value)>=0&&Number(r.value)<=1440).map(r=>[r.key,Number(r.value)])),
-    nextSl: Math.max(1,...fetchedTasks.map(t=>t.sl+1),Number.isFinite(fetchedNextSl)?fetchedNextSl:1),
-    version: metaVer ? String(metaVer.value) : '0'
+    taskCompletionHistory:fetchedCompletionHistory,
+    taskRemarks:fetchedRemarks,
+    leaveApplications:fetchedLeaves,
+    multiSkillMap:fetchedMultiSkill,
+    userJobRoles:fetchedRoles,
+    tasks:fetchedTasks,doneState:fetchedDone,users:fetchedUsers,moduleAccess:fetchedAccess,
+    workingHours:fetchedWorkingHours,
+    dailyWorkingHours:fetchedDailyHours,
+    nextSl:Math.max(1,...fetchedTasks.map(t=>t.sl+1),Number.isFinite(fetchedNextSl)?fetchedNextSl:1),
+    version:fetchedVersion
   };
 }
 
@@ -1019,6 +1161,10 @@ async function sbSyncTasks(taskRows) {
     for(const sl of [...taskBaseline.keys()]){
       if(!localSls.has(sl)){
         await dbRequest('tasks','DELETE','sl=eq.'+sl);
+        if(SQL_TABLES.multi_skill_assignments){
+          await dbRequest('multi_skill_assignments','DELETE','task_sl=eq.'+encodeURIComponent(sl));
+          delete multiSkillMap[String(sl)];
+        }
         taskBaseline.delete(sl);
       }
     }
@@ -1208,77 +1354,52 @@ function roleFromModuleAccess(name){
   const role=marker?String(marker).slice(ROLE_MARKER_PREFIX.length):'';
   return JOB_ROLES.includes(role)?role:'';
 }
-function getUserJobRole(name){return roleFromModuleAccess(name)||userJobRoles[name]||'Team Member';}
+function getUserJobRole(name){return userJobRoles[name]||roleFromModuleAccess(name)||'Team Member';}
 async function saveUserJobRole(name,role,button){
   if(!JOB_ROLES.includes(role)){toast('Select a valid job role','error');return false;}
   const label=button?.textContent||'';
   if(button){button.disabled=true;button.textContent='SAVING...';}
   try{
-    let confirmedRole='';
     await queueTaskWrite(async()=>{
       setSyncStatus('syncing');
-
-      const previous=[...(moduleAccess[name]||[])];
-      const next=[...previous.filter(x=>!String(x).startsWith(ROLE_MARKER_PREFIX)),roleMarker(role)];
-      const modulesValue=next.join(',');
-
-      const rows=await dbRequest('module_access','POST','on_conflict=username',
-        [{username:name,modules:modulesValue}],'resolution=merge-duplicates,return=representation');
-      if(!Array.isArray(rows)||!rows.some(r=>r.username===name&&String(r.modules||'')===modulesValue)){
-        throw new Error('Job role write was not confirmed');
+      if(SQL_TABLES.user_roles){
+        const rows=await dbRequest('user_roles','POST','on_conflict=username',
+          [{username:name,role}],'resolution=merge-duplicates,return=representation');
+        const saved=Array.isArray(rows)?rows.find(r=>r.username===name):null;
+        if(!saved||String(saved.role)!==role)throw new Error('Job role write was not confirmed');
+        userJobRoles[name]=String(saved.role);
+      }else{
+        const previous=[...(moduleAccess[name]||[])];
+        const next=[...previous.filter(x=>!String(x).startsWith(ROLE_MARKER_PREFIX)),roleMarker(role)];
+        const modulesValue=next.join(',');
+        const rows=await dbRequest('module_access','POST','on_conflict=username',
+          [{username:name,modules:modulesValue}],'resolution=merge-duplicates,return=representation');
+        if(!Array.isArray(rows)||!rows.some(r=>r.username===name&&String(r.modules||'')===modulesValue))throw new Error('Job role write was not confirmed');
+        moduleAccess[name]=next;userJobRoles[name]=role;
       }
-
-      const verify=await dbRequest('module_access','GET',
-        'select=username,modules&username=eq.'+encodeURIComponent(name));
-      const saved=Array.isArray(verify)?verify.find(r=>r.username===name):null;
-      if(!saved)throw new Error('Saved job role could not be reloaded');
-
-      const confirmedModules=String(saved.modules||'').split(',').map(x=>x.trim()).filter(Boolean);
-      const marker=confirmedModules.find(x=>x.startsWith(ROLE_MARKER_PREFIX));
-      confirmedRole=marker?marker.slice(ROLE_MARKER_PREFIX.length):'';
-      if(confirmedRole!==role)throw new Error('Saved job role does not match selection');
-
-      moduleAccess[name]=confirmedModules;
-      userJobRoles[name]=confirmedRole;
-
-      // Best-effort cleanup of old meta-based role records after the reliable save.
-      try{
-        const rawKey=userRoleKey(name),legacyKey=legacyUserRoleKey(name);
-        await dbRequest('meta','DELETE','key=eq.'+encodeURIComponent(rawKey));
-        if(legacyKey!==rawKey)await dbRequest('meta','DELETE','key=eq.'+encodeURIComponent(legacyKey));
-      }catch(e){}
       await notifySaved();
     });
-
-    toast('Job role saved: '+name+' → '+confirmedRole,'success');
+    toast('Job role saved: '+name+' → '+role,'success');
     return true;
-  }catch(e){
-    setSyncStatus('error');
-    toast('Job role not saved: '+e.message,'error');
-    return false;
-  }finally{
-    if(button){button.disabled=false;button.textContent=label;}
-  }
+  }catch(e){setSyncStatus('error');toast('Job role not saved: '+e.message,'error');return false;}
+  finally{if(button){button.disabled=false;button.textContent=label;}}
 }
 async function deleteUserJobRole(name){
   try{
-    const previous=[...(moduleAccess[name]||[])];
-    const next=previous.filter(x=>!String(x).startsWith(ROLE_MARKER_PREFIX));
-    const modulesValue=next.join(',');
-    await dbRequest('module_access','POST','on_conflict=username',
-      [{username:name,modules:modulesValue}],'resolution=merge-duplicates,return=representation');
-    moduleAccess[name]=next;
+    if(SQL_TABLES.user_roles){
+      await dbRequest('user_roles','DELETE','username=eq.'+encodeURIComponent(name));
+    }else{
+      const previous=[...(moduleAccess[name]||[])];
+      const next=previous.filter(x=>!String(x).startsWith(ROLE_MARKER_PREFIX));
+      await dbRequest('module_access','POST','on_conflict=username',
+        [{username:name,modules:next.join(',')}],'resolution=merge-duplicates,return=representation');
+      moduleAccess[name]=next;
+    }
     delete userJobRoles[name];
-    try{
-      const rawKey=userRoleKey(name),legacyKey=legacyUserRoleKey(name);
-      await dbRequest('meta','DELETE','key=eq.'+encodeURIComponent(rawKey));
-      if(legacyKey!==rawKey)await dbRequest('meta','DELETE','key=eq.'+encodeURIComponent(legacyKey));
-    }catch(e){}
     await notifySaved();
     return true;
   }catch(e){console.error('Job role cleanup failed:',e);return false;}
 }
-
 async function syncModuleAccess() {
   if (!sbConfigured()) return false;
   // moduleAccess arrays may contain hidden __role__ markers; preserve them on sync.
@@ -1297,7 +1418,8 @@ async function sbBumpVersion() {
   if (!sbConfigured()) return false;
   const cur = Number(_lastVersion || 0);
   const next = String((Number.isFinite(cur) ? cur : 0) + 1);
-  const ok = await sbUpsert('meta', [{ key: 'version', value: next }]);
+  const table=SQL_TABLES.app_state?'app_state':'meta';
+  const ok = await sbUpsert(table, [{ key: 'version', value: next }]);
   if (ok) _lastVersion = next;
   return ok;
 }
@@ -1372,12 +1494,7 @@ async function initFromSheets() {
 let currentUser=null,taskFilter='all',searchQ='',adminTab='overview',userView='list',personalActualDate=localISODate();
 let moduleAccess = {}; // user → [module IDs]
 let userJobRoles = {}; // username → job role
-let workingHours = (()=>{
-  try{
-    const saved=JSON.parse(localStorage.getItem('fts_working_hours')||'{}');
-    return saved&&typeof saved==='object'&&!Array.isArray(saved)?saved:{};
-  }catch(e){return {};}
-})(); // person → daily working hours
+let workingHours = {}; // person → default daily working hours; loaded from SQL
 let kpiDate=localISODate(),kpiMonth='';
 let overviewDate=localISODate();
 let pendingReportFilters={person:'all',status:'all',priority:'all'};
@@ -1426,6 +1543,14 @@ function getRemarkInput(sl){
 }
 async function loadTaskRemarksRemote(){
   try{
+    if(SQL_TABLES.task_remarks){
+      const rows=await dbRequest('task_remarks','GET','select=task_sl,remark_date,remark&order=remark_date.asc,task_sl.asc');
+      if(!Array.isArray(rows))return false;
+      const fresh={};
+      rows.forEach(r=>{if(r.remark_date&&Number.isFinite(Number(r.task_sl)))fresh[remarkKey(r.remark_date,r.task_sl)]=String(r.remark||'');});
+      taskRemarks=fresh;
+      return true;
+    }
     const rows=await dbRequest('meta','GET','select=key,value&key=like.taskRemark:*&order=key.asc');
     if(!Array.isArray(rows))return false;
     const fresh={};
@@ -1442,19 +1567,23 @@ async function loadTaskRemarksRemote(){
 }
 async function saveTaskRemark(date,sl,remark){
   const clean=String(remark||'').trim();
+  if(SQL_TABLES.task_remarks){
+    const rows=await dbRequest('task_remarks','POST','on_conflict=task_sl,remark_date',
+      [{task_sl:Number(sl),remark_date:date,remark:clean}],'resolution=merge-duplicates,return=representation');
+    const saved=Array.isArray(rows)?rows.find(r=>Number(r.task_sl)===Number(sl)&&r.remark_date===date):null;
+    if(!saved||String(saved.remark||'')!==clean)throw new Error('Remarks were not confirmed by SQL');
+    taskRemarks[remarkKey(date,sl)]=String(saved.remark||'');
+    return taskRemarks[remarkKey(date,sl)];
+  }
   const key='taskRemark:'+date+':'+Number(sl);
   const rows=await dbRequest('meta','POST','on_conflict=key',
     [{key,value:clean}],'resolution=merge-duplicates,return=representation');
   if(!Array.isArray(rows)||!rows.some(r=>r.key===key&&String(r.value||'')===clean)){
     throw new Error('Remarks were not confirmed');
   }
-
-  // SQL is the source of truth: read the exact row back before continuing.
   const verify=await dbRequest('meta','GET','select=key,value&key=eq.'+encodeURIComponent(key));
   const saved=Array.isArray(verify)?verify.find(r=>r.key===key):null;
-  if(!saved||String(saved.value||'')!==clean){
-    throw new Error('Remarks were not confirmed by SQL');
-  }
+  if(!saved||String(saved.value||'')!==clean)throw new Error('Remarks were not confirmed by SQL');
   taskRemarks[remarkKey(date,sl)]=String(saved.value||'');
   return taskRemarks[remarkKey(date,sl)];
 }
@@ -1481,10 +1610,21 @@ async function completePersonalTask(sl,button){
       setSyncStatus('syncing');
       // Preserve the previous completion before recording a new day's status.
       if(task.actualDate&&task.actualTime&&task.actualDate!==date){
-        const key='taskCompletion:'+task.actualDate+':'+sl;
-        const rows=await dbRequest('meta','POST','on_conflict=key',
-          [{key,value:JSON.stringify(task)}],'resolution=merge-duplicates,return=representation');
-        if(!Array.isArray(rows)||!rows.some(r=>r.key===key&&r.value===JSON.stringify(task)))throw new Error('Previous completion could not be archived');
+        if(SQL_TABLES.task_completions){
+          const archiveRow={
+            task_sl:Number(sl),actual_date:task.actualDate,task:task.task||'',person:task.person||'',
+            priority:!!task.priority,plan_date:task.planDate||null,plan_time:task.planTime||null,
+            actual_time:task.actualTime||null,lead_time:task.leadTime||''
+          };
+          const rows=await dbRequest('task_completions','POST','on_conflict=task_sl,actual_date',
+            [archiveRow],'resolution=merge-duplicates,return=representation');
+          if(!Array.isArray(rows)||!rows.some(r=>Number(r.task_sl)===Number(sl)&&r.actual_date===task.actualDate))throw new Error('Previous completion could not be archived');
+        }else{
+          const key='taskCompletion:'+task.actualDate+':'+sl;
+          const rows=await dbRequest('meta','POST','on_conflict=key',
+            [{key,value:JSON.stringify(task)}],'resolution=merge-duplicates,return=representation');
+          if(!Array.isArray(rows)||!rows.some(r=>r.key===key&&r.value===JSON.stringify(task)))throw new Error('Previous completion could not be archived');
+        }
         taskCompletionHistory[task.actualDate+':'+sl]={...task};
       }
       const time=completionTime;
@@ -2403,40 +2543,118 @@ function leaveDateTimeDisplay(application,which){
 function leaveEmployeeOptions(){
   return [...new Set(userRegistry.map(u=>u.name).filter(Boolean))];
 }
+function leaveApplicationSqlRow(a){
+  return {
+    id:String(a.id),employee:String(a.employee||''),employee_role:String(a.employeeRole||getUserJobRole(a.employee)||'Team Member'),
+    leave_type:String(a.leaveType||''),duration:String(a.duration||'single'),from_date:a.fromDate,to_date:a.toDate,
+    days:Number(a.days||0),short_start_time:a.shortStartTime||null,short_end_time:a.shortEndTime||null,
+    short_minutes:Number(a.shortMinutes||0),reason:String(a.reason||''),
+    supervisor_status:String(a.supervisorStatus||'Pending'),supervisor_by:String(a.supervisorBy||''),
+    supervisor_at:a.supervisorAt||null,section_status:String(a.sectionStatus||'Pending'),
+    section_by:String(a.sectionBy||''),section_at:a.sectionAt||null,rejected_stage:String(a.rejectedStage||''),
+    status:String(a.status||'Pending'),balancing_complete:!!a.balancingComplete,
+    applied_by:String(a.appliedBy||''),applied_at:a.appliedAt||new Date().toISOString(),
+    balanced_by:String(a.balancedBy||''),balanced_at:a.balancedAt||null
+  };
+}
+function leaveCoverageSqlRows(a){
+  const assignments=(a&&a.reportAssignments&&typeof a.reportAssignments==='object')?a.reportAssignments:{};
+  const acceptance=(a&&a.reportAcceptance&&typeof a.reportAcceptance==='object')?a.reportAcceptance:{};
+  return Object.entries(assignments).filter(([,person])=>String(person||'').trim()).map(([taskSl,person])=>{
+    const acc=acceptance[String(taskSl)]||{};
+    return {
+      application_id:String(a.id),task_sl:Number(taskSl),assignee:String(person||''),
+      acceptance_status:['Pending','Accepted','Rejected'].includes(String(acc.status))?String(acc.status):'Pending',
+      responded_at:acc.respondedAt||null,responded_by:String(acc.respondedBy||'')
+    };
+  }).filter(r=>Number.isFinite(r.task_sl));
+}
+async function persistLeaveApplication(application){
+  if(SQL_TABLES.leave_applications&&SQL_TABLES.leave_report_coverage){
+    const rows=await dbRequest('leave_applications','POST','on_conflict=id',
+      [leaveApplicationSqlRow(application)],'resolution=merge-duplicates,return=representation');
+    if(!Array.isArray(rows)||!rows.some(r=>String(r.id)===String(application.id)))throw new Error('Leave application SQL row was not confirmed');
+
+    const coverageRows=leaveCoverageSqlRows(application);
+    const existing=await dbRequest('leave_report_coverage','GET','select=application_id,task_sl&application_id=eq.'+encodeURIComponent(application.id));
+    const wanted=new Set(coverageRows.map(r=>String(r.task_sl)));
+    for(const row of (existing||[])){
+      if(!wanted.has(String(row.task_sl))){
+        await dbRequest('leave_report_coverage','DELETE',
+          'application_id=eq.'+encodeURIComponent(application.id)+'&task_sl=eq.'+encodeURIComponent(row.task_sl));
+      }
+    }
+    if(coverageRows.length){
+      await dbRequest('leave_report_coverage','POST','on_conflict=application_id,task_sl',
+        coverageRows,'resolution=merge-duplicates,return=representation');
+    }
+    const verify=await dbRequest('leave_applications','GET','select=id,status&'+'id=eq.'+encodeURIComponent(application.id));
+    if(!Array.isArray(verify)||verify.length!==1||String(verify[0].status)!==String(application.status||'Pending')){
+      throw new Error('Leave application SQL read-back did not match');
+    }
+    return application;
+  }
+
+  const key='leaveApplication:'+application.id;
+  const rows=await dbRequest('meta','POST','on_conflict=key',
+    [{key,value:JSON.stringify(application)}],'resolution=merge-duplicates,return=representation');
+  if(!Array.isArray(rows)||!rows.some(r=>r.key===key))throw new Error('Leave application was not confirmed');
+  return application;
+}
 async function loadLeaveApplicationsRemote(){
   try{
+    if(SQL_TABLES.leave_applications&&SQL_TABLES.leave_report_coverage){
+      const appRows=await dbRequest('leave_applications','GET','select=*&order=applied_at.desc');
+      const covRows=SQL_TABLES.leave_report_coverage
+        ?await dbRequest('leave_report_coverage','GET','select=*&order=application_id.asc,task_sl.asc')
+        :[];
+      const cov={};
+      (covRows||[]).forEach(r=>{
+        const id=String(r.application_id||'');if(!cov[id])cov[id]={assignments:{},acceptance:{}};
+        const key=String(Number(r.task_sl));
+        cov[id].assignments[key]=String(r.assignee||'');
+        cov[id].acceptance[key]={assignee:String(r.assignee||''),status:String(r.acceptance_status||'Pending'),respondedAt:r.responded_at||'',respondedBy:String(r.responded_by||'')};
+      });
+      leaveApplications=(appRows||[]).map(r=>{
+        const c=cov[String(r.id)]||{assignments:{},acceptance:{}};
+        return {
+          id:String(r.id),employee:String(r.employee||''),employeeRole:String(r.employee_role||'Team Member'),
+          leaveType:String(r.leave_type||''),duration:String(r.duration||'single'),fromDate:r.from_date||'',toDate:r.to_date||'',
+          days:Number(r.days||0),shortStartTime:r.short_start_time||'',shortEndTime:r.short_end_time||'',shortMinutes:Number(r.short_minutes||0),
+          reason:String(r.reason||''),supervisorStatus:String(r.supervisor_status||'Pending'),supervisorBy:String(r.supervisor_by||''),
+          supervisorAt:r.supervisor_at||'',sectionStatus:String(r.section_status||'Pending'),sectionBy:String(r.section_by||''),
+          sectionAt:r.section_at||'',rejectedStage:String(r.rejected_stage||''),status:String(r.status||'Pending'),
+          balancingComplete:!!r.balancing_complete,appliedBy:String(r.applied_by||''),appliedAt:r.applied_at||'',
+          balancedBy:String(r.balanced_by||''),balancedAt:r.balanced_at||'',
+          reportAssignments:c.assignments,reportAcceptance:c.acceptance
+        };
+      });
+      return true;
+    }
     const rows=await dbRequest('meta','GET','select=key,value&key=like.leaveApplication:*&order=key.desc');
     if(!Array.isArray(rows))return false;
-    const parsed=rows.flatMap(r=>{
-      try{
-        const a=JSON.parse(r.value);
-        return a&&a.id&&a.employee&&a.fromDate&&a.toDate?[a]:[];
-      }catch(e){return [];}
-    }).sort((a,b)=>String(b.appliedAt||'').localeCompare(String(a.appliedAt||'')));
-    leaveApplications=parsed;
+    leaveApplications=rows.flatMap(r=>{try{const a=JSON.parse(r.value);return a&&a.id&&a.employee&&a.fromDate&&a.toDate?[a]:[];}catch(e){return [];}})
+      .sort((a,b)=>String(b.appliedAt||'').localeCompare(String(a.appliedAt||'')));
     return true;
-  }catch(e){
-    console.error('Leave application refresh failed:',e);
-    return false;
-  }
+  }catch(e){console.error('Leave application refresh failed:',e);return false;}
 }
 async function loadMultiSkillMapRemote(){
   try{
-    const rows=await dbRequest('meta','GET','select=key,value&key=eq.multiSkillMap');
-    if(!Array.isArray(rows))return false;
-    const row=rows.find(r=>r.key==='multiSkillMap');
     let parsed={};
-    if(row){
-      try{parsed=JSON.parse(row.value||'{}')||{};}catch(e){parsed={};}
+    if(SQL_TABLES.multi_skill_assignments){
+      const rows=await dbRequest('multi_skill_assignments','GET','select=task_sl,backup_person&order=task_sl.asc');
+      if(!Array.isArray(rows))return false;
+      rows.forEach(r=>{if(Number.isFinite(Number(r.task_sl))&&r.backup_person)parsed[String(Number(r.task_sl))]=String(r.backup_person);});
+    }else{
+      const rows=await dbRequest('meta','GET','select=key,value&key=eq.multiSkillMap');
+      if(!Array.isArray(rows))return false;
+      const row=rows.find(r=>r.key==='multiSkillMap');
+      if(row){try{parsed=JSON.parse(row.value||'{}')||{};}catch(e){parsed={};}}
     }
-    if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))parsed={};
     const changed=JSON.stringify(parsed)!==JSON.stringify(multiSkillMap);
     multiSkillMap=parsed;
     return changed;
-  }catch(e){
-    console.error('Multi Skill refresh failed:',e);
-    return false;
-  }
+  }catch(e){console.error('Multi Skill refresh failed:',e);return false;}
 }
 async function refreshLeaveCoverageRemote(force=false){
   const now=Date.now();
@@ -2455,25 +2673,13 @@ async function refreshLeaveCoverageRemote(force=false){
 }
 
 async function saveLeaveApplication(application,button){
-  const key='leaveApplication:'+application.id;
   const label=button.textContent;
   button.disabled=true;button.textContent='SUBMITTING...';
   try{
     await queueTaskWrite(async()=>{
       setSyncStatus('syncing');
-      const rows=await dbRequest('meta','POST','on_conflict=key',
-        [{key,value:JSON.stringify(application)}],'resolution=merge-duplicates,return=representation');
-      if(!Array.isArray(rows)||!rows.some(r=>r.key===key))throw new Error('Leave application was not confirmed');
-
-      // Verify the exact saved record before reporting success.
-      const confirmed=await dbRequest('meta','GET','select=key,value&key=eq.'+encodeURIComponent(key));
-      const saved=Array.isArray(confirmed)?confirmed.find(r=>r.key===key):null;
-      if(!saved)throw new Error('Saved leave application could not be reloaded');
-      let savedApplication;
-      try{savedApplication=JSON.parse(saved.value);}catch(e){throw new Error('Saved leave application is invalid');}
-      if(!savedApplication||savedApplication.id!==application.id)throw new Error('Saved leave application did not match');
-
-      leaveApplications=[savedApplication,...leaveApplications.filter(a=>a.id!==savedApplication.id)];
+      await persistLeaveApplication(application);
+      await loadLeaveApplicationsRemote();
       await notifySaved();
     });
     toast('Leave application submitted for approval','success');
@@ -2608,31 +2814,18 @@ async function saveLeaveBalancing(application,assignments,button){
   });
   updated.balancedBy=currentUser;
   updated.balancedAt=new Date().toISOString();
-  const key='leaveApplication:'+updated.id,label=button?.textContent||'';
+  const label=button?.textContent||'';
   if(button){button.disabled=true;button.textContent='SAVING...';}
   try{
     await queueTaskWrite(async()=>{
-      const rows=await dbRequest('meta','POST','on_conflict=key',
-        [{key,value:JSON.stringify(updated)}],'resolution=merge-duplicates,return=representation');
-      if(!Array.isArray(rows)||!rows.some(r=>r.key===key))throw new Error('Report balancing was not confirmed');
-      const verify=await dbRequest('meta','GET','select=key,value&key=eq.'+encodeURIComponent(key));
-      const row=Array.isArray(verify)?verify.find(r=>r.key===key):null;
-      if(!row)throw new Error('Saved balancing could not be reloaded');
-      const confirmed=JSON.parse(row.value);
-      if(JSON.stringify(confirmed.reportAssignments||{})!==JSON.stringify(updated.reportAssignments||{})){
-        throw new Error('Saved balancing does not match selection');
-      }
-      leaveApplications=leaveApplications.map(a=>a.id===confirmed.id?confirmed:a);
+      await persistLeaveApplication(updated);
+      await loadLeaveApplicationsRemote();
       await notifySaved();
     });
     toast(updated.balancingComplete?'Report balancing complete':'Report balancing saved · assignment still incomplete',updated.balancingComplete?'success':'info');
     return true;
-  }catch(e){
-    toast('Report balancing not saved: '+e.message,'error');
-    return false;
-  }finally{
-    if(button){button.disabled=false;button.textContent=label;}
-  }
+  }catch(e){toast('Report balancing not saved: '+e.message,'error');return false;}
+  finally{if(button){button.disabled=false;button.textContent=label;}}
 }
 function renderLeaveBalancingPanel(panel){
   panel.innerHTML='';
@@ -2708,19 +2901,14 @@ async function updateLeaveApproval(application,decision,button){
       updated.status='Approved';
     }
   }
-  const key='leaveApplication:'+updated.id,label=button?.textContent||'';
+  const label=button?.textContent||'';
   if(button){button.disabled=true;button.textContent='SAVING...';}
   try{
     await queueTaskWrite(async()=>{
-      const rows=await dbRequest('meta','POST','on_conflict=key',
-        [{key,value:JSON.stringify(updated)}],'resolution=merge-duplicates,return=representation');
-      if(!Array.isArray(rows)||!rows.some(r=>r.key===key))throw new Error('Approval update was not confirmed');
-      const verify=await dbRequest('meta','GET','select=key,value&key=eq.'+encodeURIComponent(key));
-      const row=Array.isArray(verify)?verify.find(r=>r.key===key):null;
-      if(!row)throw new Error('Approval could not be verified');
-      const confirmed=JSON.parse(row.value);
-      if(confirmed.status!==updated.status)throw new Error('Approval status did not persist');
-      leaveApplications=leaveApplications.map(a=>a.id===confirmed.id?confirmed:a);
+      await persistLeaveApplication(updated);
+      await loadLeaveApplicationsRemote();
+      const confirmed=leaveApplications.find(a=>a.id===updated.id);
+      if(!confirmed||confirmed.status!==updated.status)throw new Error('Approval status did not persist');
       await notifySaved();
     });
     toast((stage==='supervisor'?'Supervisor':'Section Incharge')+' '+decision.toLowerCase()+' saved','success');
@@ -3110,13 +3298,14 @@ async function respondToMultiSkill(application,taskSl,decision,button){
   acceptance[key]={...current,status:decision,respondedAt:new Date().toISOString(),respondedBy:currentUser};
   const updated={...application,reportAssignments:assignments,reportAcceptance:acceptance};
   updated.balancingComplete=leaveBalancingComplete(updated);
-  const metaKey='leaveApplication:'+updated.id,label=button?.textContent||'';
+  const label=button?.textContent||'';
   if(button){button.disabled=true;button.textContent='SAVING...';}
   try{
-    const rows=await dbRequest('meta','POST','on_conflict=key',[{key:metaKey,value:JSON.stringify(updated)}],'resolution=merge-duplicates,return=representation');
-    if(!Array.isArray(rows)||!rows.some(r=>r.key===metaKey))throw new Error('Response was not confirmed');
-    leaveApplications=leaveApplications.map(a=>a.id===updated.id?updated:a);
-    await notifySaved();
+    await queueTaskWrite(async()=>{
+      await persistLeaveApplication(updated);
+      await loadLeaveApplicationsRemote();
+      await notifySaved();
+    });
     toast('Report coverage '+decision.toLowerCase(),'success');
     return true;
   }catch(e){toast('Response not saved: '+e.message,'error');return false;}
@@ -3544,20 +3733,40 @@ function buildDelete(c){
 function buildAssign(c){renderMasterTasks(c);}
 
 // ── MULTI SKILL (Admin only) ──
+async function syncActiveLeaveCoverageFromMultiSkill(){
+  if(!(SQL_TABLES.leave_applications&&SQL_TABLES.leave_report_coverage))return;
+  for(const application of leaveApplications.filter(a=>!['Approved','Rejected'].includes(String(a.status)))){
+    const coverage=leaveCoverageState(application);
+    const updated={...application,reportAssignments:coverage.assignments,reportAcceptance:coverage.acceptance};
+    updated.balancingComplete=leaveBalancingComplete(updated);
+    await persistLeaveApplication(updated);
+  }
+  await loadLeaveApplicationsRemote();
+}
 async function saveMultiSkillMap(nextMap,button){
   const label=button?.textContent||'';
   if(button){button.disabled=true;button.textContent='SAVING...';}
   try{
     await queueTaskWrite(async()=>{
-      const rows=await dbRequest('meta','POST','on_conflict=key',
-        [{key:'multiSkillMap',value:JSON.stringify(nextMap)}],'resolution=merge-duplicates,return=representation');
-      if(!Array.isArray(rows)||!rows.some(r=>r.key==='multiSkillMap'))throw new Error('Multi Skill mapping was not confirmed');
-      const verify=await dbRequest('meta','GET','select=key,value&key=eq.multiSkillMap');
-      const row=Array.isArray(verify)?verify.find(r=>r.key==='multiSkillMap'):null;
-      if(!row)throw new Error('Saved Multi Skill mapping could not be reloaded');
-      const confirmed=JSON.parse(row.value||'{}');
-      if(JSON.stringify(confirmed)!==JSON.stringify(nextMap))throw new Error('Saved Multi Skill mapping does not match');
-      multiSkillMap=confirmed;
+      if(SQL_TABLES.multi_skill_assignments){
+        const remote=await dbRequest('multi_skill_assignments','GET','select=task_sl,backup_person');
+        const remoteMap=Object.fromEntries((remote||[]).map(r=>[String(Number(r.task_sl)),String(r.backup_person||'')]));
+        for(const key of Object.keys(remoteMap)){
+          if(!(key in nextMap))await dbRequest('multi_skill_assignments','DELETE','task_sl=eq.'+encodeURIComponent(key));
+        }
+        const rows=Object.entries(nextMap).filter(([,person])=>person).map(([task_sl,backup_person])=>({task_sl:Number(task_sl),backup_person}));
+        if(rows.length)await dbRequest('multi_skill_assignments','POST','on_conflict=task_sl',rows,'resolution=merge-duplicates,return=representation');
+        const verify=await dbRequest('multi_skill_assignments','GET','select=task_sl,backup_person');
+        const confirmed=Object.fromEntries((verify||[]).map(r=>[String(Number(r.task_sl)),String(r.backup_person||'')]));
+        if(JSON.stringify(confirmed)!==JSON.stringify(nextMap))throw new Error('Saved Multi Skill mapping does not match');
+        multiSkillMap=confirmed;
+        await syncActiveLeaveCoverageFromMultiSkill();
+      }else{
+        const rows=await dbRequest('meta','POST','on_conflict=key',
+          [{key:'multiSkillMap',value:JSON.stringify(nextMap)}],'resolution=merge-duplicates,return=representation');
+        if(!Array.isArray(rows)||!rows.some(r=>r.key==='multiSkillMap'))throw new Error('Multi Skill mapping was not confirmed');
+        multiSkillMap={...nextMap};
+      }
       await notifySaved();
     });
     toast('Multi Skill assignment saved','success');
@@ -4256,6 +4465,13 @@ function renderSettingsUsers(body){
     const usersSaved=await syncUsers();
     if(!usersSaved){toast('User record could not be saved','error');return;}
     const roleSaved=await saveUserJobRole(name,role);
+    if(SQL_TABLES.working_hours_defaults){
+      const defaultRows=await dbRequest('working_hours_defaults','POST','on_conflict=person',
+        [{person,minutes:480}],'resolution=merge-duplicates,return=representation');
+      if(Array.isArray(defaultRows)&&defaultRows.some(r=>r.person===name)){
+        workingHours[name]=8;
+      }
+    }
     refreshLoginDropdown();
     toast(roleSaved?'User "'+name+'" added with '+role:'User added, but job role needs retry',roleSaved?'success':'error');
     renderSettingsBody(body);
@@ -4368,6 +4584,16 @@ function renderSettingsUsers(body){
         delete CREDS[name];
         const idx=PERSONS.indexOf(name);if(idx>-1)PERSONS.splice(idx,1);
         deleteUserJobRole(name);
+        if(SQL_TABLES.working_hours_defaults)dbRequest('working_hours_defaults','DELETE','person=eq.'+encodeURIComponent(name)).catch(console.error);
+        if(SQL_TABLES.working_hours_daily)dbRequest('working_hours_daily','DELETE','person=eq.'+encodeURIComponent(name)).catch(console.error);
+        if(SQL_TABLES.multi_skill_assignments){
+          dbRequest('multi_skill_assignments','DELETE','backup_person=eq.'+encodeURIComponent(name)).then(()=>{
+            Object.keys(multiSkillMap).forEach(k=>{if(multiSkillMap[k]===name)delete multiSkillMap[k];});
+            syncActiveLeaveCoverageFromMultiSkill().catch(console.error);
+          }).catch(console.error);
+        }
+        delete workingHours[name];
+        Object.keys(dailyWorkingHours).forEach(k=>{if(k.endsWith(':'+encodeURIComponent(name)))delete dailyWorkingHours[k];});
         toast('User "'+name+'" removed','error');syncUsers();refreshLoginDropdown();
         renderSettingsBody(body);
       });
