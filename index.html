@@ -3050,17 +3050,40 @@ function buildOverview(c){
   pendingLbl.textContent='PENDING REPORTS';
   c.appendChild(pendingLbl);
 
+  let pendingPersonFilter='all';
+  let pendingStatusFilter='all';
+  let pendingPriorityFilter='all';
+
+  const pendingFilterRow=document.createElement('div');
+  pendingFilterRow.className='filter-row';
+  pendingFilterRow.style.marginBottom='12px';
+
+  const personSelect=document.createElement('select');
+  personSelect.className='field-select';
+  personSelect.id='pendingPersonFilter';
+
+  const statusSelect=document.createElement('select');
+  statusSelect.className='field-select';
+  statusSelect.id='pendingStatusFilter';
+
+  const prioritySelect=document.createElement('select');
+  prioritySelect.className='field-select';
+  prioritySelect.id='pendingPriorityFilter';
+
+  const resetPendingFilters=document.createElement('button');
+  resetPendingFilters.className='fbtn';
+  resetPendingFilters.type='button';
+  resetPendingFilters.textContent='RESET';
+
+  pendingFilterRow.append(personSelect,statusSelect,prioritySelect,resetPendingFilters);
+  c.appendChild(pendingFilterRow);
+
   const pendingWrap=document.createElement('div');
   pendingWrap.className='task-list';
   pendingWrap.style.marginBottom='26px';
+  c.appendChild(pendingWrap);
 
-  const pendingHdr=document.createElement('div');
-  pendingHdr.className='tlh';
-  pendingHdr.style.gridTemplateColumns='42px minmax(260px,1.6fr) minmax(150px,.8fr) 130px 120px 130px';
-  pendingHdr.innerHTML='<span>#</span><span>REPORT / TASK</span><span>PERSON</span><span>PLAN TIME</span><span>STATUS</span><span>OVERDUE / TIME LEFT</span>';
-  pendingWrap.appendChild(pendingHdr);
-
-  const sortedPending=pendingTasks.slice().sort((a,b)=>{
+  const baseSortedPending=pendingTasks.slice().sort((a,b)=>{
     const sa=pendingDeadlineState(a),sb=pendingDeadlineState(b);
     if(sa.overdue!==sb.overdue)return sa.overdue?-1:1;
     if(a.planTime&&b.planTime)return a.planTime.localeCompare(b.planTime);
@@ -3068,52 +3091,118 @@ function buildOverview(c){
     return Number(a.sl)-Number(b.sl);
   });
 
-  if(!sortedPending.length){
-    const empty=document.createElement('div');
-    empty.className='empty-msg';
-    empty.style.padding='28px';
-    empty.textContent='No pending reports for '+formatDateDisplay(pendingDate);
-    pendingWrap.appendChild(empty);
-  }else{
-    sortedPending.forEach((k,i)=>{
-      const t2=th(k.person);
-      const state=pendingDeadlineState(k);
-      const row=document.createElement('div');
-      row.className='trow';
-      row.style.gridTemplateColumns='42px minmax(260px,1.6fr) minmax(150px,.8fr) 130px 120px 130px';
-      row.style.animationDelay=(i*0.015)+'s';
-      if(state.overdue)row.style.borderLeft='3px solid #f87171';
-
-      const statusColor=state.status==='OVERDUE'?'#f87171':state.status==='ON TRACK'?'#3ef0b0':'#94a3b8';
-      const timeLabel=state.status==='OVERDUE'
-        ? state.label+' late'
-        : state.status==='ON TRACK'
-          ? state.label+' left'
-          : '—';
-
-      row.innerHTML='<span class="tsl">'+k.sl+'</span>'
-        +'<span class="tname">'+(k.priority?'<span style="color:'+t2.accent+'">★ </span>':'')+k.task+'</span>'
-        +'<span style="display:flex;align-items:center;gap:6px;min-width:0"><span style="width:20px;height:20px;border-radius:5px;background:'+t2.bg+';color:'+t2.color+';display:inline-flex;align-items:center;justify-content:center;font-size:.56rem;font-weight:700;font-family:Syne,sans-serif;flex-shrink:0">'+ini(k.person)+'</span><span style="color:'+t2.color+';font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+k.person+'</span></span>'
-        +'<span>'+(k.planTime?'<span class="time-badge plan" style="font-size:.62rem">◷ '+formatTime12(k.planTime)+'</span>':'<span class="time-badge unset" style="font-size:.62rem">Not set</span>')+'</span>'
-        +'<span style="font-family:DM Mono,monospace;font-size:.64rem;font-weight:700;color:'+statusColor+'">'+state.status+'</span>'
-        +'<span style="font-family:DM Mono,monospace;font-size:.64rem;color:'+statusColor+'">'+timeLabel+'</span>';
-      pendingWrap.appendChild(row);
-    });
+  function uniqueSorted(values){
+    return [...new Set(values.filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b)));
   }
 
-  const pendingSummary=document.createElement('div');
-  pendingSummary.style.cssText='display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 0';
-  const overdueCount=sortedPending.filter(k=>pendingDeadlineState(k).overdue).length;
-  const onTrackCount=sortedPending.filter(k=>pendingDeadlineState(k).status==='ON TRACK').length;
-  const noPlanCount=sortedPending.filter(k=>pendingDeadlineState(k).status==='NO PLAN TIME').length;
-  pendingSummary.innerHTML=
-    '<span style="font-family:DM Mono,monospace;font-size:.64rem;color:#f5c842">'+sortedPending.length+' PENDING</span>'
-    +'<span style="font-family:DM Mono,monospace;font-size:.64rem;color:#f87171">'+overdueCount+' OVERDUE</span>'
-    +'<span style="font-family:DM Mono,monospace;font-size:.64rem;color:#3ef0b0">'+onTrackCount+' ON TRACK</span>'
-    +(noPlanCount?'<span style="font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted)">'+noPlanCount+' NO PLAN TIME</span>':'');
-  pendingWrap.appendChild(pendingSummary);
-  c.appendChild(pendingWrap);
-}
+  function setSelectOptions(select,allLabel,values,current){
+    const valid=new Set(values.map(v=>String(v)));
+    const keep=current==='all'||valid.has(String(current))?current:'all';
+    select.innerHTML='';
+    const all=document.createElement('option');all.value='all';all.textContent=allLabel;select.appendChild(all);
+    values.forEach(v=>{
+      const opt=document.createElement('option');opt.value=String(v);opt.textContent=String(v);select.appendChild(opt);
+    });
+    select.value=keep;
+    return keep;
+  }
+
+  function renderPendingFiltersAndTable(changedLevel){
+    // PERSON options always come from the full pending set.
+    const persons=uniqueSorted(baseSortedPending.map(k=>k.person));
+    pendingPersonFilter=setSelectOptions(personSelect,'All Persons',persons,pendingPersonFilter);
+
+    // STATUS options cascade from selected person.
+    const personScoped=baseSortedPending.filter(k=>pendingPersonFilter==='all'||k.person===pendingPersonFilter);
+    const statuses=uniqueSorted(personScoped.map(k=>pendingDeadlineState(k).status));
+    if(changedLevel==='person'&&!statuses.includes(pendingStatusFilter))pendingStatusFilter='all';
+    pendingStatusFilter=setSelectOptions(statusSelect,'All Status',statuses,pendingStatusFilter);
+
+    // PRIORITY options cascade from Person + Status.
+    const statusScoped=personScoped.filter(k=>pendingStatusFilter==='all'||pendingDeadlineState(k).status===pendingStatusFilter);
+    const priorities=uniqueSorted(statusScoped.map(k=>k.priority?'Priority':'Normal'));
+    if((changedLevel==='person'||changedLevel==='status')&&!priorities.includes(pendingPriorityFilter))pendingPriorityFilter='all';
+    pendingPriorityFilter=setSelectOptions(prioritySelect,'All Priority',priorities,pendingPriorityFilter);
+
+    const filtered=statusScoped.filter(k=>{
+      if(pendingPriorityFilter==='all')return true;
+      return (k.priority?'Priority':'Normal')===pendingPriorityFilter;
+    });
+
+    pendingWrap.innerHTML='';
+
+    const pendingHdr=document.createElement('div');
+    pendingHdr.className='tlh';
+    pendingHdr.style.gridTemplateColumns='42px minmax(260px,1.6fr) minmax(150px,.8fr) 130px 120px 130px';
+    pendingHdr.innerHTML='<span>#</span><span>REPORT / TASK</span><span>PERSON</span><span>PLAN TIME</span><span>STATUS</span><span>OVERDUE / TIME LEFT</span>';
+    pendingWrap.appendChild(pendingHdr);
+
+    if(!filtered.length){
+      const empty=document.createElement('div');
+      empty.className='empty-msg';
+      empty.style.padding='28px';
+      empty.textContent='No pending reports match the selected filters';
+      pendingWrap.appendChild(empty);
+    }else{
+      filtered.forEach((k,i)=>{
+        const t2=th(k.person);
+        const state=pendingDeadlineState(k);
+        const row=document.createElement('div');
+        row.className='trow';
+        row.style.gridTemplateColumns='42px minmax(260px,1.6fr) minmax(150px,.8fr) 130px 120px 130px';
+        row.style.animationDelay=(i*0.015)+'s';
+        if(state.overdue)row.style.borderLeft='3px solid #f87171';
+
+        const statusColor=state.status==='OVERDUE'?'#f87171':state.status==='ON TRACK'?'#3ef0b0':'#94a3b8';
+        const timeLabel=state.status==='OVERDUE'
+          ? state.label+' late'
+          : state.status==='ON TRACK'
+            ? state.label+' left'
+            : '—';
+
+        row.innerHTML='<span class="tsl">'+k.sl+'</span>'
+          +'<span class="tname">'+(k.priority?'<span style="color:'+t2.accent+'">★ </span>':'')+k.task+'</span>'
+          +'<span style="display:flex;align-items:center;gap:6px;min-width:0"><span style="width:20px;height:20px;border-radius:5px;background:'+t2.bg+';color:'+t2.color+';display:inline-flex;align-items:center;justify-content:center;font-size:.56rem;font-weight:700;font-family:Syne,sans-serif;flex-shrink:0">'+ini(k.person)+'</span><span style="color:'+t2.color+';font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+k.person+'</span></span>'
+          +'<span>'+(k.planTime?'<span class="time-badge plan" style="font-size:.62rem">◷ '+formatTime12(k.planTime)+'</span>':'<span class="time-badge unset" style="font-size:.62rem">Not set</span>')+'</span>'
+          +'<span style="font-family:DM Mono,monospace;font-size:.64rem;font-weight:700;color:'+statusColor+'">'+state.status+'</span>'
+          +'<span style="font-family:DM Mono,monospace;font-size:.64rem;color:'+statusColor+'">'+timeLabel+'</span>';
+        pendingWrap.appendChild(row);
+      });
+    }
+
+    const pendingSummary=document.createElement('div');
+    pendingSummary.style.cssText='display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 0';
+    const overdueCount=filtered.filter(k=>pendingDeadlineState(k).overdue).length;
+    const onTrackCount=filtered.filter(k=>pendingDeadlineState(k).status==='ON TRACK').length;
+    const noPlanCount=filtered.filter(k=>pendingDeadlineState(k).status==='NO PLAN TIME').length;
+    pendingSummary.innerHTML=
+      '<span style="font-family:DM Mono,monospace;font-size:.64rem;color:#f5c842">'+filtered.length+' PENDING</span>'
+      +'<span style="font-family:DM Mono,monospace;font-size:.64rem;color:#f87171">'+overdueCount+' OVERDUE</span>'
+      +'<span style="font-family:DM Mono,monospace;font-size:.64rem;color:#3ef0b0">'+onTrackCount+' ON TRACK</span>'
+      +(noPlanCount?'<span style="font-family:DM Mono,monospace;font-size:.64rem;color:var(--muted)">'+noPlanCount+' NO PLAN TIME</span>':'');
+    pendingWrap.appendChild(pendingSummary);
+  }
+
+  personSelect.onchange=()=>{
+    pendingPersonFilter=personSelect.value;
+    renderPendingFiltersAndTable('person');
+  };
+  statusSelect.onchange=()=>{
+    pendingStatusFilter=statusSelect.value;
+    renderPendingFiltersAndTable('status');
+  };
+  prioritySelect.onchange=()=>{
+    pendingPriorityFilter=prioritySelect.value;
+    renderPendingFiltersAndTable('priority');
+  };
+  resetPendingFilters.onclick=()=>{
+    pendingPersonFilter='all';
+    pendingStatusFilter='all';
+    pendingPriorityFilter='all';
+    renderPendingFiltersAndTable('reset');
+  };
+
+  renderPendingFiltersAndTable('init');}
 
 // ── ADD TASK ──
 function buildAdd(c){renderMasterTasks(c);}
