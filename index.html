@@ -4079,6 +4079,12 @@ const WH_UI_NUMBERS=new Set(['present_manpower','asking_manpower','asking_hour',
 async function workHourUserInterfaceList(){
   return await fetchPagedTableRows('work_hour_user_interface','select=*&order=created_at.asc,id.asc');
 }
+async function workHourUserInterfacePunchRows(workDate){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(workDate))throw new Error('A valid punch date is required.');
+  return await fetchPagedTableRows('work_hour_daily_punch',
+    'select=work_date,employee_id,department,section,line&work_date=eq.'+encodeURIComponent(workDate)+'&order=employee_id.asc');
+}
+window.workHourUserInterfacePunchRows=workHourUserInterfacePunchRows;
 async function workHourUserInterfaceSave(row){
   if(!row?.id)throw new Error('Entry ID is required.');
   const payload={updated_by:currentUser||'',updated_at:new Date().toISOString()};
@@ -4161,7 +4167,7 @@ function buildWorkHourApproval(c){
   const frame=document.createElement('iframe');
   frame.title='Work Hour Approval';
   frame.dataset.workHourApproval='true';
-  frame.src='work_hour_approval_dashboard.html?build=20261005_13';
+  frame.src='work_hour_approval_dashboard.html?build=20261005_14';
   frame.style.cssText='display:block;width:100%;height:calc(100vh - 110px);min-height:760px;border:1px solid var(--border);border-radius:12px;background:#fff;box-shadow:var(--card-shadow);';
   c.appendChild(frame);
 }
