@@ -1082,7 +1082,7 @@ html[data-theme="light"] .leave-recon-sub{
 </div>
 
 <script>
-window.DATACELL_BUILD='DATACELL_BUILD_2026_10_05_WORK_HOUR_DEPT_SECTION';
+window.DATACELL_BUILD='DATACELL_BUILD_2026_10_05_OT_COST_DATA';
 console.info(window.DATACELL_BUILD);
 // ─── CREDENTIALS ───
 let CREDS={}; // credentials are loaded from the database; no hardcoded password fallback
@@ -4069,6 +4069,27 @@ async function workHourDepartmentSectionsDelete(id){
 window.workHourDepartmentSectionsList=workHourDepartmentSectionsList;
 window.workHourDepartmentSectionsSave=workHourDepartmentSectionsSave;
 window.workHourDepartmentSectionsDelete=workHourDepartmentSectionsDelete;
+
+async function workHourOtCostDates(){
+  const rows=await dbRequest('work_hour_ot_cost','GET','select=work_date&order=work_date.desc');
+  return [...new Set((Array.isArray(rows)?rows:[]).map(r=>r.work_date).filter(Boolean))];
+}
+async function workHourOtCostRows(workDate){
+  const q='select=id,work_date,employee_id,employee_name,department,designation,section,line,gross_salary,ot_rate,total_ot_hour,regular_ot_hour,extra_ot_hour,regular_ot_cost,extra_ot_cost,total_ot_cost'
+    +(workDate?'&work_date=eq.'+encodeURIComponent(workDate):'')
+    +'&order=department.asc,section.asc,line.asc,employee_id.asc&limit=10000';
+  return await dbRequest('work_hour_ot_cost','GET',q);
+}
+async function workHourOtCostUpsert(rows){
+  if(!Array.isArray(rows)||!rows.length)return [];
+  const saved=await dbRequest('work_hour_ot_cost','POST','on_conflict=work_date,employee_id',
+    rows,'resolution=merge-duplicates,return=representation');
+  await notifySaved();
+  return saved;
+}
+window.workHourOtCostDates=workHourOtCostDates;
+window.workHourOtCostRows=workHourOtCostRows;
+window.workHourOtCostUpsert=workHourOtCostUpsert;
 
 function buildWorkHourApproval(c){
   const frame=document.createElement('iframe');
