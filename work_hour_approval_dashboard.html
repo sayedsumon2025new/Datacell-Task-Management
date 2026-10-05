@@ -76,7 +76,7 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 .ds-table th{background:#FFF2CC;border-color:#999}.ds-table td{font-weight:600}.ds-table .act{width:150px;text-align:center;white-space:nowrap}
 .ds-table button{padding:5px 9px;font-size:11px}.ds-table button.edit{background:#fff;border-color:#777}.ds-table button.del{background:#fff;color:#b42318;border-color:#b42318}
 .ds-toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px}.ds-toolbar input{max-width:320px}
-#p6 .ds-table{min-width:640px}
+#p6 .ds-table{min-width:340px}
 @media(max-width:650px){.ds-f{min-width:100%}.ds-head{align-items:stretch}.ds-actions{width:100%}.ds-actions button{flex:1}}
 .otc-wrap{padding:14px;max-width:none}
 .otc-bar{display:flex;gap:10px;align-items:end;flex-wrap:wrap;padding:12px;background:#f8fafc;border:1px solid #d8dee8;border-radius:8px;margin-bottom:10px}
@@ -208,11 +208,11 @@ html,body{min-height:100%}
     <datalist id="llLevels"></datalist>
     <div id="llMsg" class="ds-msg" role="status" aria-live="polite"></div>
     <div class="ds-toolbar" style="flex-wrap:wrap">
-      <input id="llSearch" placeholder="Search line, level, buyer or EWO…" aria-label="Search lines">
+      <input id="llSearch" placeholder="Search line or level…" aria-label="Search lines">
       <select id="llFilter" style="width:160px" aria-label="Filter by level"><option value="">All levels</option></select>
       <button class="g" id="llReload">Reload</button>
     </div>
-    <div class="wrap"><table class="ds-table"><thead><tr><th>Line No</th><th>Level</th><th>Buyer</th><th>EWO</th><th class="act">Action</th></tr></thead><tbody id="llBody"></tbody></table></div>
+    <div class="wrap"><table class="ds-table"><thead><tr><th>Line No</th><th>Level</th><th class="act">Action</th></tr></thead><tbody id="llBody"></tbody></table></div>
   </div>
 </div>
 
@@ -415,10 +415,10 @@ function llDraw(){
  syncLevels();
  const q=$('llSearch').value.trim().toLowerCase(),level=$('llFilter').value;
  const lines=R.filter(r=>r.k==='L');
- const rows=lines.filter(r=>(!level||r.lv===level)&&(!q||[r.v[0],r.lv,r.v[1],r.v[2]].some(v=>String(v||'').toLowerCase().includes(q))))
+ const rows=lines.filter(r=>(!level||r.lv===level)&&(!q||[r.v[0],r.lv].some(v=>String(v||'').toLowerCase().includes(q))))
   .sort((a,b)=>String(a.lv).localeCompare(String(b.lv),undefined,{numeric:true})||Number(a.v[0])-Number(b.v[0]));
- $('llBody').innerHTML=rows.length?rows.map(r=>`<tr><td>${E(r.v[0])}</td><td>${E(r.lv)}</td><td>${E(r.v[1])}</td><td>${E(r.v[2])}</td><td class="act"><button class="edit" data-ll-edit="${r.id}">Edit</button> <button class="del" data-ll-delete="${r.id}">Delete</button></td></tr>`).join(''):
-  '<tr><td colspan="5" style="text-align:center;padding:18px;color:#666">'+(dbReady?'No sewing lines match this filter.':'Reload to load saved lines.')+'</td></tr>';
+ $('llBody').innerHTML=rows.length?rows.map(r=>`<tr><td>${E(r.v[0])}</td><td>${E(r.lv)}</td><td class="act"><button class="edit" data-ll-edit="${r.id}">Edit</button> <button class="del" data-ll-delete="${r.id}">Delete</button></td></tr>`).join(''):
+  '<tr><td colspan="3" style="text-align:center;padding:18px;color:#666">'+(dbReady?'No sewing lines match this filter.':'Reload to load saved lines.')+'</td></tr>';
  document.querySelectorAll('#llBody button').forEach(b=>b.disabled=whBusy||!dbReady)
 }
 $('llSearch').oninput=llDraw;$('llFilter').onchange=llDraw;$('llReload').onclick=load;$('llCancel').onclick=llResetForm;
