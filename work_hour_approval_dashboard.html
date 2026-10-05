@@ -132,6 +132,7 @@ html,body{min-height:100%}
     <div class="otc-bar">
       <div class="otc-f otc-file"><label>Daily OT Cost CSV</label><input type="file" id="otcFile" accept=".csv,text/csv"></div>
       <div class="otc-f"><label>Work Date</label><select id="otcDate"><option value="">Select date</option></select></div>
+      <div class="otc-f"><label>Department Slicer</label><select id="otcDept"><option value="">All Departments</option></select></div>
       <div class="otc-f"><label>Search</label><input id="otcSearch" placeholder="ID, name, department, section, line…"></div>
       <button id="otcUpload">Upload / Update</button>
       <button class="g" id="otcReload">Reload</button>
@@ -414,8 +415,8 @@ async function otcDates(selectLatest=false){
  }catch(e){$('otcInfo').textContent='Date load failed: '+e.message;return[]}
 }
 function otcDraw(){
- const q=$('otcSearch').value.trim().toLowerCase();
- const rows=OTC_ROWS.filter(r=>!q||[r.employee_id,r.employee_name,r.department,r.designation,r.section,r.line].some(v=>String(v??'').toLowerCase().includes(q)));
+ const q=$('otcSearch').value.trim().toLowerCase(),dept=$('otcDept').value;
+ const rows=OTC_ROWS.filter(r=>(!dept||r.department===dept)&&(!q||[r.employee_id,r.employee_name,r.department,r.designation,r.section,r.line].some(v=>String(v??'').toLowerCase().includes(q))));
  const sum=(k)=>rows.reduce((a,r)=>a+(Number(r[k])||0),0);
  $('otcKpis').innerHTML=
   '<div class="otc-kpi"><span>Employees</span><b>'+rows.length+'</b></div>'+
@@ -435,10 +436,17 @@ function otcDraw(){
 async function otcLoadRows(){
  const dt=$('otcDate').value;if(!dt){OTC_ROWS=[];otcDraw();return}
  $('otcInfo').textContent='Loading '+otcFmtDate(dt)+'...';
- try{OTC_ROWS=parent&&typeof parent.workHourOtCostRows==='function'?await parent.workHourOtCostRows(dt):[];otcDraw()}
+ try{
+  OTC_ROWS=parent&&typeof parent.workHourOtCostRows==='function'?await parent.workHourOtCostRows(dt):[];
+  const deps=[...new Set(OTC_ROWS.map(r=>r.department).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  const sel=$('otcDept'),old=sel.value;
+  sel.innerHTML='<option value="">All Departments</option>'+deps.map(x=>'<option value="'+E(x)+'">'+E(x)+'</option>').join('');
+  if(old&&deps.includes(old))sel.value=old;
+  otcDraw()
+ }
  catch(e){$('otcInfo').textContent='Load failed: '+e.message}
 }
-async function otcInit(){if(!otcReady){otcReady=true;await otcDates(true);$('otcDate').onchange=otcLoadRows;$('otcSearch').oninput=otcDraw;$('otcReload').onclick=async()=>{await otcDates(false);await otcLoadRows()};$('otcUpload').onclick=otcUpload}if($('otcDate').value)await otcLoadRows()}
+async function otcInit(){if(!otcReady){otcReady=true;await otcDates(true);$('otcDate').onchange=otcLoadRows;$('otcDept').onchange=otcDraw;$('otcSearch').oninput=otcDraw;$('otcReload').onclick=async()=>{await otcDates(false);await otcLoadRows()};$('otcUpload').onclick=otcUpload}if($('otcDate').value)await otcLoadRows()}
 async function otcUpload(){
  const f=$('otcFile').files[0];if(!f){$('otcInfo').textContent='Choose a CSV file first.';return}
  const b=$('otcUpload');b.disabled=true;b.textContent='Uploading...';
