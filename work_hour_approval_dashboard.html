@@ -89,13 +89,25 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 #otcTable tbody tr:hover td{background:#fff9db}
 .otc-kpis{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.otc-kpi{background:#fff;border:1px solid #d1d5db;border-radius:6px;padding:8px 12px;min-width:135px}.otc-kpi b{display:block;font-size:18px}.otc-kpi span{font-size:10px;color:#555;font-weight:700;text-transform:uppercase}
 @media(max-width:700px){.otc-f,.otc-file{min-width:100%}}
+.dpr-wrap{padding:14px;max-width:none}
+.dpr-bar{display:flex;gap:10px;align-items:end;flex-wrap:wrap;padding:12px;background:#f8fafc;border:1px solid #d8dee8;border-radius:8px;margin-bottom:10px}
+.dpr-f{min-width:170px}.dpr-file{min-width:280px;flex:1}.dpr-f label{display:block;font-size:11px;font-weight:700;margin-bottom:4px}
+.dpr-info{font-size:12px;font-weight:700;color:#374151;margin:4px 0 10px}
+.dpr-kpis{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.dpr-kpi{background:#fff;border:1px solid #d1d5db;border-radius:6px;padding:8px 12px;min-width:135px}.dpr-kpi b{display:block;font-size:18px}.dpr-kpi span{font-size:10px;color:#555;font-weight:700;text-transform:uppercase}
+.dpr-table-wrap{overflow:auto;border:1px solid #bfc5ce;border-radius:6px;background:#fff}
+#dprTable{border-collapse:collapse;table-layout:fixed;width:1320px;background:#fff}
+#dprTable th,#dprTable td{border:1px solid #cfcfcf;padding:6px 5px;font:600 11px Arial;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#dprTable th{background:#FFF2CC;color:#000;font-weight:700;position:sticky;top:0;z-index:2}
+#dprTable td.txt{text-align:left}#dprTable tbody tr:nth-child(even) td{background:#fafafa}#dprTable tbody tr:hover td{background:#fff9db}
+@media(max-width:700px){.dpr-f,.dpr-file{min-width:100%}}
+
 
 
 
 /* Integrated inside Datacell Task Management; source layout intentionally preserved. */
 html,body{min-height:100%}
 </style></head><body>
-<div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button><button class="tab" data-t="p3">Department &amp; Section Setup</button><button class="tab" data-t="p4">OT Cost Data</button></div>
+<div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button><button class="tab" data-t="p3">Department &amp; Section Setup</button><button class="tab" data-t="p4">OT Cost Data</button><button class="tab" data-t="p5">Daily Punch Report</button></div>
 <div id="p1">
 <div class="bar">
 <button id="add">+ New Entry</button>
@@ -150,6 +162,34 @@ html,body{min-height:100%}
           <th>Gross Salary</th><th>OT Rate</th><th>Total OT Hour</th><th>Regular OT Hour</th><th>Extra OT Hour</th><th>Regular OT Cost</th><th>Extra OT cost</th><th>Total OT Cost</th>
         </tr></thead>
         <tbody id="otcBody"><tr><td colspan="15" style="padding:22px">Select a date or upload a CSV.</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="p5" class="hide">
+  <div class="dpr-wrap">
+    <div class="dpr-bar">
+      <div class="dpr-f dpr-file"><label>Daily Punch CSV</label><input type="file" id="dprFile" accept=".csv,text/csv"></div>
+      <div class="dpr-f"><label>Report Year</label><input type="number" id="dprYear" min="2020" max="2100" value="2026"></div>
+      <div class="dpr-f"><label>Work Date</label><select id="dprDate"><option value="">Select date</option></select></div>
+      <div class="dpr-f"><label>Department Slicer</label><select id="dprDept"><option value="">All Departments</option></select></div>
+      <div class="dpr-f"><label>Search</label><input id="dprSearch" placeholder="ID, name, designation, section, line…"></div>
+      <button id="dprUpload">Upload / Update</button>
+      <button class="g" id="dprReload">Reload</button>
+    </div>
+    <div id="dprInfo" class="dpr-info">Upload a CSV with Date, ID, Name, Designation, DOJ, Department, Section, Line, Log In and Log Out.</div>
+    <div id="dprKpis" class="dpr-kpis"></div>
+    <div class="dpr-table-wrap">
+      <table id="dprTable">
+        <colgroup>
+          <col style="width:90px"><col style="width:95px"><col style="width:190px"><col style="width:180px"><col style="width:95px">
+          <col style="width:170px"><col style="width:165px"><col style="width:85px"><col style="width:105px"><col style="width:105px">
+        </colgroup>
+        <thead><tr>
+          <th>Date</th><th>ID</th><th>Name</th><th>Designation</th><th>DOJ</th><th>Department</th><th>Section</th><th>Line</th><th>Log In</th><th>Log Out</th>
+        </tr></thead>
+        <tbody id="dprBody"><tr><td colspan="10" style="padding:22px">Select a date or upload a CSV.</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -316,7 +356,7 @@ function r2(){const P='#F8CBAD',G='#A9D08E',T=['5:00 PM','6:00 PM','7:00 PM','8:
    h+=`<td style="background:${P}">${a[0]==null?'':a[0]}</td><td style="background:${G}">${a[1]}</td><td style="${a[2]>TOL()?'background:#f00;color:#fff;font-weight:700':'background:#92D050'}">${a[2]}</td><td style="background:${P}">${a[3]}</td>`}
   h+=`<td class="tt">${d[1]}</td></tr>`});
  $('t2').innerHTML=h+'</tbody>'}
-document.querySelectorAll('.tab').forEach(b=>b.onclick=async()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x==b));['p1','p2','p3','p4'].forEach(p=>$(p).classList.toggle('hide',p!=b.dataset.t));if(b.dataset.t==='p3')await dsLoad();if(b.dataset.t==='p4')await otcInit()});
+document.querySelectorAll('.tab').forEach(b=>b.onclick=async()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x==b));['p1','p2','p3','p4','p5'].forEach(p=>$(p).classList.toggle('hide',p!=b.dataset.t));if(b.dataset.t==='p3')await dsLoad();if(b.dataset.t==='p4')await otcInit();if(b.dataset.t==='p5')await dprInit()});
 r2();
 
 // ---------- Department & Section Setup ----------
@@ -462,6 +502,80 @@ async function otcUpload(){
   await otcDates(false);$('otcDate').value=dates[dates.length-1];await otcLoadRows();
   $('otcInfo').textContent='Upload complete: '+done+' valid row(s), '+parsed.skipped+' blank/invalid row(s) skipped. Dates: '+dates.map(otcFmtDate).join(', ')
  }catch(e){console.error(e);$('otcInfo').textContent='Upload failed: '+e.message}
+ finally{b.disabled=false;b.textContent='Upload / Update'}
+}
+
+// ---------- Daily Punch Report ----------
+const DPR_HDR=['Date','ID','Name','Designation','DOJ','Department','Section','Line','Log In','Log Out'];
+let DPR_ROWS=[],dprReady=false;
+function dprIsoDate(v,year){
+ const s=String(v||'').trim();if(!s)return'';
+ if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;
+ const m=s.match(/^(\d{1,2})[-\/]([A-Za-z]{3})(?:[-\/](\d{2}|\d{4}))?$/);if(!m)return'';
+ const mons={jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'},mm=mons[m[2].toLowerCase()];if(!mm)return'';
+ const yy=m[3]?(m[3].length===2?'20'+m[3]:m[3]):String(year||new Date().getFullYear());
+ return yy+'-'+mm+'-'+m[1].padStart(2,'0')
+}
+function dprFmtDate(v){if(!v)return'';const p=v.split('-');return p.length===3?p[2]+'-'+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+p[1]-1]+'-'+p[0].slice(2):v}
+function dprMapCsv(text){
+ const rows=otcCsv(text);if(!rows.length)throw new Error('CSV is empty');
+ const h=rows[0].map(x=>String(x).replace(/^\uFEFF/,'').trim()),miss=DPR_HDR.filter(x=>!h.includes(x));if(miss.length)throw new Error('Missing column(s): '+miss.join(', '));
+ const ix=Object.fromEntries(DPR_HDR.map(x=>[x,h.indexOf(x)])),year=+$('dprYear').value||new Date().getFullYear(),mapped=[];let skipped=0;
+ for(let i=1;i<rows.length;i++){
+  const r=rows[i],work_date=dprIsoDate(r[ix.Date],year),eid=otcNum(r[ix.ID]);
+  if(!work_date||!eid){skipped++;continue}
+  mapped.push({work_date,employee_id:Math.trunc(eid),employee_name:String(r[ix.Name]||'').trim(),
+   designation:String(r[ix.Designation]||'').trim(),doj:String(r[ix.DOJ]||'').trim(),
+   department:String(r[ix.Department]||'').trim(),section:String(r[ix.Section]||'').trim(),
+   line:String(r[ix.Line]||'').trim(),log_in:String(r[ix['Log In']]||'').trim(),log_out:String(r[ix['Log Out']]||'').trim()})
+ }
+ return {mapped,skipped}
+}
+async function dprDates(selectLatest=false){
+ try{
+  const ds=parent&&typeof parent.workHourDailyPunchDates==='function'?await parent.workHourDailyPunchDates():[],s=$('dprDate'),old=s.value;
+  s.innerHTML='<option value="">Select date</option>'+ds.map(x=>'<option value="'+E(x)+'">'+E(dprFmtDate(x))+'</option>').join('');
+  if(old&&ds.includes(old))s.value=old;else if(selectLatest&&ds[0])s.value=ds[0];return ds
+ }catch(e){$('dprInfo').textContent='Date load failed: '+e.message;return[]}
+}
+function dprDraw(){
+ const q=$('dprSearch').value.trim().toLowerCase(),dept=$('dprDept').value;
+ const rows=DPR_ROWS.filter(r=>(!dept||r.department===dept)&&(!q||[r.employee_id,r.employee_name,r.designation,r.department,r.section,r.line,r.log_in,r.log_out].some(v=>String(v??'').toLowerCase().includes(q))));
+ const uniqueSections=new Set(rows.map(r=>r.section).filter(Boolean)).size,uniqueLines=new Set(rows.map(r=>r.line).filter(Boolean)).size;
+ $('dprKpis').innerHTML='<div class="dpr-kpi"><span>Employees</span><b>'+rows.length+'</b></div>'+
+  '<div class="dpr-kpi"><span>Departments</span><b>'+new Set(rows.map(r=>r.department).filter(Boolean)).size+'</b></div>'+
+  '<div class="dpr-kpi"><span>Sections</span><b>'+uniqueSections+'</b></div>'+
+  '<div class="dpr-kpi"><span>Lines</span><b>'+uniqueLines+'</b></div>';
+ $('dprBody').innerHTML=rows.length?rows.map(r=>'<tr>'+
+  '<td>'+E(dprFmtDate(r.work_date))+'</td><td>'+E(r.employee_id)+'</td><td class="txt">'+E(r.employee_name)+'</td><td class="txt">'+E(r.designation)+'</td>'+
+  '<td>'+E(r.doj)+'</td><td class="txt">'+E(r.department)+'</td><td class="txt">'+E(r.section)+'</td><td>'+E(r.line)+'</td><td>'+E(r.log_in)+'</td><td>'+E(r.log_out)+'</td></tr>').join(''):
+  '<tr><td colspan="10" style="padding:22px">No Daily Punch rows found for this date/filter.</td></tr>';
+ $('dprInfo').textContent=rows.length+' row(s) shown'+(q||dept?' after filter':'')
+}
+async function dprLoadRows(){
+ const dt=$('dprDate').value;if(!dt){DPR_ROWS=[];dprDraw();return}
+ $('dprInfo').textContent='Loading '+dprFmtDate(dt)+'...';
+ try{
+  DPR_ROWS=parent&&typeof parent.workHourDailyPunchRows==='function'?await parent.workHourDailyPunchRows(dt):[];
+  const deps=[...new Set(DPR_ROWS.map(r=>r.department).filter(Boolean))].sort((a,b)=>a.localeCompare(b)),sel=$('dprDept'),old=sel.value;
+  sel.innerHTML='<option value="">All Departments</option>'+deps.map(x=>'<option value="'+E(x)+'">'+E(x)+'</option>').join('');if(old&&deps.includes(old))sel.value=old;dprDraw()
+ }catch(e){$('dprInfo').textContent='Load failed: '+e.message}
+}
+async function dprInit(){if(!dprReady){dprReady=true;await dprDates(true);$('dprDate').onchange=dprLoadRows;$('dprDept').onchange=dprDraw;$('dprSearch').oninput=dprDraw;$('dprReload').onclick=async()=>{await dprDates(false);await dprLoadRows()};$('dprUpload').onclick=dprUpload}if($('dprDate').value)await dprLoadRows()}
+async function dprUpload(){
+ const f=$('dprFile').files[0];if(!f){$('dprInfo').textContent='Choose a CSV file first.';return}
+ const b=$('dprUpload');b.disabled=true;b.textContent='Uploading...';
+ try{
+  const parsed=dprMapCsv(await f.text());if(!parsed.mapped.length)throw new Error('No valid punch rows were found');
+  const dates=[...new Set(parsed.mapped.map(r=>r.work_date))].sort();let done=0,batch=350;
+  for(let i=0;i<parsed.mapped.length;i+=batch){
+   const now=new Date().toISOString(),chunk=parsed.mapped.slice(i,i+batch).map(r=>({...r,uploaded_by:'dashboard',uploaded_at:now,updated_at:now}));
+   if(!parent||typeof parent.workHourDailyPunchUpsert!=='function')throw new Error('Database upload bridge is unavailable');
+   await parent.workHourDailyPunchUpsert(chunk);done+=chunk.length;$('dprInfo').textContent='Uploaded '+done+' / '+parsed.mapped.length+' rows...'
+  }
+  await dprDates(false);$('dprDate').value=dates[dates.length-1];await dprLoadRows();
+  $('dprInfo').textContent='Upload complete: '+done+' valid row(s), '+parsed.skipped+' blank/invalid row(s) skipped. Dates: '+dates.map(dprFmtDate).join(', ')
+ }catch(e){console.error(e);$('dprInfo').textContent='Upload failed: '+e.message}
  finally{b.disabled=false;b.textContent='Upload / Update'}
 }
 
