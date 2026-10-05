@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Work Hour Approval Request</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+html,body{margin:0;background:#fff;color:#000;font-family:Arial,Helvetica,sans-serif}
+.bar{display:flex;gap:10px;align-items:center;padding:10px 12px;background:#f3f4f6;border-bottom:1px solid #d1d5db;position:sticky;left:0;flex-wrap:wrap}
+.bar label{font-size:13px;font-weight:700}.bar .hint{font-size:12px;color:#555;margin-left:auto}
+button{font:600 13px Arial;padding:7px 14px;border:1px solid #8a6d00;background:#FFD966;border-radius:4px;cursor:pointer}
+button.g{background:#fff;border-color:#888}button.r{background:#fff;border-color:#b42318;color:#b42318}
+input,select{font:13px Arial;padding:5px 6px;border:1px solid #999;border-radius:3px;box-sizing:border-box;width:100%}
+.wrap{overflow-x:auto}
+table{border-collapse:collapse;table-layout:fixed;width:1804px;background:#fff}
+td,th{border:1px solid #cfcfcf;padding:0 3px;font-size:10.5px;font-weight:700;text-align:center;vertical-align:middle;overflow:hidden;white-space:nowrap;box-sizing:border-box}
+td.l{text-align:left}td.d{vertical-align:bottom;padding-bottom:2px;font-size:9.5px}td.dp{font-size:9.5px}
+tr.title th{background:#FFF2CC;font-size:21px;height:25px;border:1px solid #000;padding:0}
+tr.ot th{height:16px;background:#fff;border:1px solid #000;font-size:14px;padding:0}tr.ot th.y{background:#FFF2CC}
+tr.h th{background:#FFF2CC;border:1px solid #000;font-size:12.5px;height:55px;white-space:normal;line-height:1.15;position:relative;padding:0 8px 0 2px}
+tr.h th i{position:absolute;right:1px;bottom:1px;width:11px;height:12px;border:1px solid #888;background:#f4f4f4}
+tr.h th i:after{content:"";position:absolute;left:2px;top:4px;border:3px solid transparent;border-top:4px solid #444;border-bottom:0}
+tbody tr[data-i]{cursor:pointer}tbody tr[data-i]:hover td{filter:brightness(.93)}
+tr.lt td.c{background:#FFD966;border:1px solid #bfa24a}tr.sub td.c{background:#8EA9DB;border:1px solid #6f87b8}tr.gt td.c{background:#D6DCE4}
+dialog{border:0;border-radius:8px;padding:0;width:min(800px,96vw);box-shadow:0 10px 40px rgba(0,0,0,.35)}
+dialog::backdrop{background:rgba(0,0,0,.4)}
+.dh{background:#FFF2CC;padding:12px 18px;font-weight:700;font-size:16px;border-bottom:1px solid #000}
+.fb{padding:14px 18px;max-height:70vh;overflow:auto}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px 12px;margin-bottom:10px}
+.grid div label{display:block;font-size:11px;font-weight:700;margin-bottom:3px}
+.grid .s2{grid-column:span 2}.sec{font-size:12px;font-weight:700;margin:6px 0 4px;border-bottom:1px solid #ddd;padding-bottom:3px}
+.hide{display:none!important}
+.df{display:flex;gap:8px;padding:12px 18px;border-top:1px solid #ddd;background:#f9fafb;align-items:center}
+.df .sp{margin-left:auto;display:flex;gap:8px}
+#err{color:#b42318;font-size:12px;font-weight:700;margin-right:auto}
+
+.tabs{display:flex;gap:4px;padding:8px 12px 0;background:#e5e7eb}
+.tab{border-radius:6px 6px 0 0;background:#fff;border-color:#bbb;border-bottom:0}.tab.on{background:#FFD966;border-color:#8a6d00}
+#t2{border-collapse:collapse;table-layout:fixed;width:1600px;font-family:Arial,Helvetica,sans-serif;background:#fff}
+#t2 td,#t2 th{border:1px solid #8c8c8c;font-size:11px;text-align:center;padding:0 2px;overflow:hidden;white-space:nowrap;box-sizing:border-box;font-weight:400}
+#t2 .lc{background:#F2F2F2}#t2 .dt,#t2 .dn{font-weight:700;font-style:italic}#t2 .dn{text-align:left;padding-left:4px}
+#t2 .ttl{background:#fff;color:#f00;font-size:17px;font-weight:700;text-decoration:underline;white-space:normal}
+#t2 .rg,#t2 .ex{background:#DAE3F3;font-size:16px;font-weight:700}#t2 .rg{color:#1F4E79}#t2 .ex{color:#f00}
+#t2 .wh{background:#fff}#t2 .tm{background:#C0C0C0;color:#333;font-weight:700}#t2 .hr{background:#4F81BD;color:#fff;font-weight:700}
+#t2 .sm td{background:#F8CBAD;font-weight:700}#t2 .sm td.pu{background:#fff;color:#7030A0;font-size:10px}#t2 .sm td.l{text-align:left}
+#t2 .cm{position:relative}#t2 .cm:before{content:"";position:absolute;left:0;top:0;border:3px solid transparent;border-top-color:#f00;border-left-color:#f00}
+#t2 .eh th{background:#FFF2CC;font-size:11.5px;font-weight:700;white-space:normal;overflow-wrap:anywhere;line-height:1.1;position:relative;padding:0 3px 0 1px;border-color:#7f7f7f}
+#t2 .eh th:last-child{background:#F2F2F2;color:#8c8c8c}
+#t2 .eh th i{position:absolute;right:1px;bottom:1px;width:11px;height:12px;border:1px solid #888;background:#f4f4f4}
+#t2 .eh th i:after{content:"";position:absolute;left:2px;top:4px;border:3px solid transparent;border-top:4px solid #444;border-bottom:0}
+#t2 .tt{background:#F8CBAD;color:#808080;font-weight:700}
+.ch-h{display:flex;align-items:center;gap:16px;padding:16px 14px 0}.ch-h h2{font:700 20px Arial;margin:0}
+.cc{display:grid;grid-template-columns:repeat(auto-fit,minmax(480px,1fr));gap:14px;padding:12px 14px;max-width:1600px;box-sizing:border-box}
+.card{border:1px solid #d1d5db;border-radius:8px;padding:10px;background:#fff}.card svg{width:100%;height:auto;display:block;font-family:Arial,Helvetica,sans-serif}
+.ch-n{font-size:11px;color:#555;padding:0 14px 18px;max-width:1600px}
+.kp{display:flex;flex-wrap:wrap;gap:10px;padding:12px 14px 0;max-width:1600px;box-sizing:border-box}
+.kc{flex:1;min-width:150px;border:1px solid #d1d5db;border-left:4px solid #0072B2;border-radius:6px;padding:8px 12px;background:#fff}.kc b{display:block;font-size:22px}.kc span{font-size:11px;color:#555}
+.ins{margin:10px 14px 0;padding:10px 14px 10px 32px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;font-size:13px;line-height:1.6;max-width:1572px;box-sizing:border-box}
+.card{position:relative}.png{position:absolute;right:10px;top:8px;padding:3px 8px;font-size:11px}
+@media print{.tabs,.bar,.ch-h label,.png,dialog{display:none!important}@page{size:A3 landscape;margin:8mm}body{zoom:.75}.wrap{overflow:visible}}
+.kp{display:flex;flex-wrap:wrap;gap:12px;padding:14px;max-width:none}
+.kc{flex:1 1 170px;border:1px solid #d9dee5;border-top:4px solid var(--c,#0072B2);border-radius:8px;padding:10px 14px;background:#fff;display:flex;flex-direction:column;gap:2px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.kc span{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#667}.kc b{font-size:30px;line-height:1.15}.kc em{font-style:normal;font-size:12px;color:#555}
+.kc.ttl{flex:2.2 1 330px;background:#1F3A5F;color:#fff}.kc.ttl span,.kc.ttl em{color:#cfd9e8}.kc.ttl b{font-size:21px}
+.chip{font-style:normal;display:inline-block;font-size:11px;font-weight:700;padding:4px 9px;margin:6px 5px 0 0;border:1px solid #8fa6c4;border-radius:14px;cursor:pointer;color:#e6eefb}.chip.on{background:#FFD966;border-color:#FFD966;color:#1F3A5F}.chip.x{border-color:#ff9c9c;color:#ffd3d3}
+.pb{height:6px;border-radius:3px;background:#e5e7eb;margin-top:6px;overflow:hidden}.pb i{display:block;height:100%}
+.ins{max-width:none;margin:0 14px}
+.cc{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px;padding:14px;max-width:none}
+.c6{grid-column:span 6}.c3{grid-column:span 3}.card{padding:12px 14px}.card h3{margin:0 0 6px;font:700 14px Arial}.card .cv{width:100%}
+.card svg{height:auto}.an{transform-box:fill-box;animation:gr .55s ease-out both}@keyframes gr{from{transform:scaleX(0)}}
+@media(max-width:1100px){.c6,.c3{grid-column:span 12}}@media(min-width:700px) and (max-width:1100px){.c3{grid-column:span 6}}
+#tt{position:fixed;z-index:60;background:#1f2937;color:#fff;padding:6px 10px;border-radius:5px;font:12px/1.5 Arial;pointer-events:none;display:none;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+.hv:hover{fill:rgba(0,114,178,.10)}
+
+/* Integrated inside Datacell Task Management; source layout intentionally preserved. */
+html,body{min-height:100%}
+</style></head><body>
+<div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button></div>
+<div id="p1">
+<div class="bar">
+<button id="add">+ New Entry</button>
+<label>Report date <input type="date" id="rd" style="width:150px"></label>
+<button class="g" id="exp">Export CSV</button>
+<button class="r" id="rst">Reset to sample data</button>
+<input id="q1" placeholder="Search line, buyer, EWO…" style="width:210px"><select id="lf" style="width:120px"><option value="">All levels</option><option>Level-03</option><option>Level-04</option><option>Level-06</option></select><button class="g" id="pr1">Print / PDF</button>
+<span class="hint">Click any row to edit or delete it. Totals recalculate automatically. Data is saved in this browser.</span>
+</div>
+<div class="wrap"><table><colgroup id="cg"></colgroup><thead id="th"></thead><tbody id="tb"></tbody></table></div>
+</div>
+<div id="p2" class="hide"><div class="bar" id="bar2"><label>Search <input id="q2" placeholder="Department…" style="width:180px"></label><label>Status <select id="sf" style="width:200px"><option value="">All departments</option><option value="o">Over plan (selected OT slot)</option><option value="w">Within plan (selected OT slot)</option></select></label><label>Tolerance ± <input id="tol" type="number" min="0" value="0" style="width:70px"></label><button class="g" id="x2">Export CSV</button><button class="g" id="pr2">Print / PDF</button><span class="hint">Filters drive the table, KPIs and charts. Tolerance sets how much excess is accepted before a cell turns red.</span></div><div class="wrap"><table id="t2"></table></div>
+<div id="kpi" class="kp"></div>
+<ul id="ins" class="ins"></ul>
+<select id="ots" class="hide"></select>
+<div class="cc" id="cc"></div>
+<div class="ch-n">Click a bar, heat-map cell or donut slice to cross-filter every visual; click again to clear. Click a legend item to show/hide a series. Short/Excess &gt; tolerance = over plan (red); otherwise within plan (green). Values are printed on the visuals so colour is not the only cue.</div></div>
+
+<dialog id="dlg"><form id="f" novalidate>
+<div class="dh" id="dt">New Entry</div>
+<div class="fb">
+<div class="grid">
+<div><label>Entry type</label><select id="k"><option value="L">Sewing line</option><option value="S">Section row (Finishing, Spot…)</option><option value="D">Department row (Cutting, Printing…)</option></select></div>
+<div id="lvw"><label>Level</label><select id="lv"><option>Level-03</option><option>Level-04</option><option>Level-06</option></select></div>
+</div>
+<div class="grid" id="g1"></div>
+<div class="sec">OT Hour (manpower per slot)</div>
+<div class="grid" id="g2" style="grid-template-columns:repeat(5,1fr)"></div>
+<div class="row-fill" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;font-size:12px">
+Quick fill: asking manpower from 5.00 PM until <select id="fe" style="width:110px"></select> <button type="button" class="g" id="fill">Fill slots</button></div>
+<div class="grid" id="g3"></div>
+</div>
+<div class="df"><span id="err"></span><button type="button" class="r hide" id="del">Delete</button>
+<div class="sp"><button type="button" class="g" id="cx">Cancel</button><button type="submit">Save</button></div></div>
+</form></dialog>
+
+<script>
+const DEF=[{"k":"L","lv":"Level-03","v":["1","Tommy","271720","26","23","11","23","23","23","23","5","5","","","","","6","3","3","3","20","",""]},{"k":"L","lv":"Level-03","v":["2","Carhartt","271293","42","42","8","42","12","12","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-03","v":["3","M&S","270713","41","41","8","41","","","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-03","v":["4","Carhartt","271289","43","43","8","43","","","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-03","v":["5","Tommy","271692","30","30","8","30","6","6","6","6","6","","","","","8","4","4","3","25","",""]},{"k":"L","lv":"Level-03","v":["6","Ralph Lauren","271682","33","33","8","33","18","18","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-03","v":["7","Carhartt","271305","43","43","8","43","4","4","4","4","4","","","","","6","4","4","2","20","",""]},{"k":"L","lv":"Level-03","v":["8","M&S","270713","40","40","8","40","4","4","4","4","4","","","","","6","4","4","2","20","",""]},{"k":"L","lv":"Level-03","v":["9","Ralph Lauren","271772","37","44","13","44","44","44","44","44","44","","","","1","12","4","6","3","70","","M&M"]},{"k":"L","lv":"Level-03","v":["10","Ralph Lauren","272004","34","37","13","37","37","37","37","37","37","3","3","","1","18","7","9","5","80","","M&M"]},{"k":"L","lv":"Level-03","v":["11","Tommy","271424","40","35","15","35","35","35","35","35","35","35","35","","1","12","8","12","6","109","",""]},{"k":"L","lv":"Level-03","v":["12","Tommy","270797","38","40","11","40","40","40","40","4","4","","","","","6","4","4","2","20","",""]},{"k":"L","lv":"Level-03","v":["13","Tommy","270795","39","39","8","39","6","6","6","6","6","","","","","6","3","3","2","20","",""]},{"k":"L","lv":"Level-03","v":["14","Carhartt","271309","33","33","8","33","6","6","6","6","6","","","","","6","3","3","2","20","",""]},{"k":"L","lv":"Level-03","v":["15","M&S","271534","37","37","8","37","11","11","11","11","11","","","","","8","4","4","3","30","","M&M"]},{"k":"L","lv":"Level-03","v":["16","Tommy","270903","37","38","11","38","38","38","38","4","4","","","","","6","4","4","2","20","",""]},{"k":"L","lv":"Level-03","v":["17","M&S","270740","41","41","8","41","20","20","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-03","v":["18","Tommy","271946","39","42","13","42","42","42","42","42","42","","","","1","14","4","6","3","70","","M&M"]},{"k":"L","lv":"Level-03","v":["19","Tommy","271754","39","39","13","39","39","39","39","39","39","","","","1","6","4","6","2","58","","M&M"]},{"k":"L","lv":"Level-03","v":["20","Tommy","271687","39","44","15","44","44","44","44","44","44","44","44","","2","24","8","12","6","140","","M&M"]},{"k":"L","lv":"Level-03","v":["21","Tommy","271720","32","34","11","34","34","34","34","3","3","","","","","8","4","4","3","22","",""]},{"k":"L","lv":"Level-03","v":["22","Varner","271949","35","35","8","35","18","18","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-03","v":["23","Tommy","270903","34","34","8","34","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-03","v":["Finishing","","","","","8","50","50","50","50","50","50","","","","","","","","","50","",""]},{"k":"S","lv":"Level-03","v":["Quality","","","","","8","","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-03","v":["Spot","","","","","8","10","10","10","10","10","10","3","3","","","","","","","13","",""]},{"k":"S","lv":"Level-03","v":["Repoter","","","","","8","1","1","1","1","1","1","","","","","","","","","1","",""]},{"k":"S","lv":"Level-03","v":["Recone","","","","","8","1","1","1","1","1","1","","","","","","","","","1","",""]},{"k":"S","lv":"Level-03","v":["Management Staff","","","","","8","33","33","33","33","33","33","13","13","","","","","","","46","",""]},{"k":"L","lv":"Level-04","v":["24","M&S","270574","37","43","15","43","43","43","43","43","43","43","43","","4","16","8","16","6","136","Shipment","M&M"]},{"k":"L","lv":"Level-04","v":["25","M&S","270841","39","39","8","39","","","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["26","BESTSELLER","271095","40","40","11","40","40","40","40","17","17","","","","","4","4","4","1","30","Pack Balance","Production"]},{"k":"L","lv":"Level-04","v":["27","M&S","270911","42","42","8","42","13","13","13","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["28","Tommy","270962","37","37","8","37","20","20","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["29","M&S","270741","43","43","8","43","15","15","15","","","","","","","","","","","0","","Production"]},{"k":"L","lv":"Level-04","v":["30","Tommy","271178","41","41","0","41","","","","","","","","","","6","4","4","1","15","Needle cut",""]},{"k":"L","lv":"Level-04","v":["31","Tommy","271753","34","34","8","34","","","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["32","M&S","270187","38","38","10","38","38","38","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["33","Tommy","271178","41","41","10","41","41","41","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["34","Ralph Lauren","271937","38","38","11","38","38","38","38","10","10","","","","","6","3","5","1","25","","Production"]},{"k":"L","lv":"Level-04","v":["35","Ralph Lauren","272720","41","43","13","43","43","43","43","43","43","","","","2","12","4","8","3","72","","M&M"]},{"k":"L","lv":"Level-04","v":["36","Tommy","271022","42","42","8","42","12","12","12","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["37","M&S","270461","41","41","8","41","22","22","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["38","Tommy","271374","40","40","10","40","40","40","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["39","Ralph Lauren","272720","41","43","13","43","43","43","43","43","43","","","","2","12","4","8","3","72","","M&M"]},{"k":"L","lv":"Level-04","v":["40","M&S","270912","39","43","13","43","43","43","43","43","43","","","","2","8","4","8","3","68","",""]},{"k":"L","lv":"Level-04","v":["41","M&S","270713","42","42","8","42","12","12","12","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["42","Varner","271949","43","43","8","43","12","12","12","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["43","Ralph Lauren","272720","40","43","13","43","43","43","43","43","43","","","","2","12","4","8","3","72","","M&M"]},{"k":"L","lv":"Level-04","v":["44","Tommy","271955","33","33","8","33","","","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["45","Tommy","271531","38","38","8","38","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-04","v":["Finishing","","","","","8","","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-04","v":["Quality","","","","","8","","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-04","v":["Spot","","","","","8","12","12","12","12","12","12","","","","","","","","","12","",""]},{"k":"S","lv":"Level-04","v":["Repoter","","","","","8","","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-04","v":["Recone","","","","","8","","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-04","v":["Management Staff","","","","","8","14","14","14","14","14","14","","","","","","","","","14","",""]},{"k":"S","lv":"Level-04","v":["Automation","","","","","8","","","","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-06","v":["47","Tommy","270905","38","38","8","38","","","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-06","v":["48","M&S","270741","31","31","8","31","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-06","v":["Spot","","","","","8","","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-06","v":["Recone","","","","","","","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-06","v":["Management Staff","","","","","8","","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-06","v":["Finishing","","","","","8","","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-06","v":["Afterwash","","","56","55","13","","","","","","","","","","","","","","","0","",""]},{"k":"D","lv":"","v":["Cutting","","","256","250","11","250","250","250","250","","","","","","","","","","","0","",""]},{"k":"D","lv":"","v":["Embellishment","","","20","21","11","21","21","21","21","","","","","","","","","","","0","",""]},{"k":"D","lv":"","v":["Embroidery","","","75","79","79","79","50","50","50","","","","","","","","","","","0","",""]},{"k":"D","lv":"","v":["Finishing","","","271","166","10","166","130","130","130","9","9","","","","","","","","","9","",""]},{"k":"D","lv":"","v":["HR, Admin & Compliance","","","236","","10","","","","","","","","","","","","","","","0","",""]},{"k":"D","lv":"","v":["Industrial Engineering","","","11","","11","","","","","","","","","","","","","","","0","",""]},{"k":"D","lv":"","v":["Maintenance","","","26","1","13","1","1","1","1","","","","","","","","","","","0","",""]},{"k":"D","lv":"","v":["Material Control","","","109","240","10","240","143","143","143","18","18","","","","","","","","","18","",""]},{"k":"D","lv":"","v":["Pilot Run & Training Line","","","62","","13","","","","","","","","","","","","","","","0","",""]},{"k":"D","lv":"","v":["Printing","","","116","115","11","115","90","90","90","","","","","","","","","","","0","",""]},{"k":"D","lv":"","v":["Product Development Center","","","186","","11","","","","","","","","","","","","","","","0","",""]},{"k":"D","lv":"","v":["Quality Assurance","","","423","98","11","98","98","98","98","","","","","","","","","","","0","",""]}];
+const $=id=>document.getElementById(id);
+const E=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const KEY='ekwl_wh_approval_v1',MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const HDR=["Date","Department","Section","Line No","Buyer","EWO","Present Manpower","Asking manpowar","Asking Hour","5.00 PM","6.00 PM","7.00 PM","8.00 PM","9.00 PM","10.00 PM","11.00 PM","12.00 AM","1.00 AM","Input man","Iron man","pack","Quality","Staff","Total Manpower","Reason EOT","Responsible department"];
+const W=[75,75,119,90,82,54,54,72,54,54,54,55,56,66,74,74,76,81,35,35,36,51,36,59,169,118];
+const COL={Spot:'#E2EFDA',Repoter:'#9DC3E6',Recone:'#F8CBAD','Management Staff':'#D9E1F2'};
+const NUM=[3,4,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20], LVS=['Level-03','Level-04','Level-06'];
+// field spec: index in v, label, group (L = sewing line only), grid, type
+const SPEC=[[0,'Line No','', 1],[1,'Buyer','L',1],[2,'EWO','L',1],[3,'Present manpower','',1],[4,'Asking manpower','',1],[5,'Asking hour','',1],
+...[ '5.00 PM','6.00 PM','7.00 PM','8.00 PM','9.00 PM','10.00 PM','11.00 PM','12.00 AM','1.00 AM'].map((t,i)=>[6+i,t,'',2]),
+[15,'Input man','L',3],[16,'Iron man','L',3],[17,'Pack','L',3],[18,'Quality','L',3],[19,'Staff','L',3],[20,'Total manpower','',3],[21,'Reason EOT','L',3],[22,'Responsible dept','L',3]];
+const TXT=[0,1,21,22];
+let R,date='',nid=0,cur=null;
+let dbReady=false,saveTimer=null;
+async function load(){
+ R=JSON.parse(JSON.stringify(DEF));date='';
+ try{
+  if(parent&&typeof parent.workHourApprovalLoadState==='function'){
+   const s=await parent.workHourApprovalLoadState();
+   if(s&&Array.isArray(s.R)&&s.R.length){R=s.R;date=s.date||''}
+  }
+ }catch(e){console.error('Work Hour Approval load failed:',e)}
+ nid=0;R.forEach(r=>r.id=nid++);$('rd').value=date;dbReady=true
+}
+function save(){
+ if(!dbReady)return;
+ clearTimeout(saveTimer);
+ saveTimer=setTimeout(async()=>{
+  try{
+   if(parent&&typeof parent.workHourApprovalSaveState==='function'){
+    const rows=R.map(r=>({k:r.k,lv:r.lv,v:Array.isArray(r.v)?r.v:[]}));
+    await parent.workHourApprovalSaveState({R:rows,date});
+   }
+  }catch(e){console.error('Work Hour Approval save failed:',e)}
+ },220);
+}
+function fd(){if(!date)return'00-Jan-00';const p=date.split('-');return p[2]+'-'+MON[p[1]-1]+'-'+p[0].slice(2)}
+function sums(rs){const s={};NUM.forEach(i=>s[i]=0);rs.forEach(r=>NUM.forEach(i=>s[i]+=+r.v[i]||0));return s}
+function ht(r){const a=+r.v[5]||0,l=r.lv,n=r.v[0];
+ if(r.k=='L')return l=='Level-04'?(a>=10?22:21):l=='Level-06'?21:a>=15?26:a>=13?32:24;
+ if(r.k=='S')return l=='Level-03'?18:l=='Level-04'?(['Finishing','Quality','Management Staff'].includes(n)?24:21):({'Management Staff':38,Finishing:38,Afterwash:40}[n]||21);
+ return 27}
+function row(r,dt){const v=r.v;let c;
+ if(r.k=='L')c=[dt,'Sewing',r.lv,...v];else if(r.k=='S')c=[dt,'',r.lv,...v];else c=[dt,'',v[0],'',...v.slice(1)];
+ let bg=r.k=='S'?(COL[v[0]]||''):'';if(r.lv=='Level-06'&&v[0]=='Recone')bg='#9DC3E6';
+ return `<tr data-i="${r.id}" style="height:${ht(r)}px">`+c.map((x,i)=>`<td class="${i==0?'d':i==1?'dp':(i==2||(i==4&&r.k=='L'))?'l':''}"${bg&&i>=2?` style="background:${bg}"`:''}>${E(x)}</td>`).join('')+'</tr>'}
+function vals(s,sd,grand){ // 20 cells for columns 6..25
+ const g=i=>sd?s[i]+sd[i]:s[i];
+ return [s[3],grand?s[4]:s[4],'',...[6,7,8,9,10,11,12,13,14,15,16,17,18,19].map(g),g(20),'',''] }
+function totRow(lv,s){const big=lv=='Level-03'?'15px':'15px',sm=lv=='Level-06';
+ const h={'Level-03':34,'Level-04':30,'Level-06':40}[lv];
+ return `<tr class="lt" style="height:${h}px"><td></td><td></td><td class="c"></td><td class="c"></td><td class="c" colspan="2" style="font-size:17px">${lv.replace('-0','-')} Total=</td>`+
+ vals(s).map((x,j)=>`<td class="c" style="font-size:${sm||(lv=='Level-04'&&j<2)?'10.5px':big}">${E(x)}</td>`).join('')+'</tr>'}
+function render(){const dt=fd();let h='';
+ LVS.forEach(lv=>{const rs=R.filter(r=>r.lv==lv);rs.forEach(r=>h+=row(r,dt));h+=totRow(lv,sums(rs))});
+ const ss=sums(R.filter(r=>r.k!='D')),dp=R.filter(r=>r.k=='D'),sd=sums(dp);
+ const sv=vals(ss);sv[1]='';
+ h+=`<tr class="sub" style="height:34px"><td class="d">${dt}</td><td></td><td class="c"></td><td class="c"></td><td class="c" style="font-size:19px">Subtotal</td><td class="c"></td>`+sv.map(x=>`<td class="c">${E(x)}</td>`).join('')+'</tr>';
+ dp.forEach(r=>h+=row(r,dt));
+ const gv=vals(ss,sd,1);gv[1]=LVS.reduce((a,lv)=>a+sums(R.filter(r=>r.lv==lv))[4],0);
+ h+=`<tr class="gt" style="height:20px"><td class="d">${dt}</td><td></td><td class="c" style="font-size:10px">Grand Total</td><td class="c"></td><td class="c"></td><td class="c"></td>`+gv.map(x=>`<td class="c" style="font-size:14px">${E(x)}</td>`).join('')+'</tr>';
+ $('tb').innerHTML=h;save();flt()}
+// ---------- form ----------
+function buildForm(){
+ SPEC.forEach(([i,l,g,gr])=>{const d=document.createElement('div');if(g)d.dataset.g=g;if(i==0)d.id='n0w';
+  d.innerHTML=`<label id="l${i}">${l}</label><input id="f${i}" ${TXT.includes(i)?(i==1?'list="bl"':i==21?'list="rl"':i==22?'list="dl"':''):'type="number" min="0" step="1"'}>`;
+  $('g'+gr).appendChild(d)});
+ $('fe').innerHTML=['5.00 PM','6.00 PM','7.00 PM','8.00 PM','9.00 PM','10.00 PM','11.00 PM','12.00 AM','1.00 AM'].map((t,i)=>`<option value="${i}" ${i==5?'selected':''}>${t}</option>`).join('');
+ document.body.insertAdjacentHTML('beforeend','<datalist id="bl"><option>Tommy<option>Carhartt<option>M&S<option>Ralph Lauren<option>Varner<option>BESTSELLER</datalist><datalist id="rl"><option>Shipment<option>Pack Balance<option>Needle cut</datalist><datalist id="dl"><option>M&M<option>Production</datalist><datalist id="nl"><option>Finishing<option>Quality<option>Spot<option>Repoter<option>Recone<option>Management Staff<option>Automation<option>Afterwash<option>Cutting<option>Embellishment<option>Embroidery<option>HR, Admin &amp; Compliance<option>Industrial Engineering<option>Maintenance<option>Material Control<option>Pilot Run &amp; Training Line<option>Printing<option>Product Development Center<option>Quality Assurance</datalist>')}
+function sync(){const k=$('k').value;
+ document.querySelectorAll('[data-g=L]').forEach(e=>e.classList.toggle('hide',k!='L'));
+ $('lvw').classList.toggle('hide',k=='D');
+ $('l0').textContent=k=='L'?'Line No':k=='S'?'Section name':'Department name';
+ const f0=$('f0');f0.type=k=='L'?'number':'text';f0.setAttribute('list',k=='L'?'':'nl')}
+function openF(id){cur=id==null?null:R.find(r=>r.id==id);$('err').textContent='';
+ $('dt').textContent=cur?'Edit Entry':'New Entry';$('del').classList.toggle('hide',!cur);
+ $('k').value=cur?cur.k:'L';$('k').disabled=!!cur;$('lv').value=cur&&cur.lv?cur.lv:'Level-03';sync();
+ SPEC.forEach(([i])=>$('f'+i).value=cur?cur.v[i]:'');$('dlg').showModal()}
+function insert(r){if(r.k=='D'){R.push(r);return}
+ if(r.k=='L'){let j=-1;R.forEach((x,i)=>{if(x.k=='L'&&x.lv==r.lv)j=i});R.splice(j+1,0,r)}else R.push(r)}
+$('f').addEventListener('submit',e=>{e.preventDefault();const k=$('k').value,v=[];
+ for(const [i,l,g] of SPEC){const x=$('f'+i).value.trim();
+  if(g=='L'&&k!='L'){v[i]='';continue}
+  if(!TXT.includes(i)&&x!==''&&(isNaN(x)||+x<0)){$('err').textContent=l+' must be a number ≥ 0';return}
+  v[i]=x}
+ if(!v[0]){$('err').textContent=(k=='L'?'Line No':'Name')+' is required';return}
+ if(k=='L'){if(!v[1]){$('err').textContent='Buyer is required';return}
+  if(R.some(r=>r.k=='L'&&r.v[0]==v[0]&&r!==cur)){$('err').textContent='Line '+v[0]+' already exists';return}}
+ const lv=k=='D'?'':$('lv').value;
+ if(cur&&cur.lv==lv){cur.v=v}else{if(cur)R.splice(R.indexOf(cur),1);insert({k,lv,v,id:nid++})}
+ $('dlg').close();render()});
+$('add').onclick=()=>openF();$('cx').onclick=()=>$('dlg').close();$('k').onchange=sync;
+$('del').onclick=()=>{if(confirm('Delete this entry?')){R.splice(R.indexOf(cur),1);$('dlg').close();render()}};
+$('fill').onclick=()=>{const a=$('f4').value||$('f3').value||'';for(let i=0;i<9;i++)$('f'+(6+i)).value=i<=+$('fe').value?a:''};
+$('tb').onclick=e=>{const t=e.target.closest('tr[data-i]');if(t)openF(+t.dataset.i)};
+$('rd').onchange=e=>{date=e.target.value;render()};
+$('rst').onclick=()=>{if(confirm('Discard all changes and restore the original sample data?')){R=JSON.parse(JSON.stringify(DEF));nid=0;date='';R.forEach(r=>r.id=nid++);$('rd').value='';render()}};
+$('exp').onclick=()=>{const rows=[HDR];document.querySelectorAll('#tb tr').forEach(tr=>{const a=[];tr.querySelectorAll('td').forEach(td=>{a.push(td.textContent);for(let i=1;i<td.colSpan;i++)a.push('')});rows.push(a)});
+ const csv='\ufeff'+rows.map(a=>a.map(x=>'"'+x.replace(/"/g,'""')+'"').join(',')).join('\r\n');
+ const l=document.createElement('a');l.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));l.download='work_appval_report.csv';l.click()};
+// header
+$('th').innerHTML='<tr class="title"><th colspan="26">Work Hour Approval Request</th></tr><tr class="ot"><th colspan="9"></th><th colspan="9" class="y">OT Hour</th><th colspan="8" class="y"></th></tr><tr class="h">'+
+ HDR.map((h,i)=>`<th style="width:${W[i]}px">${h}${[3,7,17].includes(i)?'':'<i></i>'}</th>`).join('')+'</tr>';
+$('cg').innerHTML=W.map(w=>`<col style="width:${w}px">`).join('');
+async function initWorkHourApproval(){buildForm();await load();render()}
+initWorkHourApproval();
+
+const D2=[
+['Finishing',352,'',[352,107,0],[227,245,18,6],[208,239,31,26],[208,213,5,168],[78,45,-33,2],[78,43,-35,37]],
+['Quality Assurance',506,'',[506,126,0],[317,380,63,28],[317,352,35,45],[317,307,-10,220],[90,87,-3,4],[90,83,-7,31]],
+['Sewing',2201,'',[2201,885,0],[1056,1316,260,126],[1039,1190,151,367],[745,823,78,266],[577,557,-20,11],[577,546,-31,546]],
+['Cutting',429,11,[433,105,4],[415,324,-91,52],[338,272,-66,20],[338,252,-86,251],[null,1,1,0],[null,1,1,1]],
+['Product Development Center',185,11,[191,106,6],[71,79,8,2],[71,77,6,10],[71,67,-4,31],[44,36,-8,6],[44,30,-14,30]],
+['HR, Admin & Compliance',293,10,[293,116,0],[180,177,-3,25],[155,152,-3,58],[95,94,-1,66],[10,28,18,10],[10,18,8,28]],
+['Pilot Run & Training Line',62,13,[73,1,11],[73,61,-12,1],[73,60,-13,1],[73,59,-14,1],[73,53,-20,5],[73,48,-25,48]],
+['Material Control',151,10,[151,10,0],[140,141,1,41],[125,140,15,30],[125,110,-15,83],[25,27,2,6],[25,21,-4,21]],
+['Embroidery',147,11,[153,34,6],[153,113,-40,10],[153,103,-50,8],[153,95,-58,95],[null,0,0,0],[null,0,0,0]],
+['Embellishment',32,11,[24,2,-8],[24,30,6,1],[24,29,5,0],[24,29,5,29],[null,0,0,0],[null,0,0,0]],
+['Printing',224,11,[209,35,-15],[170,189,19,6],[170,183,13,1],[170,182,12,182],[null,0,0,0],[null,0,0,0]],
+['Industrial Engineering',11,11,[11,1,0],[10,10,0,4],[6,6,0,0],[6,6,0,2],[4,4,0,0],[4,4,0,4]],
+['Maintenance',30,13,[25,3,-5],[25,27,2,0],[25,27,2,3],[25,24,-1,10],[25,14,-11,2],[25,12,-13,12]]];
+const SUM=[4623,10.2,[4622,1531,-1],[2861,3092,231,262],[2704,2830,126,569],[2350,2261,-89,1409],[926,852,-74,46],[926,806,-120,798],4623];
+const TOL=()=>Math.max(0,+$('tol').value||0);
+function FD(){const q=$('q2').value.trim().toLowerCase(),sf=$('sf').value,k=+$('ots').value||0,t=TOL();return D2.filter(d=>d[0].toLowerCase().includes(q)&&(!sf||(sf=='o'?d[3+k][2]>t:d[3+k][2]<=t)))}
+function r2(){const P='#F8CBAD',G='#A9D08E',T=['5:00 PM','6:00 PM','7:00 PM','8:00 PM','9:00 PM','10:00 PM'];
+ const W2=[76,224,55,55,50,50,45,47,53,50,50,47,53,50,45,45,55,50,47,48,55,50,50,50,50,50,57,43];
+ let h='<colgroup>'+W2.map(w=>`<col style="width:${w}px">`).join('')+'</colgroup><thead>';
+ h+='<tr style="height:28px"><th class="ttl" colspan="4" rowspan="3">Department-wise EOT &amp; OT Status Report</th><th class="rg" colspan="11">Regular OT Status</th><th class="ex" colspan="12">Extra OT Status</th><th class="wh" rowspan="3"></th></tr>';
+ h+='<tr style="height:17px">'+T.map((t,i)=>`<th class="tm" colspan="${i?4:3}">${t}</th>`).join('')+'</tr>';
+ h+='<tr style="height:20px">'+T.map((t,i)=>`<th class="hr" colspan="${i?4:3}">${i} Hour OT</th>`).join('')+'</tr>';
+ const s=SUM;
+ h+=`<tr class="sm" style="height:18px"><td class="pu">03-Oct-26</td><td class="pu l">Data From HR Punch &amp; OT Cost Report</td><td>${s[0]}</td><td class="cm">${s[1]}</td>`+s.slice(2,8).flat().map(v=>`<td>${v}</td>`).join('')+`<td>${s[8]}</td></tr>`;
+ const H4=['Plan TM','Utilized TM','Short/Excess','Punch Out'];
+ const hs=['Date','Department','Total TM','Plan Work Hour','Plan TM','Punch Out','Short/Excess',...H4,...H4,...H4,...H4,...H4,'Total'];
+ h+='<tr class="eh" style="height:40px">'+hs.map((x,i)=>`<th>${x}${i==27?'':'<i></i>'}</th>`).join('')+'</tr></thead><tbody>';
+ FD().forEach(d=>{h+=`<tr style="height:17.5px"><td class="dt lc">03-Oct-26</td><td class="dn lc">${E(d[0])}</td><td class="lc">${d[1]}</td><td class="lc">${d[2]}</td>`;
+  d[3].forEach((v,j)=>h+=`<td style="background:${j==2&&v==0?'#C6E0B4':P}">${v}</td>`);
+  for(let g=4;g<9;g++){const a=d[g];
+   h+=`<td style="background:${P}">${a[0]==null?'':a[0]}</td><td style="background:${G}">${a[1]}</td><td style="${a[2]>TOL()?'background:#f00;color:#fff;font-weight:700':'background:#92D050'}">${a[2]}</td><td style="background:${P}">${a[3]}</td>`}
+  h+=`<td class="tt">${d[1]}</td></tr>`});
+ $('t2').innerHTML=h+'</tbody>'}
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x==b));['p1','p2'].forEach(p=>$(p).classList.toggle('hide',p!=b.dataset.t))});
+r2();
+
+const PAL=['#0072B2','#E69F00','#009E73','#CC79A7','#56B4E9','#D55E00','#8c8c8c'],RED='#C62828',GRN='#2E7D32';
+const nice=m=>{const p=Math.pow(10,Math.floor(Math.log10(m||1))),f=m/p;return(f<=1?1:f<=2?2:f<=5?5:10)*p};
+const tx=(x,y,s,o)=>`<text x="${x}" y="${y}" ${o||''}>${E(s)}</text>`;
+const ttl=(s,w)=>tx(w/2,24,s,'text-anchor="middle" font-size="15" font-weight="700" fill="#222"');
+let SEL=null;const HID={},SL=['5 PM','6 PM','7 PM','8 PM','9 PM','10 PM'],I6=[0,1,2,3,4,5];
+const W_=el=>Math.max(280,el.clientWidth||600),cut=(s,n)=>s.length>n?s.slice(0,n-1)+'…':s;
+const T=(x,y,s,o)=>`<text x="${x}" y="${y}" font-size="12" fill="#333" ${o||''}>${E(s)}</text>`;
+const svg=(w,h,b)=>`<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" font-family="Arial,Helvetica,sans-serif">${b}</svg>`;
+const dm=d=>SEL&&d!==SEL?' opacity=".3"':'',sgn=v=>(v>0?'+':'')+v;
+function arc(cx,cy,r0,r1,a0,a1){const p=(r,a)=>[cx+r*Math.sin(a),cy-r*Math.cos(a)],lg=a1-a0>Math.PI?1:0,[x0,y0]=p(r1,a0),[x1,y1]=p(r1,a1),[x2,y2]=p(r0,a1),[x3,y3]=p(r0,a0);return `M${x0} ${y0}A${r1} ${r1} 0 ${lg} 1 ${x1} ${y1}L${x2} ${y2}A${r0} ${r0} 0 ${lg} 0 ${x3} ${y3}Z`}
+function vBar(F,k){const el=$('v1'),w=W_(el),t=TOL(),rows=F.map(d=>({n:d[0],v:d[3+k][2]})).sort((a,b)=>b.v-a.v),L=Math.min(200,Math.round(w*.36)),R=44,Tp=12,rh=27,h=Tp+rows.length*rh+44;
+ const mx=Math.max(0,...rows.map(r=>r.v)),mn=Math.min(0,...rows.map(r=>r.v)),st=nice((mx-mn)/5||1),hi=Math.ceil(mx/st)*st,lo=Math.floor(mn/st)*st-(mn<0?st:0),sx=v=>L+(v-lo)/(hi-lo)*(w-L-R);let s='';
+ for(let v=lo;v<=hi+1e-9;v+=st)s+=`<line x1="${sx(v)}" x2="${sx(v)}" y1="${Tp}" y2="${h-40}" stroke="${v==0?'#444':'#e6e6e6'}"/>`+T(sx(v),h-24,v,'text-anchor="middle" fill="#666" font-size="11"');
+ rows.forEach((r,i)=>{const y=Tp+i*rh,x0=sx(0),x1=sx(r.v);
+  s+=`<g data-d="${E(r.n)}" data-tt="<b>${E(r.n)}</b><br>Short/Excess: <b>${sgn(r.v)}</b><br>${k} Hour OT" style="cursor:pointer"${dm(r.n)}><rect x="0" y="${y}" width="${w}" height="${rh}" fill="${r.n==SEL?'#eaf3ff':'transparent'}"/>`+T(L-8,y+rh/2+4,cut(r.n,Math.floor(L/6.6)),'text-anchor="end"')+`<rect class="an" style="transform-origin:${r.v>=0?'left':'right'}" x="${Math.min(x0,x1)}" y="${y+4}" width="${Math.max(Math.abs(x1-x0),2)}" height="${rh-8}" rx="2" fill="${r.v>t?RED:GRN}"/>`+T(r.v>=0?x1+5:x1-5,y+rh/2+4,r.v,`text-anchor="${r.v>=0?'start':'end'}" font-weight="700"`)+'</g>'});
+ el.innerHTML=svg(w,h,s+T((L+w-R)/2,h-6,'Short / Excess (manpower; + = over plan)','text-anchor="middle" fill="#555" font-size="11"'))}
+function vLine(F2,k){const el=$('v2'),w=W_(el),h=340,L=56,R=18,Tp=14,B=64,ss=(i,j)=>F2.reduce((a,d)=>a+(d[3+i][j]||0),0);
+ const S=[['Plan TM',I6.map(i=>ss(i,0))],['Utilized TM',I6.map(i=>i?ss(i,1):null)],['Punch Out',I6.map(i=>i?ss(i,3):ss(0,1))]],vis=S.filter(x=>!HID[x[0]]);
+ const mx=Math.max(1,...vis.flatMap(x=>x[1].filter(v=>v!=null))),st=nice(mx/5),hi=Math.ceil(mx/st)*st,bw=(w-L-R)/6,sx=i=>L+(i+.5)*bw,sy=v=>Tp+(1-v/hi)*(h-Tp-B);
+ let s=`<rect x="${L+k*bw}" y="${Tp}" width="${bw}" height="${h-Tp-B}" fill="#FFD966" opacity=".35"/>`;
+ for(let v=0;v<=hi;v+=st)s+=`<line x1="${L}" x2="${w-R}" y1="${sy(v)}" y2="${sy(v)}" stroke="${v?'#e6e6e6':'#444'}"/>`+T(L-8,sy(v)+4,v,'text-anchor="end" fill="#666" font-size="11"');
+ I6.forEach(i=>s+=T(sx(i),h-B+18,SL[i],'text-anchor="middle" font-size="11"')+T(sx(i),h-B+32,i+'H OT','text-anchor="middle" font-size="10" fill="#777"'));
+ s+=T(14,(Tp+h-B)/2,'Manpower (TM)',`text-anchor="middle" font-size="11" fill="#555" transform="rotate(-90 14 ${(Tp+h-B)/2})"`);
+ S.forEach(([n,a],j)=>{if(HID[n])return;const c=PAL[j],pts=a.map((v,i)=>v==null?null:[sx(i),sy(v),v]).filter(Boolean);
+  s+=`<polyline fill="none" stroke="${c}" stroke-width="2.8" points="${pts.map(p=>p[0]+','+p[1]).join(' ')}"/>`;
+  pts.forEach(p=>{s+=(j==0?`<circle cx="${p[0]}" cy="${p[1]}" r="5" fill="${c}"/>`:j==1?`<rect x="${p[0]-4.5}" y="${p[1]-4.5}" width="9" height="9" fill="${c}"/>`:`<path d="M${p[0]} ${p[1]-6}L${p[0]+5.5} ${p[1]+4.5}L${p[0]-5.5} ${p[1]+4.5}Z" fill="${c}"/>`)+(bw>62?T(p[0],p[1]+(j==1?18:-10),p[2],`text-anchor="middle" font-size="10" font-weight="700" fill="${c}"`):'')})});
+ I6.forEach(i=>s+=`<rect class="hv" x="${L+i*bw}" y="${Tp}" width="${bw}" height="${h-Tp-B}" fill="transparent" style="cursor:pointer" data-k="${i}" data-tt="<b>${SL[i]} · ${i} Hour OT</b>${S.map((x,j)=>`<br><span style='color:${PAL[j]}'>●</span> ${x[0]}: <b>${x[1][i]==null?'–':x[1][i]}</b>`).join('')}<br>Short/Excess: <b>${sgn(ss(i,2))}</b>"/>`);
+ S.forEach(([n],j)=>{const x=w/2-170+j*118;s+=`<g data-l="${n}" style="cursor:pointer"${HID[n]?' opacity=".35"':''}><rect x="${x-4}" y="${h-24}" width="112" height="20" fill="transparent"/><line x1="${x}" x2="${x+20}" y1="${h-14}" y2="${h-14}" stroke="${PAL[j]}" stroke-width="3"/>`+T(x+26,h-10,n,'font-size="12"')+'</g>'});
+ el.innerHTML=svg(w,h,s)}
+function vHeat(F,k){const el=$('v3'),w=W_(el),t=TOL(),L=Math.min(190,Math.round(w*.34)),cw=(w-L-6)/6,rh=26,Tp=40,rows=[...F].sort((a,b)=>b[3+k][2]-a[3+k][2]),h=Tp+rows.length*rh+8,all=rows.flatMap(d=>I6.map(i=>d[3+i][2])),mp=Math.max(1,...all),mm=Math.max(1,-Math.min(0,...all));let s='';
+ I6.forEach(i=>s+=T(L+i*cw+cw/2,16,i+'H OT',`text-anchor="middle" font-weight="700"${i==k?' fill="#0072B2"':''}`)+T(L+i*cw+cw/2,31,SL[i],'text-anchor="middle" font-size="10" fill="#777"'));
+ rows.forEach((d,r)=>{const y=Tp+r*rh;s+=T(L-8,y+rh/2+4,cut(d[0],Math.floor(L/6.6)),`text-anchor="end"${d[0]==SEL?' font-weight="700"':''}`);
+  I6.forEach(i=>{const v=d[3+i][2],a=v>t?.25+.75*Math.min(1,v/mp):.18+.6*Math.min(1,-v/mm);
+   s+=`<g data-d="${E(d[0])}" data-k="${i}" data-tt="<b>${E(d[0])}</b><br>${i} Hour OT (${SL[i]})<br>Short/Excess: <b>${sgn(v)}</b>" style="cursor:pointer"${dm(d[0])}><rect x="${L+i*cw+1}" y="${y+1}" width="${cw-2}" height="${rh-2}" rx="3" fill="${v>t?`rgba(198,40,40,${a})`:`rgba(46,125,50,${a})`}"/>`+T(L+i*cw+cw/2,y+rh/2+4,v,`text-anchor="middle" font-weight="700" font-size="11" fill="${a>.6?'#fff':'#222'}"`)+'</g>'})});
+ s+=`<rect x="${L+k*cw}" y="${Tp-2}" width="${cw}" height="${rows.length*rh+4}" fill="none" stroke="#0072B2" stroke-width="2" rx="4" pointer-events="none"/>`;el.innerHTML=svg(w,h,s)}
+function donut(el,items,o){const w=W_(el),side=w>=470,R=Math.min(side?w*.27:w/2-24,112),r0=R*.58,cx=side?R+14:w/2,cy=R+12,tot=items.reduce((a,b)=>a+b.v,0),lh=26,lx=side?cx+R+26:10,ly=side?Math.max(cy-items.length*lh/2,6)+14:2*cy+20,h=side?Math.max(2*cy,ly+items.length*lh-6):ly+items.length*lh;let s='',a=0;
+ const atr=it=>`data-tt="<b>${E(it.n)}</b><br>${it.v} ${o.u} (${(it.v/tot*100).toFixed(1)}%)" ${it.d?`data-d="${E(it.d)}"`:''} ${it.s?`data-s="${it.s}"`:''} style="cursor:pointer"`,op=it=>((SEL&&it.d&&it.d!=SEL)||(o.st&&$('sf').value&&$('sf').value!=it.s))?' opacity=".3"':'';
+ items.forEach(it=>{const f=it.v/tot,b=a+f*2*Math.PI;s+=f>.9999?`<circle cx="${cx}" cy="${cy}" r="${(R+r0)/2}" fill="none" stroke="${it.c}" stroke-width="${R-r0}" ${atr(it)}${op(it)}/>`:`<path d="${arc(cx,cy,r0,R,a,b)}" fill="${it.c}" stroke="#fff" stroke-width="2" ${atr(it)}${op(it)}/>`;a=b});
+ s+=T(cx,cy+2,o.c[0],'text-anchor="middle" font-size="24" font-weight="700"')+T(cx,cy+20,o.c[1],'text-anchor="middle" font-size="11" fill="#666"');
+ items.forEach((it,i)=>{const y=ly+i*lh;s+=`<g ${atr(it)}${op(it)}><rect x="${lx-4}" y="${y-14}" width="${w-lx-2}" height="${lh-2}" fill="transparent"/><rect x="${lx}" y="${y-11}" width="13" height="13" rx="2" fill="${it.c}"/>`+T(lx+20,y,cut(it.n,Math.floor((w-lx-110)/6.6)),'font-size="12"')+T(w-8,y,`${it.v} ${o.u} · ${(it.v/tot*100).toFixed(0)}%`,'text-anchor="end" font-size="12" font-weight="700"')+'</g>'});
+ el.innerHTML=svg(w,h,s)}
+const kc=(l,v,sub,c,x)=>`<div class="kc" style="--c:${c}"><span>${l}</span><b>${v}</b><em>${sub}</em>${x||''}</div>`,
+ spark=(a,c)=>{const mx=Math.max(...a,1),p=a.map((v,i)=>`${i*20},${26-v/mx*24}`).join(' ');return `<svg viewBox="0 0 100 28" width="100%" height="28" preserveAspectRatio="none"><polyline points="${p}" fill="none" stroke="${c}" stroke-width="2"/></svg>`},
+ pb=(p,c)=>`<div class="pb"><i style="width:${Math.max(0,Math.min(100,p))}%;background:${c}"></i></div>`;
+function charts(){const F=FD(),k=+$('ots').value||0,t=TOL();
+ if(SEL&&!F.some(d=>d[0]==SEL))SEL=null;
+ const F2=SEL?F.filter(d=>d[0]==SEL):F,ss=(i,j)=>F2.reduce((a,d)=>a+(d[3+i][j]||0),0),pl=ss(k,0),ut=ss(k,1),net=ss(k,2),tm=F2.reduce((a,d)=>a+d[1],0),ov0=F2.filter(d=>d[3+k][2]>t).length,up=pl?ut/pl*100:0;
+ const chips=I6.map(i=>`<i class="chip${i==k?' on':''}" data-c="${i}">${i}H · ${SL[i]}</i>`).join('')+(SEL||$('sf').value||$('q2').value?'<i class="chip x" data-c="x">✕ Clear filters</i>':'');
+ $('kpi').innerHTML=`<div class="kc ttl"><span>Report dashboard · 03-Oct-26</span><b>Department-wise EOT &amp; OT Status</b><em>${F2.length} department${F2.length==1?'':'s'}${SEL?' · '+E(SEL):''} · ${k} Hour OT</em><div>${chips}</div></div>`+
+  kc('Total TM',tm,SEL?E(SEL):'selected departments','#0072B2')+kc('Plan TM',pl,`${k} Hour OT`,'#0072B2',spark(I6.map(i=>ss(i,0)),'#0072B2'))+kc(k?'Utilized TM':'Punch Out',ut,'actual manpower','#E69F00',spark(I6.map(i=>ss(i,1)),'#E69F00'))+
+  kc('Utilization',up.toFixed(1)+'%',up>100+t/Math.max(pl,1)*100?'above plan':'vs plan','#009E73',pb(up,up>100?RED:'#009E73'))+kc('Net Short/Excess',sgn(net),net>t?'over plan':'within plan',net>t?RED:GRN)+kc('Over plan',ov0+' / '+F2.length,'departments',ov0?RED:GRN,pb(F2.length?ov0/F2.length*100:0,RED));
+ if(!F.length){$('ins').innerHTML='';$('cc').innerHTML='<div class="card c6">No departments match the current filter.</div>';return}
+ const hi=[...F].sort((a,b)=>b[3+k][2]-a[3+k][2]),lo=hi[hi.length-1],dt=[...F].sort((a,b)=>b[1]-a[1]),I=[];
+ if(hi[0][3+k][2]>t)I.push(`<b>${E(hi[0][0])}</b> has the highest excess at ${k} Hour OT (${sgn(hi[0][3+k][2])}).`);if(lo[3+k][2]<0)I.push(`<b>${E(lo[0])}</b> is furthest under plan (${lo[3+k][2]}).`);
+ I.push(`${F.filter(d=>d[3+k][2]>t).length} of ${F.length} departments exceed plan beyond the ±${t} tolerance.`);I.push(`<b>${E(dt[0][0])}</b> is the largest department by Total TM (${dt[0][1]}).`);
+ $('ins').innerHTML=I.map(x=>`<li>${x}</li>`).join('');
+ const cd=(c,i,h)=>`<div class="card ${c}"><button class="g png">PNG</button><h3>${h}</h3><div class="cv" id="v${i}"></div></div>`;
+ $('cc').innerHTML=cd('c6',1,`Short / Excess by Department – ${k} Hour OT`)+cd('c6',2,`Plan vs Utilized vs Punch Out by OT Slot${SEL?' – '+E(SEL):''}`)+cd('c6',3,'Short / Excess Heat Map – Department × OT Slot')+cd('c3',4,'Total TM Share by Department')+cd('c3',5,`Plan Status – ${k} Hour OT`);
+ vBar(F,k);vLine(F2,k);vHeat(F,k);
+ const top=dt.slice(0,5).map((d,i)=>({n:d[0],v:d[1],c:PAL[i],d:d[0]}));if(dt.length>5)top.push({n:'Others ('+(dt.length-5)+')',v:dt.slice(5).reduce((a,d)=>a+d[1],0),c:PAL[6]});
+ donut($('v4'),top,{u:'TM',c:[F.reduce((a,d)=>a+d[1],0),'Total TM']});
+ const ov=F.filter(d=>d[3+k][2]>t).length,st=[{n:'Over plan (> '+t+')',v:ov,c:RED,s:'o'},{n:'Within plan (≤ '+t+')',v:F.length-ov,c:GRN,s:'w'}].filter(x=>x.v);
+ donut($('v5'),st,{u:'depts',c:[F.length,'departments'],st:1})}
+$('ots').innerHTML=['5:00 PM','6:00 PM','7:00 PM','8:00 PM','9:00 PM','10:00 PM'].map((t,i)=>`<option value="${i}" ${i==1?'selected':''}>${i} Hour OT (${t})</option>`).join('');
+const tip=document.createElement('div');tip.id='tt';document.body.appendChild(tip);
+document.addEventListener('mousemove',e=>{const x=e.target.closest&&e.target.closest('[data-tt]');if(!x){tip.style.display='none';return}tip.innerHTML=x.dataset.tt;tip.style.display='block';tip.style.left=Math.min(e.clientX+14,innerWidth-tip.offsetWidth-8)+'px';tip.style.top=(e.clientY+16)+'px'});
+$('cc').addEventListener('click',e=>{const d=e.target.closest('[data-d]'),k=e.target.closest('[data-k]'),s=e.target.closest('[data-s]'),l=e.target.closest('[data-l]');
+ if(l){HID[l.dataset.l]=!HID[l.dataset.l];charts();return}
+ if(s){$('sf').value=$('sf').value==s.dataset.s?'':s.dataset.s;refresh();return}
+ if(k)$('ots').value=k.dataset.k;if(d)SEL=(SEL==d.dataset.d&&!k)?null:d.dataset.d;if(d||k)refresh()});
+$('kpi').addEventListener('click',e=>{const c=e.target.closest('[data-c]');if(!c)return;if(c.dataset.c=='x'){SEL=null;$('sf').value='';$('q2').value=''}else $('ots').value=c.dataset.c;refresh()});
+let lw=0;new ResizeObserver(()=>{const w=$('cc').clientWidth;if(w>0&&Math.abs(w-lw)>8){lw=w;charts()}}).observe($('cc'));
+function refresh(){r2();charts()}
+['q2','sf','tol','ots'].forEach(i=>{$(i).addEventListener('input',refresh);$(i).addEventListener('change',refresh)});refresh();
+$('pr1').onclick=$('pr2').onclick=()=>window.print();
+function flt(){const q=$('q1').value.trim().toLowerCase(),lf=$('lf').value;document.querySelectorAll('#tb tr[data-i]').forEach(tr=>{const r=R.find(x=>x.id==tr.dataset.i);tr.style.display=((!q||tr.textContent.toLowerCase().includes(q))&&(!lf||(r&&r.lv==lf)))?'':'none'})}
+$('q1').addEventListener('input',flt);$('lf').addEventListener('change',flt);flt();
+function dl(rows,name){const csv='\ufeff'+rows.map(a=>a.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(',')).join('\r\n'),l=document.createElement('a');l.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));l.download=name;l.click()}
+$('x2').onclick=()=>{const T=['5:00 PM','6:00 PM','7:00 PM','8:00 PM','9:00 PM','10:00 PM'],g=['Plan TM','Punch Out','Short/Excess'],h4=['Plan TM','Utilized TM','Short/Excess','Punch Out'],hd=['Date','Department','Total TM','Plan Work Hour'];
+ T.forEach((t,i)=>(i?h4:g).forEach(x=>hd.push(t+' '+x)));hd.push('Total');
+ dl([hd,...FD().map(d=>['03-Oct-26',d[0],d[1],d[2],...d.slice(3).flat().map(v=>v==null?'':v),d[1]])],'department_wise_eot_ot_status.csv')};
+$('cc').addEventListener('click',e=>{const b=e.target.closest('.png');if(!b)return;const sv=b.parentNode.querySelector('svg').cloneNode(true),vb=sv.viewBox.baseVal,w=vb.width*2,h=vb.height*2;
+ sv.setAttribute('font-family','Arial');sv.setAttribute('width',w);sv.setAttribute('height',h);
+ const im=new Image();im.onload=()=>{const c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,w,h);x.drawImage(im,0,0);const a=document.createElement('a');a.href=c.toDataURL('image/png');a.download='chart.png';a.click()};
+ im.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(sv))});
+</script></body></html>
