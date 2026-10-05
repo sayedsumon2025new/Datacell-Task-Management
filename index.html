@@ -1986,6 +1986,14 @@ async function sbBumpVersion() {
   return ok;
 }
 
+// The embedded dashboard owns its active tab and unsaved cell drafts.
+// Background task sync must not recreate it while its module is still allowed.
+function preserveWorkHourApprovalDuringSync(){
+  return adminTab==='workhourapproval' &&
+    (currentUser==='admin'||(moduleAccess[currentUser]||[]).includes('workhourapproval')) &&
+    !!document.querySelector('#mainContent iframe[data-work-hour-approval]');
+}
+
 // ── Polling ──────────────────────────────────────────────────────
 async function pollSheets() {
   if (!currentUser || _isSyncing || _taskWritesPending || _syncDebounce || !sbConfigured()) return;
@@ -2001,7 +2009,7 @@ async function pollSheets() {
         writeRevision !== _taskWriteRevision) return;
     const changed = applyRemoteData(data);
     _lastVersion = data.version;
-    if (changed && !masterFormDirty && !document.querySelector('#mainContent input:focus, #mainContent select:focus')) renderContent();
+    if (changed && !preserveWorkHourApprovalDuringSync() && !masterFormDirty && !document.querySelector('#mainContent input:focus, #mainContent select:focus')) renderContent();
     setSyncStatus('live');
   } catch (e) {
     console.error('Polling error:', e);
@@ -4152,6 +4160,7 @@ window.workHourDailyPunchUpsert=workHourDailyPunchUpsert;
 function buildWorkHourApproval(c){
   const frame=document.createElement('iframe');
   frame.title='Work Hour Approval';
+  frame.dataset.workHourApproval='true';
   frame.src='work_hour_approval_dashboard.html?build=20261005_13';
   frame.style.cssText='display:block;width:100%;height:calc(100vh - 110px);min-height:760px;border:1px solid var(--border);border-radius:12px;background:#fff;box-shadow:var(--card-shadow);';
   c.appendChild(frame);
