@@ -18,6 +18,10 @@ tr.h th{background:#FFF2CC;border:1px solid #000;font-size:12.5px;height:55px;wh
 tr.h th i{position:absolute;right:1px;bottom:1px;width:11px;height:12px;border:1px solid #888;background:#f4f4f4}
 tr.h th i:after{content:"";position:absolute;left:2px;top:4px;border:3px solid transparent;border-top:4px solid #444;border-bottom:0}
 tbody tr[data-i]{cursor:pointer}tbody tr[data-i]:hover td{filter:brightness(.93)}
+#tb td.cell-editable{cursor:text}#tb td.cell-editable:hover{box-shadow:inset 0 0 0 1px #0072B2}
+#tb td.cell-editable:focus{outline:2px solid #0072B2;outline-offset:-2px}
+#tb .cell-input{width:100%;min-width:0;height:100%;border:1px solid #0072B2;border-radius:0;padding:1px 2px;font:inherit;background:#fff;color:#000}
+#tb .cell-input[aria-invalid="true"]{border-color:#b42318}
 tr.lt td.c{background:#FFD966;border:1px solid #bfa24a}tr.sub td.c{background:#8EA9DB;border:1px solid #6f87b8}tr.gt td.c{background:#D6DCE4}
 dialog{border:0;border-radius:8px;padding:0;width:min(800px,96vw);box-shadow:0 10px 40px rgba(0,0,0,.35)}
 dialog::backdrop{background:rgba(0,0,0,.4)}
@@ -249,7 +253,7 @@ const SPEC=[[0,'Line No','', 1],[1,'Buyer','L',1],[2,'EWO','L',1],[3,'Present ma
 [15,'Input man','L',3],[16,'Iron man','L',3],[17,'Pack','L',3],[18,'Quality','L',3],[19,'Staff','L',3],[20,'Total manpower','',3],[21,'Reason EOT','L',3],[22,'Responsible dept','L',3]];
 const TXT=[0,1,21,22];
 let R=[],date='',nid=0,cur=null;
-let dbReady=false,dbRevision='',whBusy=false,llEditId=null;
+let dbReady=false,dbRevision='',whBusy=false,llEditId=null,cellEdit=null;
 function whSetMsg(msg,bad=false){
  for(const id of ['whMsg','llMsg']){$(id).textContent=msg;$(id).style.color=bad?'#b42318':'#166534'}
 }
@@ -260,6 +264,7 @@ function whSetBusy(busy){
 }
 async function load(){
  if(whBusy)return false;
+ if(cellEdit)cancelCellEdit(cellEdit);
  whSetBusy(true);whSetMsg('Loading saved report…');
  try{
   if(!parent||typeof parent.workHourApprovalLoadState!=='function')throw new Error('Open this dashboard from Datacell Task Management.');
@@ -267,7 +272,7 @@ async function load(){
   if(!s||!Array.isArray(s.R)||!s.updatedAt)throw new Error('Saved report is unavailable.');
   R=s.R;date=s.date||'';dbRevision=s.updatedAt;
   nid=0;R.forEach(r=>r.id=nid++);$('rd').value=date;dbReady=true;
-  llResetForm();render();llDraw();whSetMsg('Saved report loaded. '+R.filter(r=>r.k==='L').length+' sewing line(s).');return true
+  llResetForm();render();llDraw();whSetMsg('Saved report loaded. Click a cell to edit; Enter or Tab saves, Esc cancels.');return true
  }catch(e){console.error('Work Hour Approval load failed:',e);dbReady=false;whSetMsg('Load failed: '+e.message,true);return false}
  finally{whSetBusy(false);$('llReload').disabled=false}
 }
@@ -302,7 +307,18 @@ function ht(r){const a=+r.v[5]||0,l=r.lv,n=r.v[0];
 function row(r,dt){const v=r.v;let c;
  if(r.k=='L')c=[dt,'Sewing',r.lv,...v];else if(r.k=='S')c=[dt,'',r.lv,...v];else c=[dt,'',v[0],'',...v.slice(1)];
  let bg=r.k=='S'?(COL[v[0]]||''):'';if(r.lv=='Level-06'&&v[0]=='Recone')bg='#9DC3E6';
- return `<tr data-i="${r.id}" style="height:${ht(r)}px">`+c.map((x,i)=>`<td class="${i==0?'d':i==1?'dp':(i==2||(i==4&&r.k=='L'))?'l':''}"${bg&&i>=2?` style="background:${bg}"`:''}>${E(x)}</td>`).join('')+'</tr>'}
+ return `<tr data-i="${r.id}" style="height:${ht(r)}px">`+c.map((x,i)=>{
+  const field=cellField(r,i);
+  return `<td data-col="${i}" class="${i==0?'d':i==1?'dp':(i==2||(i==4&&r.k=='L'))?'l':''}${field?' cell-editable':''}"${field?` data-field="${field}" tabindex="0" title="Click to edit · Enter/Tab saves · Esc cancels"`:''}${bg&&i>=2?` style="background:${bg}"`:''}>${E(x)}</td>`
+ }).join('')+'</tr>'}
+function cellField(r,col){
+ if(col===0)return 'date';
+ if(col===2)return r.k==='D'?'v0':'level';
+ if(col<3)return '';
+ const index=col-3,spec=SPEC.find(s=>s[0]===index);
+ if(!spec||r.k==='D'&&index===0||spec[2]==='L'&&r.k!=='L')return '';
+ return 'v'+index
+}
 function vals(s,sd,grand){ // 20 cells for columns 6..25
  const g=i=>sd?s[i]+sd[i]:s[i];
  return [s[3],grand?s[4]:s[4],'',...[6,7,8,9,10,11,12,13,14,15,16,17,18,19].map(g),g(20),'',''] }
@@ -356,7 +372,67 @@ $('del').onclick=async()=>{if(!cur||whBusy||!confirm('Delete this entry from the
  try{await save(R.filter(r=>r.id!==cur.id));llResetForm();$('dlg').close()}catch(err){$('err').textContent=err.message}
 };
 $('fill').onclick=()=>{const a=$('f4').value||$('f3').value||'';for(let i=0;i<9;i++)$('f'+(6+i)).value=i<=+$('fe').value?a:''};
-$('tb').onclick=e=>{const t=e.target.closest('tr[data-i]');if(t)openF(+t.dataset.i)};
+// ---------- Direct cell editing ----------
+function startCellEdit(td){
+ if(!td||!dbReady||whBusy||cellEdit)return;
+ const r=R.find(r=>r.id===Number(td.parentElement.dataset.i)),field=td.dataset.field;
+ if(!r||!field)return;
+ const index=field.startsWith('v')?Number(field.slice(1)):null;
+ const original=field==='date'?date:field==='level'?r.lv:String(r.v[index]??'');
+ const input=document.createElement('input');input.className='cell-input';
+ input.type=field==='date'?'date':index!==null&&!TXT.includes(index)||index===0&&r.k==='L'?'number':'text';
+ if(input.type==='number'){input.min=index===0?'1':'0';input.step=index===0?'1':'any'}
+ if(field==='level')input.setAttribute('list','llLevels');
+ if(index===1)input.setAttribute('list','bl');
+ if(index===21)input.setAttribute('list','rl');
+ if(index===22)input.setAttribute('list','dl');
+ input.setAttribute('aria-label',HDR[Number(td.dataset.col)]);input.value=original;
+ const editor={td,input,field,index,rowId:r.id,original,text:td.textContent,done:false,saving:false};cellEdit=editor;
+ td.textContent='';td.appendChild(input);input.focus();if(input.type!=='date')input.select();
+ input.onkeydown=e=>{
+  if(e.key==='Escape'){e.preventDefault();cancelCellEdit(editor)}
+  if(e.key==='Enter'||e.key==='Tab'){e.preventDefault();commitCellEdit(editor,e.key==='Tab'?(e.shiftKey?-1:1):0)}
+ };
+ input.onblur=()=>commitCellEdit(editor)
+}
+function cancelCellEdit(editor){
+ if(editor.done||editor.saving)return;editor.done=true;cellEdit=null;editor.td.textContent=editor.text;editor.td.focus()
+}
+async function commitCellEdit(editor,direction=0){
+ if(editor.done||editor.saving)return;
+ const {input,field,index,rowId}=editor,r=R.find(r=>r.id===rowId);let value=input.value.trim();
+ function invalid(msg){whSetMsg(msg,true);input.setAttribute('aria-invalid','true');input.focus()}
+ if(!r){invalid('This row is unavailable. Reload before editing.');return}
+ if(input.validity.badInput){invalid('Enter a valid value.');return}
+ if(field==='level'&&!value){invalid('Level is required.');return}
+ if(index===0&&!value){invalid('Line No or name is required.');return}
+ if(index===1&&r.k==='L'&&!value){invalid('Buyer is required.');return}
+ if(index!==null&&input.type==='number'&&value!==''){
+  const number=Number(value);
+  if(!Number.isFinite(number)||number<0){invalid('Enter a number ≥ 0.');return}
+  if(index===0){
+   if(!Number.isSafeInteger(number)||number<=0){invalid('Line No must be a positive whole number.');return}
+   if(R.some(x=>x.k==='L'&&x.id!==rowId&&Number(x.v[0])===number)){invalid('Line '+number+' already exists.');return}
+   value=String(number)
+  }
+ }
+ const cells=[...$('tb').querySelectorAll('td[data-field]')],pos=cells.indexOf(editor.td),target=cells[pos+direction];
+ const nextCell=direction&&target?{rowId:target.parentElement.dataset.i,col:target.dataset.col}:null;
+ if(value===editor.original){cancelCellEdit(editor);if(nextCell)startCellEdit($('tb').querySelector(`tr[data-i="${nextCell.rowId}"] td[data-col="${nextCell.col}"]`));return}
+ const next=R.map(x=>({...x,v:[...x.v]}));
+ if(field==='level')next.find(x=>x.id===rowId).lv=value;
+ else if(field!=='date')next.find(x=>x.id===rowId).v[index]=value;
+ editor.saving=true;input.disabled=true;
+ try{
+  await save(next,field==='date'?value:date);editor.done=true;cellEdit=null;llResetForm();
+  if(field==='date')whSetMsg('Report date saved for all rows.');
+  const focus=$('tb').querySelector(`tr[data-i="${nextCell?nextCell.rowId:rowId}"] td[data-col="${nextCell?nextCell.col:editor.td.dataset.col}"]`);
+  if(nextCell)startCellEdit(focus);else if(focus)focus.focus()
+ }catch(err){input.disabled=false;invalid('Save failed: '+err.message)}
+ finally{editor.saving=false}
+}
+$('tb').onclick=e=>{if(e.target.closest('.cell-input'))return;startCellEdit(e.target.closest('td[data-field]'))};
+$('tb').onkeydown=e=>{if(e.target.matches('td[data-field]')&&(e.key==='Enter'||e.key==='F2')){e.preventDefault();startCellEdit(e.target)}};
 $('rd').onchange=async e=>{try{await save(R,e.target.value)}catch(err){$('rd').value=date}};
 $('rst').onclick=async()=>{if(!dbReady||whBusy||!confirm('Discard all changes and restore the original sample data?'))return;
  const rows=JSON.parse(JSON.stringify(DEF));rows.forEach(r=>r.id=nid++);
