@@ -1,5 +1,5 @@
--- Proposed schema for the User Interface table.
--- Not applied: anonymous Data API access requires explicit user approval.
+-- Schema applied via add_work_hour_user_interface migration.
+-- Anonymous Data API read/write access approved by the user on 2026-10-05.
 -- The existing app uses a publishable key without Supabase Auth JWTs.
 create table if not exists public.work_hour_user_interface (
   id uuid primary key default gen_random_uuid(),
