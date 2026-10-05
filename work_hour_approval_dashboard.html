@@ -119,7 +119,7 @@ html,body{min-height:100%}
 #uiTable input[aria-invalid="true"]{outline:2px solid #b42318;outline-offset:-2px}
 #uiTable input[type=number]{appearance:textfield;-moz-appearance:textfield;text-align:center}
 #uiTable input::-webkit-inner-spin-button,#uiTable input::-webkit-outer-spin-button{appearance:none;margin:0}
-#uiTable input::-webkit-calendar-picker-indicator{opacity:0}#uiTable input:focus::-webkit-calendar-picker-indicator{opacity:1}
+#uiTable input::-webkit-calendar-picker-indicator{opacity:1}#uiTable input:focus::-webkit-calendar-picker-indicator{opacity:1}
 @media print{#uiTable input{border:0;outline:none;background:transparent}}
 </style></head><body>
 <div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button><button class="tab" data-t="p3">Department &amp; Section Setup</button><button class="tab" data-t="p4">OT Cost Data</button><button class="tab" data-t="p5">Daily Punch Report</button><button class="tab" data-t="p6">Line &amp; Level Settings</button><button class="tab" data-t="p7">User Interface</button></div>
@@ -593,8 +593,41 @@ function uiDraw(){
  $('uiCols').innerHTML=UI_SPEC.map(([, , ,width])=>`<col style="width:${width}px">`).join('');
  $('uiHead').innerHTML='<tr>'+UI_SPEC.map(([,label])=>`<th>${E(label)}</th>`).join('')+'</tr>';
  $('uiBody').innerHTML=UI_ROWS.map((row,i)=>'<tr>'+UI_SPEC.map(([key,label,type])=>
-  `<td><input data-row="${i}" data-key="${key}" aria-label="Row ${i+1} ${E(label)}" type="${type==='number'?'number':'text'}"${type==='number'?` min="0" step="${key==='asking_hour'?'any':'1'}"`:''}${['department','section','level'].includes(key)?` list="ui${key==='department'?'Departments':key==='section'?'Sections':'Levels'}"`:''} value="${E(row[key]??'')}"></td>`).join('')+'</tr>').join('');
+  `<td><input data-row="${i}" data-key="${key}" aria-label="Row ${i+1} ${E(label)}" type="${type==='number'?'number':type==='date'?'date':'text'}"${type==='number'?` min="0" step="${key==='asking_hour'?'any':'1'}"`:''}${['department','section','level'].includes(key)?` list="ui${key==='department'?'Departments':key==='section'?'Sections':'Levels'}"`:''} ${key==='present_manpower'?' readonly title="From Daily Punch Report"':''} value="${E(row[key]??'')}"></td>`).join('')+'</tr>').join('');
  uiSuggestions();uiControls()
+}
+const uiPunchCache=new Map();
+const uiMatchText=value=>String(value??'').trim().replace(/\s+/g,' ').toLowerCase();
+function uiMatchLine(value){const text=uiMatchText(value),m=text.match(/^(?:(?:ln|line)\s*[-:]?\s*)?(\d+)$/);return m?String(Number(m[1])):text}
+function uiMatchLevel(value){return uiMatchText(value).replace(/^level\s*[-:]?\s*0*(\d+)$/,'level-$1')}
+function uiPunchKey(row){
+ if(!row.work_date||!uiMatchText(row.department)||!uiMatchText(row.section))return '';
+ const sewing=uiMatchText(row.department)==='sewing'&&uiMatchText(row.section)==='sewing';
+ if(sewing&&(!uiMatchText(row.level)||!uiMatchLine(row.line_no)))return '';
+ return JSON.stringify([row.work_date,uiMatchText(row.department),uiMatchText(row.section),sewing?uiMatchLevel(row.level):'',sewing?uiMatchLine(row.line_no):'']);
+}
+function uiPunchCount(row,rows){
+ const sewing=uiMatchText(row.department)==='sewing'&&uiMatchText(row.section)==='sewing';
+ if(sewing){
+  const levels=new Set(R.filter(r=>r.k==='L'&&uiMatchLine(r.v[0])===uiMatchLine(row.line_no)).map(r=>uiMatchLevel(r.lv)));
+  if(levels.size!==1)throw new Error('Set a unique Level for Line '+row.line_no+' in Line & Level Settings.');
+  if(!levels.has(uiMatchLevel(row.level)))return 0;
+ }
+ return new Set(rows.filter(r=>r.work_date===row.work_date&&uiMatchText(r.department)===uiMatchText(row.department)&&uiMatchText(r.section)===uiMatchText(row.section)&&(!sewing||uiMatchLine(r.line)===uiMatchLine(row.line_no))).map(r=>String(r.employee_id))).size;
+}
+async function uiRefreshManpower(row){
+ const key=uiPunchKey(row),revision=(row._punchRevision||0)+1;row._punchRevision=revision;row._punchError='';
+ function update(value){if(row.present_manpower!==value){row.present_manpower=value;if(uiHasData(row))uiDirty.add(row.id)}const i=UI_ROWS.indexOf(row);const cell=$('uiBody').querySelector(`input[data-row="${i}"][data-key="present_manpower"]`);if(cell)cell.value=value??''}
+ if(!key){update(null);return}
+ update(null);
+ try{
+  if(typeof parent.workHourUserInterfacePunchRows!=='function')throw new Error('Punch report bridge is unavailable.');
+  if(!uiPunchCache.has(row.work_date))uiPunchCache.set(row.work_date,parent.workHourUserInterfacePunchRows(row.work_date).catch(e=>{uiPunchCache.delete(row.work_date);throw e}));
+  const rows=await uiPunchCache.get(row.work_date);
+  if(!UI_ROWS.includes(row)||row._punchRevision!==revision||uiPunchKey(row)!==key)return;
+  if(!Array.isArray(rows))throw new Error('Punch rows were not returned.');
+  update(uiPunchCount(row,rows));
+ }catch(e){if(UI_ROWS.includes(row)&&row._punchRevision===revision&&uiPunchKey(row)===key){row._punchError=e.message;uiMessage('Present Manpower: '+e.message,true)}}
 }
 function uiSuggestions(row){
  const unique=values=>[...new Set(values.filter(Boolean))];
@@ -605,13 +638,14 @@ function uiSuggestions(row){
 async function uiLoad(){
  if(uiBusy)return;
  if(uiDirty.size&&!confirm('Reload will discard unsaved User Interface edits. Continue?'))return;
- uiBusy=true;uiControls();uiMessage('Loading saved entries…');
+ uiPunchCache.clear();uiBusy=true;uiControls();uiMessage('Loading saved entries…');
  try{
   if(!parent||typeof parent.workHourUserInterfaceList!=='function')throw new Error('Database bridge is unavailable.');
   const rows=await parent.workHourUserInterfaceList();if(!Array.isArray(rows))throw new Error('Saved entries were not returned.');
   UI_ROWS=rows;uiDirty.clear();uiLoaded=true;uiReady=true;uiMessage('Loaded '+rows.length+' saved entry(s). Enter data, then Save Changes.');
  }catch(err){uiMessage('Load failed: '+err.message,true);if(!uiLoaded)uiReady=false}
  finally{uiBusy=false;uiDraw()}
+ if(uiReady)await Promise.all(UI_ROWS.filter(uiHasData).map(uiRefreshManpower));
 }
 function uiValidate(row){
  for(const [key,label,type] of UI_SPEC){
@@ -626,14 +660,15 @@ function uiValidate(row){
 $('uiBody').oninput=e=>{
  const input=e.target.closest('input[data-key]');if(!input||uiBusy||!uiReady)return;
  const row=UI_ROWS[Number(input.dataset.row)];row[input.dataset.key]=input.value;uiDirty.add(row.id);input.removeAttribute('aria-invalid');
- uiMessage('Unsaved changes — click Save Changes.');if(input.dataset.key==='department')uiSuggestions(row)
+ uiMessage('Unsaved changes — click Save Changes.');if(input.dataset.key==='department')uiSuggestions(row);
+ if(['work_date','department','section','level','line_no'].includes(input.dataset.key))void uiRefreshManpower(row)
 };
 $('uiBody').onfocusin=e=>{
  const input=e.target.closest('input[data-key]');if(!input)return;
- if(input.dataset.key==='work_date')input.type='date';
+
  if(input.dataset.key==='section')uiSuggestions(UI_ROWS[Number(input.dataset.row)])
 };
-$('uiBody').onfocusout=e=>{const input=e.target.closest('input[data-key="work_date"]');if(input)input.type='text'};
+$('uiBody').onclick=e=>{const input=e.target.closest('input[data-key="work_date"]');if(input&&!input.disabled&&typeof input.showPicker==='function'){try{input.showPicker()}catch(e){}}};
 $('uiAdd').onclick=()=>{if(uiBusy||!uiReady)return;UI_ROWS.push(uiBlank());uiDraw();$('uiBody').lastElementChild.querySelector('input').focus()};
 $('uiSave').onclick=async()=>{
  if(uiBusy||!uiReady)return;
@@ -641,7 +676,9 @@ $('uiSave').onclick=async()=>{
  if(!pending.length){uiDirty.clear();uiMessage('No changes to save.');return}
  let saved=0;
  try{
-  for(const row of pending)uiValidate(row);
+  uiBusy=true;uiControls();uiPunchCache.clear();
+  await Promise.all(pending.map(uiRefreshManpower));
+  for(const row of pending){if(row._punchError)throw new Error(row._punchError);uiValidate(row)}
   if(!parent||typeof parent.workHourUserInterfaceSave!=='function')throw new Error('Database bridge is unavailable.');
   uiBusy=true;uiControls();
   for(const row of pending){
