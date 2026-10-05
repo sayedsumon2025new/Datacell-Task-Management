@@ -68,11 +68,21 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 @media(max-width:1100px){.c6,.c3{grid-column:span 12}}@media(min-width:700px) and (max-width:1100px){.c3{grid-column:span 6}}
 #tt{position:fixed;z-index:60;background:#1f2937;color:#fff;padding:6px 10px;border-radius:5px;font:12px/1.5 Arial;pointer-events:none;display:none;box-shadow:0 4px 12px rgba(0,0,0,.3)}
 .hv:hover{fill:rgba(0,114,178,.10)}
+.ds-wrap{max-width:1050px;padding:18px 14px 28px}
+.ds-head{display:flex;align-items:end;gap:10px;flex-wrap:wrap;background:#f8fafc;border:1px solid #d8dee8;border-radius:8px;padding:12px;margin-bottom:12px}
+.ds-f{min-width:220px;flex:1}.ds-f label{display:block;font-size:11px;font-weight:700;margin-bottom:4px;color:#222}
+.ds-actions{display:flex;gap:8px;align-items:center}.ds-msg{font-size:12px;font-weight:700;min-height:18px;margin:4px 0 10px;color:#166534}
+.ds-table{width:100%;border-collapse:collapse;table-layout:auto}.ds-table th,.ds-table td{font-size:12px;padding:8px 10px;text-align:left;white-space:normal}
+.ds-table th{background:#FFF2CC;border-color:#999}.ds-table td{font-weight:600}.ds-table .act{width:150px;text-align:center;white-space:nowrap}
+.ds-table button{padding:5px 9px;font-size:11px}.ds-table button.edit{background:#fff;border-color:#777}.ds-table button.del{background:#fff;color:#b42318;border-color:#b42318}
+.ds-toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px}.ds-toolbar input{max-width:320px}
+@media(max-width:650px){.ds-f{min-width:100%}.ds-head{align-items:stretch}.ds-actions{width:100%}.ds-actions button{flex:1}}
+
 
 /* Integrated inside Datacell Task Management; source layout intentionally preserved. */
 html,body{min-height:100%}
 </style></head><body>
-<div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button></div>
+<div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button><button class="tab" data-t="p3">Department &amp; Section Setup</button></div>
 <div id="p1">
 <div class="bar">
 <button id="add">+ New Entry</button>
@@ -90,6 +100,19 @@ html,body{min-height:100%}
 <select id="ots" class="hide"></select>
 <div class="cc" id="cc"></div>
 <div class="ch-n">Click a bar, heat-map cell or donut slice to cross-filter every visual; click again to clear. Click a legend item to show/hide a series. Short/Excess &gt; tolerance = over plan (red); otherwise within plan (green). Values are printed on the visuals so colour is not the only cue.</div></div>
+
+<div id="p3" class="hide">
+  <div class="ds-wrap">
+    <div class="ds-head">
+      <div class="ds-f"><label>Department</label><input id="dsDept" placeholder="Department name"></div>
+      <div class="ds-f"><label>Section</label><input id="dsSection" placeholder="Section name"></div>
+      <div class="ds-actions"><button id="dsSave">+ Add</button><button class="g hide" id="dsCancel">Cancel Edit</button></div>
+    </div>
+    <div id="dsMsg" class="ds-msg"></div>
+    <div class="ds-toolbar"><input id="dsSearch" placeholder="Search department or section…"><button class="g" id="dsReload">Reload</button></div>
+    <table class="ds-table"><thead><tr><th style="width:45%">Department</th><th style="width:40%">Section</th><th class="act">Action</th></tr></thead><tbody id="dsBody"></tbody></table>
+  </div>
+</div>
 
 <dialog id="dlg"><form id="f" novalidate>
 <div class="dh" id="dt">New Entry</div>
@@ -252,8 +275,50 @@ function r2(){const P='#F8CBAD',G='#A9D08E',T=['5:00 PM','6:00 PM','7:00 PM','8:
    h+=`<td style="background:${P}">${a[0]==null?'':a[0]}</td><td style="background:${G}">${a[1]}</td><td style="${a[2]>TOL()?'background:#f00;color:#fff;font-weight:700':'background:#92D050'}">${a[2]}</td><td style="background:${P}">${a[3]}</td>`}
   h+=`<td class="tt">${d[1]}</td></tr>`});
  $('t2').innerHTML=h+'</tbody>'}
-document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x==b));['p1','p2'].forEach(p=>$(p).classList.toggle('hide',p!=b.dataset.t))});
+document.querySelectorAll('.tab').forEach(b=>b.onclick=async()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x==b));['p1','p2','p3'].forEach(p=>$(p).classList.toggle('hide',p!=b.dataset.t));if(b.dataset.t==='p3')await dsLoad()});
 r2();
+
+// ---------- Department & Section Setup ----------
+let DS=[],dsEditId=null;
+function dsSetMsg(msg,bad=false){const e=$('dsMsg');e.textContent=msg||'';e.style.color=bad?'#b42318':'#166534'}
+function dsResetForm(){dsEditId=null;$('dsDept').value='';$('dsSection').value='';$('dsSave').textContent='+ Add';$('dsCancel').classList.add('hide');dsSetMsg('')}
+function dsDraw(){
+ const q=$('dsSearch').value.trim().toLowerCase();
+ const rows=DS.filter(x=>!q||x.department.toLowerCase().includes(q)||x.section.toLowerCase().includes(q));
+ $('dsBody').innerHTML=rows.length?rows.map(x=>`<tr data-id="${x.id}"><td>${E(x.department)}</td><td>${E(x.section)}</td><td class="act"><button class="edit" data-e="${x.id}">Edit</button> <button class="del" data-d="${x.id}">Delete</button></td></tr>`).join(''):'<tr><td colspan="3" style="text-align:center;padding:18px;color:#666">No Department / Section found</td></tr>';
+}
+async function dsLoad(){
+ dsSetMsg('Loading...');
+ try{
+  DS=parent&&typeof parent.workHourDepartmentSectionsList==='function'?await parent.workHourDepartmentSectionsList():[];
+  dsDraw();dsSetMsg(DS.length+' mapping(s) loaded');
+ }catch(e){console.error(e);dsSetMsg('Load failed: '+e.message,true)}
+}
+$('dsSearch').oninput=dsDraw;$('dsReload').onclick=dsLoad;$('dsCancel').onclick=dsResetForm;
+$('dsSave').onclick=async()=>{
+ const department=$('dsDept').value.trim(),section=$('dsSection').value.trim();
+ if(!department||!section){dsSetMsg('Department and Section are required',true);return}
+ $('dsSave').disabled=true;dsSetMsg(dsEditId?'Updating...':'Adding...');
+ try{
+  if(!parent||typeof parent.workHourDepartmentSectionsSave!=='function')throw new Error('Database bridge is unavailable');
+  const wasEdit=!!dsEditId;
+  await parent.workHourDepartmentSectionsSave({id:dsEditId,department,section});
+  dsResetForm();await dsLoad();dsSetMsg(wasEdit?'Updated successfully':'Saved successfully');
+ }catch(e){console.error(e);dsSetMsg('Save failed: '+e.message,true)}
+ finally{$('dsSave').disabled=false}
+};
+$('dsBody').onclick=async e=>{
+ const eb=e.target.closest('[data-e]'),db=e.target.closest('[data-d]');
+ if(eb){const x=DS.find(r=>String(r.id)===eb.dataset.e);if(!x)return;dsEditId=x.id;$('dsDept').value=x.department;$('dsSection').value=x.section;$('dsSave').textContent='Save Changes';$('dsCancel').classList.remove('hide');dsSetMsg('Editing selected mapping');return}
+ if(db){
+  const x=DS.find(r=>String(r.id)===db.dataset.d);if(!x)return;
+  if(!confirm('Delete '+x.department+' → '+x.section+'?'))return;
+  try{
+   if(!parent||typeof parent.workHourDepartmentSectionsDelete!=='function')throw new Error('Database bridge is unavailable');
+   await parent.workHourDepartmentSectionsDelete(x.id);if(String(dsEditId)===String(x.id))dsResetForm();await dsLoad();dsSetMsg('Deleted successfully');
+  }catch(err){console.error(err);dsSetMsg('Delete failed: '+err.message,true)}
+ }
+};
 
 const PAL=['#0072B2','#E69F00','#009E73','#CC79A7','#56B4E9','#D55E00','#8c8c8c'],RED='#C62828',GRN='#2E7D32';
 const nice=m=>{const p=Math.pow(10,Math.floor(Math.log10(m||1))),f=m/p;return(f<=1?1:f<=2?2:f<=5?5:10)*p};
