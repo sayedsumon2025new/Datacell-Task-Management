@@ -80,6 +80,21 @@ html[data-theme="light"] body::before{background:linear-gradient(135deg,rgba(96,
 html[data-theme="light"] .kpi-late-modal,html[data-theme="light"] .kpi-late-modal-head{background:var(--surface);}
 html[data-theme="light"] .multi-skill-modal-overlay>div{background:var(--surface)!important;}
 html[data-theme="light"] input,html[data-theme="light"] select{color-scheme:light;}
+html[data-theme="light"] .date-inp{color-scheme:light!important;}
+html[data-theme="light"] .kpi-late-modal-overlay,
+html[data-theme="light"] .multi-skill-modal-overlay{background:rgba(15,23,42,.28);}
+html[data-theme="light"] .co{background:rgba(15,23,42,.28);}
+html[data-theme="light"] .cb{background:var(--surface);color:var(--text);}
+html[data-theme="light"] .trow:hover{background:#f5f8fc;}
+html[data-theme="light"] .field-select,
+html[data-theme="light"] .fi,
+html[data-theme="light"] .fi-sel,
+html[data-theme="light"] .time-inp,
+html[data-theme="light"] .remark-inp,
+html[data-theme="light"] .person-sel{background-color:var(--surface2);color:var(--text);}
+html[data-theme="light"] .sidebar-btn.active{box-shadow:0 2px 10px rgba(30,41,59,.08);}
+html[data-theme="light"] .theme-choice.active{background:#fff;}
+
 @media(max-width:900px){
   .topbar{padding:0 12px;gap:9px;}
   .sidebar-toggle{display:inline-flex;}
@@ -584,7 +599,7 @@ html[data-theme="light"] input,html[data-theme="light"] select{color-scheme:ligh
 </div>
 
 <script>
-window.DATACELL_BUILD='DATACELL_BUILD_2026_10_04_LEAVE_NAV';
+window.DATACELL_BUILD='DATACELL_BUILD_2026_10_05_SIDEBAR_THEME';
 console.info(window.DATACELL_BUILD);
 // ─── CREDENTIALS ───
 let CREDS={}; // credentials are loaded from the database; no hardcoded password fallback
