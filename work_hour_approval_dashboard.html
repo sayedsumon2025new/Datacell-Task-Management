@@ -335,7 +335,9 @@ function reportRowLabels(r){return r.k==='D'?{department:String(r.v[0]||''),sect
 function syncReportFilters(){
  const sorted=values=>[...new Set(values.filter(Boolean))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
  function options(id,values,label){const el=$(id),old=el.value;el.innerHTML=`<option value="">${label}</option>`+values.map(v=>`<option value="${E(v)}">${E(v)}</option>`).join('');el.value=values.includes(old)?old:''}
- options('whDept',sorted(R.map(r=>reportRowLabels(r).department)),'All departments');
+ const departments=sorted(R.map(r=>reportRowLabels(r).department));
+ const setupOrder=DS.map(x=>String(x.department||'')).filter(d=>departments.includes(d));
+ options('whDept',[...new Set([...setupOrder,...departments])],'All departments');
  const department=$('whDept').value;
  options('whSection',sorted(R.filter(r=>!department||reportRowLabels(r).department===department).map(r=>reportRowLabels(r).section)),'All sections')
 }
@@ -467,7 +469,7 @@ $('th').innerHTML=`<tr class="title"><th colspan="${HDR.length}">Work Hour Appro
  HDR.map((h,i)=>`<th style="width:${W[i]}px">${h}${[4,8,18].includes(i)?'':'<i></i>'}</th>`).join('')+'</tr>';
 $('cg').innerHTML=W.map(w=>`<col style="width:${w}px">`).join('');
 $('cg').parentElement.style.width=W.reduce((sum,w)=>sum+w,0)+'px';
-async function initWorkHourApproval(){buildForm();await load()}
+async function initWorkHourApproval(){buildForm();await load();await dsLoad()}
 initWorkHourApproval();
 
 const D2=[
@@ -559,7 +561,7 @@ async function dsLoad(){
  dsSetMsg('Loading...');
  try{
   DS=parent&&typeof parent.workHourDepartmentSectionsList==='function'?await parent.workHourDepartmentSectionsList():[];
-  dsDraw();dsSetMsg(DS.length+' mapping(s) loaded');
+  dsDraw();syncReportFilters();dsSetMsg(DS.length+' mapping(s) loaded');
  }catch(e){console.error(e);dsSetMsg('Load failed: '+e.message,true)}
 }
 $('dsSearch').oninput=dsDraw;$('dsReload').onclick=dsLoad;$('dsCancel').onclick=dsResetForm;
