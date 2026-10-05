@@ -1082,7 +1082,7 @@ html[data-theme="light"] .leave-recon-sub{
 </div>
 
 <script>
-window.DATACELL_BUILD='DATACELL_BUILD_2026_10_05_DAILY_PUNCH';
+window.DATACELL_BUILD='DATACELL_BUILD_2026_10_05_DAILY_PUNCH_PAGED';
 console.info(window.DATACELL_BUILD);
 // ─── CREDENTIALS ───
 let CREDS={}; // credentials are loaded from the database; no hardcoded password fallback
@@ -4091,15 +4091,26 @@ window.workHourOtCostDates=workHourOtCostDates;
 window.workHourOtCostRows=workHourOtCostRows;
 window.workHourOtCostUpsert=workHourOtCostUpsert;
 
+async function fetchPagedTableRows(table,baseQuery,pageSize=1000,maxPages=50){
+  const all=[];
+  for(let page=0;page<maxPages;page++){
+    const sep=baseQuery?'&':'';
+    const rows=await dbRequest(table,'GET',baseQuery+sep+'limit='+pageSize+'&offset='+(page*pageSize));
+    const list=Array.isArray(rows)?rows:[];
+    all.push(...list);
+    if(list.length<pageSize)break;
+  }
+  return all;
+}
 async function workHourDailyPunchDates(){
-  const rows=await dbRequest('work_hour_daily_punch','GET','select=work_date&order=work_date.desc');
-  return [...new Set((Array.isArray(rows)?rows:[]).map(r=>r.work_date).filter(Boolean))];
+  const rows=await fetchPagedTableRows('work_hour_daily_punch','select=work_date&order=work_date.desc');
+  return [...new Set(rows.map(r=>r.work_date).filter(Boolean))];
 }
 async function workHourDailyPunchRows(workDate){
   const q='select=id,work_date,employee_id,employee_name,designation,doj,department,section,line,log_in,log_out'
     +(workDate?'&work_date=eq.'+encodeURIComponent(workDate):'')
-    +'&order=department.asc,section.asc,line.asc,employee_id.asc&limit=12000';
-  return await dbRequest('work_hour_daily_punch','GET',q);
+    +'&order=department.asc,section.asc,line.asc,employee_id.asc';
+  return await fetchPagedTableRows('work_hour_daily_punch',q);
 }
 async function workHourDailyPunchUpsert(rows){
   if(!Array.isArray(rows)||!rows.length)return [];
