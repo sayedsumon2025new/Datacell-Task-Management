@@ -31,7 +31,7 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 .df .sp{margin-left:auto;display:flex;gap:8px}
 #err{color:#b42318;font-size:12px;font-weight:700;margin-right:auto}
 
-.tabs{display:flex;gap:4px;padding:8px 12px 0;background:#e5e7eb}
+.tabs{display:flex;gap:4px;padding:8px 12px 0;background:#e5e7eb;flex-wrap:wrap}
 .tab{border-radius:6px 6px 0 0;background:#fff;border-color:#bbb;border-bottom:0}.tab.on{background:#FFD966;border-color:#8a6d00}
 #t2{border-collapse:collapse;table-layout:fixed;width:1600px;font-family:Arial,Helvetica,sans-serif;background:#fff}
 #t2 td,#t2 th{border:1px solid #8c8c8c;font-size:11px;text-align:center;padding:0 2px;overflow:hidden;white-space:nowrap;box-sizing:border-box;font-weight:400}
@@ -76,6 +76,7 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 .ds-table th{background:#FFF2CC;border-color:#999}.ds-table td{font-weight:600}.ds-table .act{width:150px;text-align:center;white-space:nowrap}
 .ds-table button{padding:5px 9px;font-size:11px}.ds-table button.edit{background:#fff;border-color:#777}.ds-table button.del{background:#fff;color:#b42318;border-color:#b42318}
 .ds-toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px}.ds-toolbar input{max-width:320px}
+#p6 .ds-table{min-width:640px}
 @media(max-width:650px){.ds-f{min-width:100%}.ds-head{align-items:stretch}.ds-actions{width:100%}.ds-actions button{flex:1}}
 .otc-wrap{padding:14px;max-width:none}
 .otc-bar{display:flex;gap:10px;align-items:end;flex-wrap:wrap;padding:12px;background:#f8fafc;border:1px solid #d8dee8;border-radius:8px;margin-bottom:10px}
@@ -107,7 +108,7 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 /* Integrated inside Datacell Task Management; source layout intentionally preserved. */
 html,body{min-height:100%}
 </style></head><body>
-<div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button><button class="tab" data-t="p3">Department &amp; Section Setup</button><button class="tab" data-t="p4">OT Cost Data</button><button class="tab" data-t="p5">Daily Punch Report</button></div>
+<div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button><button class="tab" data-t="p3">Department &amp; Section Setup</button><button class="tab" data-t="p4">OT Cost Data</button><button class="tab" data-t="p5">Daily Punch Report</button><button class="tab" data-t="p6">Line &amp; Level Settings</button></div>
 <div id="p1">
 <div class="bar">
 <button id="add">+ New Entry</button>
@@ -115,7 +116,7 @@ html,body{min-height:100%}
 <button class="g" id="exp">Export CSV</button>
 <button class="r" id="rst">Reset to sample data</button>
 <input id="q1" placeholder="Search line, buyer, EWO…" style="width:210px"><select id="lf" style="width:120px"><option value="">All levels</option><option>Level-03</option><option>Level-04</option><option>Level-06</option></select><button class="g" id="pr1">Print / PDF</button>
-<span class="hint">Click any row to edit or delete it. Totals recalculate automatically. Data is saved in this browser.</span>
+<span class="hint" id="whMsg" role="status" aria-live="polite">Loading saved report…</span>
 </div>
 <div class="wrap"><table><colgroup id="cg"></colgroup><thead id="th"></thead><tbody id="tb"></tbody></table></div>
 </div>
@@ -195,6 +196,26 @@ html,body{min-height:100%}
   </div>
 </div>
 
+<div id="p6" class="hide">
+  <div class="ds-wrap">
+    <h2 style="font-size:20px;margin:0 0 8px">Line &amp; Level Settings</h2>
+    <p style="font-size:13px;color:#555;line-height:1.5">Edit a sewing line's number and level, or delete the line. Changes also update the Work Hour Approval Request and its totals.</p>
+    <div class="ds-head hide" id="llForm">
+      <div class="ds-f"><label for="llLine">Line No</label><input id="llLine" type="number" min="1" step="1"></div>
+      <div class="ds-f"><label for="llLevel">Level</label><input id="llLevel" list="llLevels" placeholder="e.g. Level-03"></div>
+      <div class="ds-actions"><button id="llSave">Save Changes</button><button class="g" id="llCancel">Cancel Edit</button></div>
+    </div>
+    <datalist id="llLevels"></datalist>
+    <div id="llMsg" class="ds-msg" role="status" aria-live="polite"></div>
+    <div class="ds-toolbar" style="flex-wrap:wrap">
+      <input id="llSearch" placeholder="Search line, level, buyer or EWO…" aria-label="Search lines">
+      <select id="llFilter" style="width:160px" aria-label="Filter by level"><option value="">All levels</option></select>
+      <button class="g" id="llReload">Reload</button>
+    </div>
+    <div class="wrap"><table class="ds-table"><thead><tr><th>Line No</th><th>Level</th><th>Buyer</th><th>EWO</th><th class="act">Action</th></tr></thead><tbody id="llBody"></tbody></table></div>
+  </div>
+</div>
+
 <dialog id="dlg"><form id="f" novalidate>
 <div class="dh" id="dt">New Entry</div>
 <div class="fb">
@@ -210,7 +231,7 @@ Quick fill: asking manpower from 5.00 PM until <select id="fe" style="width:110p
 <div class="grid" id="g3"></div>
 </div>
 <div class="df"><span id="err"></span><button type="button" class="r hide" id="del">Delete</button>
-<div class="sp"><button type="button" class="g" id="cx">Cancel</button><button type="submit">Save</button></div></div>
+<div class="sp"><button type="button" class="g" id="cx">Cancel</button><button type="submit" id="whSave">Save</button></div></div>
 </form></dialog>
 
 <script>
@@ -227,29 +248,50 @@ const SPEC=[[0,'Line No','', 1],[1,'Buyer','L',1],[2,'EWO','L',1],[3,'Present ma
 ...[ '5.00 PM','6.00 PM','7.00 PM','8.00 PM','9.00 PM','10.00 PM','11.00 PM','12.00 AM','1.00 AM'].map((t,i)=>[6+i,t,'',2]),
 [15,'Input man','L',3],[16,'Iron man','L',3],[17,'Pack','L',3],[18,'Quality','L',3],[19,'Staff','L',3],[20,'Total manpower','',3],[21,'Reason EOT','L',3],[22,'Responsible dept','L',3]];
 const TXT=[0,1,21,22];
-let R,date='',nid=0,cur=null;
-let dbReady=false,saveTimer=null;
-async function load(){
- R=JSON.parse(JSON.stringify(DEF));date='';
- try{
-  if(parent&&typeof parent.workHourApprovalLoadState==='function'){
-   const s=await parent.workHourApprovalLoadState();
-   if(s&&Array.isArray(s.R)&&s.R.length){R=s.R;date=s.date||''}
-  }
- }catch(e){console.error('Work Hour Approval load failed:',e)}
- nid=0;R.forEach(r=>r.id=nid++);$('rd').value=date;dbReady=true
+let R=[],date='',nid=0,cur=null;
+let dbReady=false,dbRevision='',whBusy=false,llEditId=null;
+function whSetMsg(msg,bad=false){
+ for(const id of ['whMsg','llMsg']){$(id).textContent=msg;$(id).style.color=bad?'#b42318':'#166534'}
 }
-function save(){
- if(!dbReady)return;
- clearTimeout(saveTimer);
- saveTimer=setTimeout(async()=>{
-  try{
-   if(parent&&typeof parent.workHourApprovalSaveState==='function'){
-    const rows=R.map(r=>({k:r.k,lv:r.lv,v:Array.isArray(r.v)?r.v:[]}));
-    await parent.workHourApprovalSaveState({R:rows,date});
-   }
-  }catch(e){console.error('Work Hour Approval save failed:',e)}
- },220);
+function whSetBusy(busy){
+ whBusy=busy;
+ for(const id of ['add','rd','rst','whSave','del','llSave','llCancel','llReload','llLine','llLevel'])$(id).disabled=busy||!dbReady;
+ document.querySelectorAll('#llBody button').forEach(b=>b.disabled=busy||!dbReady)
+}
+async function load(){
+ if(whBusy)return false;
+ whSetBusy(true);whSetMsg('Loading saved report…');
+ try{
+  if(!parent||typeof parent.workHourApprovalLoadState!=='function')throw new Error('Open this dashboard from Datacell Task Management.');
+  const s=await parent.workHourApprovalLoadState();
+  if(!s||!Array.isArray(s.R)||!s.updatedAt)throw new Error('Saved report is unavailable.');
+  R=s.R;date=s.date||'';dbRevision=s.updatedAt;
+  nid=0;R.forEach(r=>r.id=nid++);$('rd').value=date;dbReady=true;
+  llResetForm();render();llDraw();whSetMsg('Saved report loaded. '+R.filter(r=>r.k==='L').length+' sewing line(s).');return true
+ }catch(e){console.error('Work Hour Approval load failed:',e);dbReady=false;whSetMsg('Load failed: '+e.message,true);return false}
+ finally{whSetBusy(false);$('llReload').disabled=false}
+}
+async function save(nextRows,nextDate=date){
+ if(!dbReady||whBusy)throw new Error('Wait for loading/saving to finish, or reload before editing.');
+ whSetBusy(true);whSetMsg('Saving changes…');
+ try{
+  if(!parent||typeof parent.workHourApprovalSaveState!=='function')throw new Error('Database bridge is unavailable.');
+  const rows=nextRows.map(r=>({k:r.k,lv:r.lv,v:Array.isArray(r.v)?r.v:[]}));
+  const result=await parent.workHourApprovalSaveState({R:rows,date:nextDate,updatedAt:dbRevision});
+  if(!result?.updatedAt)throw new Error('Save was not confirmed. Reload to check the saved report.');
+  R=nextRows;date=nextDate;dbRevision=result.updatedAt;$('rd').value=date;
+  render();llDraw();whSetMsg('Changes saved.');
+ }catch(e){whSetMsg('Save failed: '+e.message,true);throw e}
+ finally{whSetBusy(false)}
+}
+function reportLevels(){return [...new Set([...LVS,...R.filter(r=>r.k!=='D').map(r=>r.lv).filter(Boolean)])].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}))}
+function syncLevels(){
+ const levels=reportLevels();
+ for(const id of ['lf','lv','llFilter']){
+  const el=$(id),old=el.value;el.innerHTML=(id==='lv'?'':'<option value="">All levels</option>')+levels.map(l=>`<option value="${E(l)}">${E(l)}</option>`).join('');
+  if(levels.includes(old)||id!=='lv'&&!old)el.value=old
+ }
+ $('llLevels').innerHTML=levels.map(l=>`<option value="${E(l)}"></option>`).join('')
 }
 function fd(){if(!date)return'00-Jan-00';const p=date.split('-');return p[2]+'-'+MON[p[1]-1]+'-'+p[0].slice(2)}
 function sums(rs){const s={};NUM.forEach(i=>s[i]=0);rs.forEach(r=>NUM.forEach(i=>s[i]+=+r.v[i]||0));return s}
@@ -265,18 +307,18 @@ function vals(s,sd,grand){ // 20 cells for columns 6..25
  const g=i=>sd?s[i]+sd[i]:s[i];
  return [s[3],grand?s[4]:s[4],'',...[6,7,8,9,10,11,12,13,14,15,16,17,18,19].map(g),g(20),'',''] }
 function totRow(lv,s){const big=lv=='Level-03'?'15px':'15px',sm=lv=='Level-06';
- const h={'Level-03':34,'Level-04':30,'Level-06':40}[lv];
- return `<tr class="lt" style="height:${h}px"><td></td><td></td><td class="c"></td><td class="c"></td><td class="c" colspan="2" style="font-size:17px">${lv.replace('-0','-')} Total=</td>`+
+ const h={'Level-03':34,'Level-04':30,'Level-06':40}[lv]||30;
+ return `<tr class="lt" style="height:${h}px"><td></td><td></td><td class="c"></td><td class="c"></td><td class="c" colspan="2" style="font-size:17px">${E(lv.replace('-0','-'))} Total=</td>`+
  vals(s).map((x,j)=>`<td class="c" style="font-size:${sm||(lv=='Level-04'&&j<2)?'10.5px':big}">${E(x)}</td>`).join('')+'</tr>'}
-function render(){const dt=fd();let h='';
- LVS.forEach(lv=>{const rs=R.filter(r=>r.lv==lv);rs.forEach(r=>h+=row(r,dt));h+=totRow(lv,sums(rs))});
+function render(){syncLevels();const dt=fd();let h='';
+ reportLevels().forEach(lv=>{const rs=R.filter(r=>r.lv==lv);rs.forEach(r=>h+=row(r,dt));h+=totRow(lv,sums(rs))});
  const ss=sums(R.filter(r=>r.k!='D')),dp=R.filter(r=>r.k=='D'),sd=sums(dp);
  const sv=vals(ss);sv[1]='';
  h+=`<tr class="sub" style="height:34px"><td class="d">${dt}</td><td></td><td class="c"></td><td class="c"></td><td class="c" style="font-size:19px">Subtotal</td><td class="c"></td>`+sv.map(x=>`<td class="c">${E(x)}</td>`).join('')+'</tr>';
  dp.forEach(r=>h+=row(r,dt));
- const gv=vals(ss,sd,1);gv[1]=LVS.reduce((a,lv)=>a+sums(R.filter(r=>r.lv==lv))[4],0);
+ const gv=vals(ss,sd,1);gv[1]=reportLevels().reduce((a,lv)=>a+sums(R.filter(r=>r.lv==lv))[4],0);
  h+=`<tr class="gt" style="height:20px"><td class="d">${dt}</td><td></td><td class="c" style="font-size:10px">Grand Total</td><td class="c"></td><td class="c"></td><td class="c"></td>`+gv.map(x=>`<td class="c" style="font-size:14px">${E(x)}</td>`).join('')+'</tr>';
- $('tb').innerHTML=h;save();flt()}
+ $('tb').innerHTML=h;flt()}
 // ---------- form ----------
 function buildForm(){
  SPEC.forEach(([i,l,g,gr])=>{const d=document.createElement('div');if(g)d.dataset.g=g;if(i==0)d.id='n0w';
@@ -289,29 +331,37 @@ function sync(){const k=$('k').value;
  $('lvw').classList.toggle('hide',k=='D');
  $('l0').textContent=k=='L'?'Line No':k=='S'?'Section name':'Department name';
  const f0=$('f0');f0.type=k=='L'?'number':'text';f0.setAttribute('list',k=='L'?'':'nl')}
-function openF(id){cur=id==null?null:R.find(r=>r.id==id);$('err').textContent='';
+function openF(id){if(!dbReady||whBusy)return;cur=id==null?null:R.find(r=>r.id==id);$('err').textContent='';
  $('dt').textContent=cur?'Edit Entry':'New Entry';$('del').classList.toggle('hide',!cur);
  $('k').value=cur?cur.k:'L';$('k').disabled=!!cur;$('lv').value=cur&&cur.lv?cur.lv:'Level-03';sync();
  SPEC.forEach(([i])=>$('f'+i).value=cur?cur.v[i]:'');$('dlg').showModal()}
-function insert(r){if(r.k=='D'){R.push(r);return}
- if(r.k=='L'){let j=-1;R.forEach((x,i)=>{if(x.k=='L'&&x.lv==r.lv)j=i});R.splice(j+1,0,r)}else R.push(r)}
-$('f').addEventListener('submit',e=>{e.preventDefault();const k=$('k').value,v=[];
+function insert(r,rows){if(r.k=='D'){rows.push(r);return}
+ if(r.k=='L'){let j=-1;rows.forEach((x,i)=>{if(x.k=='L'&&x.lv==r.lv)j=i});rows.splice(j+1,0,r)}else rows.push(r)}
+$('f').addEventListener('submit',async e=>{e.preventDefault();if(!dbReady||whBusy)return;const k=$('k').value,v=[];
  for(const [i,l,g] of SPEC){const x=$('f'+i).value.trim();
   if(g=='L'&&k!='L'){v[i]='';continue}
   if(!TXT.includes(i)&&x!==''&&(isNaN(x)||+x<0)){$('err').textContent=l+' must be a number ≥ 0';return}
   v[i]=x}
  if(!v[0]){$('err').textContent=(k=='L'?'Line No':'Name')+' is required';return}
- if(k=='L'){if(!v[1]){$('err').textContent='Buyer is required';return}
-  if(R.some(r=>r.k=='L'&&r.v[0]==v[0]&&r!==cur)){$('err').textContent='Line '+v[0]+' already exists';return}}
+ if(k=='L'){if(!Number.isSafeInteger(Number(v[0]))||Number(v[0])<=0){$('err').textContent='Line No must be a positive whole number';return}
+  v[0]=String(Number(v[0]));if(!v[1]){$('err').textContent='Buyer is required';return}
+  if(R.some(r=>r.k=='L'&&Number(r.v[0])===Number(v[0])&&r!==cur)){$('err').textContent='Line '+v[0]+' already exists';return}}
  const lv=k=='D'?'':$('lv').value;
- if(cur&&cur.lv==lv){cur.v=v}else{if(cur)R.splice(R.indexOf(cur),1);insert({k,lv,v,id:nid++})}
- $('dlg').close();render()});
+ const next=R.map(r=>({...r,v:[...r.v]}));
+ if(cur&&cur.lv==lv){next.find(r=>r.id===cur.id).v=v}else{if(cur)next.splice(next.findIndex(r=>r.id===cur.id),1);insert({k,lv,v,id:cur?cur.id:nid++},next)}
+ try{await save(next);llResetForm();$('dlg').close()}catch(err){$('err').textContent=err.message}
+});
 $('add').onclick=()=>openF();$('cx').onclick=()=>$('dlg').close();$('k').onchange=sync;
-$('del').onclick=()=>{if(confirm('Delete this entry?')){R.splice(R.indexOf(cur),1);$('dlg').close();render()}};
+$('del').onclick=async()=>{if(!cur||whBusy||!confirm('Delete this entry from the saved report?'))return;
+ try{await save(R.filter(r=>r.id!==cur.id));llResetForm();$('dlg').close()}catch(err){$('err').textContent=err.message}
+};
 $('fill').onclick=()=>{const a=$('f4').value||$('f3').value||'';for(let i=0;i<9;i++)$('f'+(6+i)).value=i<=+$('fe').value?a:''};
 $('tb').onclick=e=>{const t=e.target.closest('tr[data-i]');if(t)openF(+t.dataset.i)};
-$('rd').onchange=e=>{date=e.target.value;render()};
-$('rst').onclick=()=>{if(confirm('Discard all changes and restore the original sample data?')){R=JSON.parse(JSON.stringify(DEF));nid=0;date='';R.forEach(r=>r.id=nid++);$('rd').value='';render()}};
+$('rd').onchange=async e=>{try{await save(R,e.target.value)}catch(err){$('rd').value=date}};
+$('rst').onclick=async()=>{if(!dbReady||whBusy||!confirm('Discard all changes and restore the original sample data?'))return;
+ const rows=JSON.parse(JSON.stringify(DEF));rows.forEach(r=>r.id=nid++);
+ try{await save(rows,'');llResetForm()}catch(err){console.error(err)}
+};
 $('exp').onclick=()=>{const rows=[HDR];document.querySelectorAll('#tb tr').forEach(tr=>{const a=[];tr.querySelectorAll('td').forEach(td=>{a.push(td.textContent);for(let i=1;i<td.colSpan;i++)a.push('')});rows.push(a)});
  const csv='\ufeff'+rows.map(a=>a.map(x=>'"'+x.replace(/"/g,'""')+'"').join(',')).join('\r\n');
  const l=document.createElement('a');l.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));l.download='work_appval_report.csv';l.click()};
@@ -319,7 +369,7 @@ $('exp').onclick=()=>{const rows=[HDR];document.querySelectorAll('#tb tr').forEa
 $('th').innerHTML='<tr class="title"><th colspan="26">Work Hour Approval Request</th></tr><tr class="ot"><th colspan="9"></th><th colspan="9" class="y">OT Hour</th><th colspan="8" class="y"></th></tr><tr class="h">'+
  HDR.map((h,i)=>`<th style="width:${W[i]}px">${h}${[3,7,17].includes(i)?'':'<i></i>'}</th>`).join('')+'</tr>';
 $('cg').innerHTML=W.map(w=>`<col style="width:${w}px">`).join('');
-async function initWorkHourApproval(){buildForm();await load();render()}
+async function initWorkHourApproval(){buildForm();await load()}
 initWorkHourApproval();
 
 const D2=[
@@ -356,8 +406,47 @@ function r2(){const P='#F8CBAD',G='#A9D08E',T=['5:00 PM','6:00 PM','7:00 PM','8:
    h+=`<td style="background:${P}">${a[0]==null?'':a[0]}</td><td style="background:${G}">${a[1]}</td><td style="${a[2]>TOL()?'background:#f00;color:#fff;font-weight:700':'background:#92D050'}">${a[2]}</td><td style="background:${P}">${a[3]}</td>`}
   h+=`<td class="tt">${d[1]}</td></tr>`});
  $('t2').innerHTML=h+'</tbody>'}
-document.querySelectorAll('.tab').forEach(b=>b.onclick=async()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x==b));['p1','p2','p3','p4','p5'].forEach(p=>$(p).classList.toggle('hide',p!=b.dataset.t));if(b.dataset.t==='p3')await dsLoad();if(b.dataset.t==='p4')await otcInit();if(b.dataset.t==='p5')await dprInit()});
+document.querySelectorAll('.tab').forEach(b=>b.onclick=async()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x==b));['p1','p2','p3','p4','p5','p6'].forEach(p=>$(p).classList.toggle('hide',p!=b.dataset.t));if(b.dataset.t==='p3')await dsLoad();if(b.dataset.t==='p4')await otcInit();if(b.dataset.t==='p5')await dprInit();if(b.dataset.t==='p6'){llDraw();if(!dbReady&&!whBusy)await load()}});
 r2();
+
+// ---------- Line & Level Settings (shared SQL report rows) ----------
+function llResetForm(){llEditId=null;$('llForm').classList.add('hide');$('llLine').value='';$('llLevel').value=''}
+function llDraw(){
+ syncLevels();
+ const q=$('llSearch').value.trim().toLowerCase(),level=$('llFilter').value;
+ const lines=R.filter(r=>r.k==='L');
+ const rows=lines.filter(r=>(!level||r.lv===level)&&(!q||[r.v[0],r.lv,r.v[1],r.v[2]].some(v=>String(v||'').toLowerCase().includes(q))))
+  .sort((a,b)=>String(a.lv).localeCompare(String(b.lv),undefined,{numeric:true})||Number(a.v[0])-Number(b.v[0]));
+ $('llBody').innerHTML=rows.length?rows.map(r=>`<tr><td>${E(r.v[0])}</td><td>${E(r.lv)}</td><td>${E(r.v[1])}</td><td>${E(r.v[2])}</td><td class="act"><button class="edit" data-ll-edit="${r.id}">Edit</button> <button class="del" data-ll-delete="${r.id}">Delete</button></td></tr>`).join(''):
+  '<tr><td colspan="5" style="text-align:center;padding:18px;color:#666">'+(dbReady?'No sewing lines match this filter.':'Reload to load saved lines.')+'</td></tr>';
+ document.querySelectorAll('#llBody button').forEach(b=>b.disabled=whBusy||!dbReady)
+}
+$('llSearch').oninput=llDraw;$('llFilter').onchange=llDraw;$('llReload').onclick=load;$('llCancel').onclick=llResetForm;
+$('llSave').onclick=async()=>{
+ if(whBusy||!dbReady||llEditId===null)return;
+ const line=$('llLine').value.trim(),level=$('llLevel').value.trim(),lineNo=Number(line);
+ if(!line||!Number.isSafeInteger(lineNo)||lineNo<=0){whSetMsg('Line No must be a positive whole number.',true);return}
+ if(!level){whSetMsg('Level is required.',true);return}
+ if(R.some(r=>r.k==='L'&&r.id!==llEditId&&Number(r.v[0])===lineNo)){whSetMsg('Line '+lineNo+' already exists.',true);return}
+ const next=R.map(r=>({...r,v:[...r.v]})),entry=next.find(r=>r.id===llEditId&&r.k==='L');
+ if(!entry){whSetMsg('This line is unavailable. Reload before editing.',true);return}
+ entry.v[0]=String(lineNo);entry.lv=level;
+ try{await save(next);llResetForm();whSetMsg('Line '+lineNo+' updated successfully.')}catch(err){console.error(err)}
+};
+$('llBody').onclick=async e=>{
+ if(whBusy||!dbReady)return;
+ const edit=e.target.closest('[data-ll-edit]'),del=e.target.closest('[data-ll-delete]');
+ if(edit){
+  const r=R.find(r=>r.id===Number(edit.dataset.llEdit)&&r.k==='L');if(!r)return;
+  llEditId=r.id;$('llLine').value=r.v[0];$('llLevel').value=r.lv;$('llForm').classList.remove('hide');$('llLine').focus();
+  whSetMsg('Editing Line '+r.v[0]+' — '+r.lv);return
+ }
+ if(del){
+  const r=R.find(r=>r.id===Number(del.dataset.llDelete)&&r.k==='L');if(!r)return;
+  if(!confirm('Delete Line '+r.v[0]+' ('+r.lv+')? This removes its entry from the saved Work Hour Approval Request.'))return;
+  try{await save(R.filter(x=>x.id!==r.id));if(llEditId===r.id)llResetForm();whSetMsg('Line '+r.v[0]+' deleted successfully.')}catch(err){console.error(err)}
+ }
+};
 
 // ---------- Department & Section Setup ----------
 let DS=[],dsEditId=null;
