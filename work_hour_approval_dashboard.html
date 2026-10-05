@@ -600,7 +600,7 @@ const uiPunchCache=new Map();
 const uiMatchText=value=>String(value??'').trim().replace(/\s+/g,' ').toLowerCase();
 function uiMatchLine(value){const text=uiMatchText(value),m=text.match(/^(?:(?:ln|line)\s*[-:]?\s*)?(\d+)$/);return m?String(Number(m[1])):text}
 function uiMatchLevel(value){return uiMatchText(value).replace(/^level\s*[-:]?\s*0*(\d+)$/,'level-$1')}
-function uiLineWise(row){return ['sewing','quality assurance'].includes(uiMatchText(row.department))&&uiMatchText(row.section)==='sewing'}
+function uiLineWise(row){const dept=uiMatchText(row.department),section=uiMatchText(row.section);return (['sewing','quality assurance'].includes(dept)&&section==='sewing')||(dept==='finishing'&&section==='finishing')}
 function uiPunchKey(row){
  if(!row.work_date||!uiMatchText(row.department)||!uiMatchText(row.section))return '';
  const sewing=uiLineWise(row);
