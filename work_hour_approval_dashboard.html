@@ -119,7 +119,10 @@ html,body{min-height:100%}
 <label>Report date <input type="date" id="rd" style="width:150px"></label>
 <button class="g" id="exp">Export CSV</button>
 <button class="r" id="rst">Reset to sample data</button>
-<input id="q1" placeholder="Search line, buyer, EWO…" style="width:210px"><select id="lf" style="width:120px"><option value="">All levels</option><option>Level-03</option><option>Level-04</option><option>Level-06</option></select><button class="g" id="pr1">Print / PDF</button>
+<input id="q1" placeholder="Search line, buyer, EWO…" style="width:210px">
+<label style="display:flex;align-items:center;gap:6px">Department <select id="whDept" style="width:190px"><option value="">All departments</option></select></label>
+<label style="display:flex;align-items:center;gap:6px">Section <select id="whSection" style="width:170px"><option value="">All sections</option></select></label>
+<select id="lf" style="width:120px" aria-label="Level filter"><option value="">All levels</option><option>Level-03</option><option>Level-04</option><option>Level-06</option></select><button class="g" id="pr1">Print / PDF</button>
 <span class="hint" id="whMsg" role="status" aria-live="polite">Loading saved report…</span>
 </div>
 <div class="wrap"><table><colgroup id="cg"></colgroup><thead id="th"></thead><tbody id="tb"></tbody></table></div>
@@ -259,7 +262,7 @@ function whSetMsg(msg,bad=false){
 }
 function whSetBusy(busy){
  whBusy=busy;
- for(const id of ['add','rd','rst','whSave','del','llSave','llCancel','llReload','llLine','llLevel'])$(id).disabled=busy||!dbReady;
+ for(const id of ['add','rd','rst','whSave','del','llSave','llCancel','llReload','llLine','llLevel','whDept','whSection','lf','q1'])$(id).disabled=busy||!dbReady;
  document.querySelectorAll('#llBody button').forEach(b=>b.disabled=busy||!dbReady)
 }
 async function load(){
@@ -305,7 +308,8 @@ function ht(r){const a=+r.v[5]||0,l=r.lv,n=r.v[0];
  if(r.k=='S')return l=='Level-03'?18:l=='Level-04'?(['Finishing','Quality','Management Staff'].includes(n)?24:21):({'Management Staff':38,Finishing:38,Afterwash:40}[n]||21);
  return 27}
 function row(r,dt){const v=r.v;let c;
- if(r.k=='L')c=[dt,'Sewing',r.lv,...v];else if(r.k=='S')c=[dt,'',r.lv,...v];else c=[dt,'',v[0],'',...v.slice(1)];
+ const labels=reportRowLabels(r);
+ if(r.k=='L'||r.k=='S')c=[dt,labels.department,labels.section,...v];else c=[dt,labels.department,labels.section,'',...v.slice(1)];
  let bg=r.k=='S'?(COL[v[0]]||''):'';if(r.lv=='Level-06'&&v[0]=='Recone')bg='#9DC3E6';
  return `<tr data-i="${r.id}" style="height:${ht(r)}px">`+c.map((x,i)=>{
   const field=cellField(r,i);
@@ -326,15 +330,31 @@ function totRow(lv,s){const big=lv=='Level-03'?'15px':'15px',sm=lv=='Level-06';
  const h={'Level-03':34,'Level-04':30,'Level-06':40}[lv]||30;
  return `<tr class="lt" style="height:${h}px"><td></td><td></td><td class="c"></td><td class="c"></td><td class="c" colspan="2" style="font-size:17px">${E(lv.replace('-0','-'))} Total=</td>`+
  vals(s).map((x,j)=>`<td class="c" style="font-size:${sm||(lv=='Level-04'&&j<2)?'10.5px':big}">${E(x)}</td>`).join('')+'</tr>'}
-function render(){syncLevels();const dt=fd();let h='';
- reportLevels().forEach(lv=>{const rs=R.filter(r=>r.lv==lv);rs.forEach(r=>h+=row(r,dt));h+=totRow(lv,sums(rs))});
- const ss=sums(R.filter(r=>r.k!='D')),dp=R.filter(r=>r.k=='D'),sd=sums(dp);
+function reportRowLabels(r){return r.k==='D'?{department:String(r.v[0]||''),section:String(r.v[0]||'')}:{department:'Sewing',section:String(r.lv||'')}}
+function syncReportFilters(){
+ const sorted=values=>[...new Set(values.filter(Boolean))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+ function options(id,values,label){const el=$(id),old=el.value;el.innerHTML=`<option value="">${label}</option>`+values.map(v=>`<option value="${E(v)}">${E(v)}</option>`).join('');el.value=values.includes(old)?old:''}
+ options('whDept',sorted(R.map(r=>reportRowLabels(r).department)),'All departments');
+ const department=$('whDept').value;
+ options('whSection',sorted(R.filter(r=>!department||reportRowLabels(r).department===department).map(r=>reportRowLabels(r).section)),'All sections')
+}
+function filteredReportRows(){
+ const department=$('whDept').value,section=$('whSection').value,level=$('lf').value,q=$('q1').value.trim().toLowerCase();
+ return R.filter(r=>{
+  const labels=reportRowLabels(r);
+  return (!department||labels.department===department)&&(!section||labels.section===section)&&(!level||r.lv===level)
+   &&(!q||[fd(),labels.department,labels.section,...r.v].some(v=>String(v??'').toLowerCase().includes(q)))
+ })
+}
+function render(){syncLevels();syncReportFilters();const dt=fd(),visible=filteredReportRows();let h='';
+ reportLevels().forEach(lv=>{const rs=visible.filter(r=>r.lv==lv);if(!rs.length)return;rs.forEach(r=>h+=row(r,dt));h+=totRow(lv,sums(rs))});
+ const ss=sums(visible.filter(r=>r.k!='D')),dp=visible.filter(r=>r.k=='D'),sd=sums(dp);
  const sv=vals(ss);sv[1]='';
  h+=`<tr class="sub" style="height:34px"><td class="d">${dt}</td><td></td><td class="c"></td><td class="c"></td><td class="c" style="font-size:19px">Subtotal</td><td class="c"></td>`+sv.map(x=>`<td class="c">${E(x)}</td>`).join('')+'</tr>';
  dp.forEach(r=>h+=row(r,dt));
- const gv=vals(ss,sd,1);gv[1]=reportLevels().reduce((a,lv)=>a+sums(R.filter(r=>r.lv==lv))[4],0);
+ const gv=vals(ss,sd,1);gv[0]=ss[3]+sd[3];gv[1]=ss[4]+sd[4];
  h+=`<tr class="gt" style="height:20px"><td class="d">${dt}</td><td></td><td class="c" style="font-size:10px">Grand Total</td><td class="c"></td><td class="c"></td><td class="c"></td>`+gv.map(x=>`<td class="c" style="font-size:14px">${E(x)}</td>`).join('')+'</tr>';
- $('tb').innerHTML=h;flt()}
+ $('tb').innerHTML=visible.length?h:'<tr><td colspan="26" style="padding:18px;text-align:left">No rows match the selected filters.</td></tr>'}
 // ---------- form ----------
 function buildForm(){
  SPEC.forEach(([i,l,g,gr])=>{const d=document.createElement('div');if(g)d.dataset.g=g;if(i==0)d.id='n0w';
@@ -819,8 +839,9 @@ let lw=0;new ResizeObserver(()=>{const w=$('cc').clientWidth;if(w>0&&Math.abs(w-
 function refresh(){r2();charts()}
 ['q2','sf','tol','ots'].forEach(i=>{$(i).addEventListener('input',refresh);$(i).addEventListener('change',refresh)});refresh();
 $('pr1').onclick=$('pr2').onclick=()=>window.print();
-function flt(){const q=$('q1').value.trim().toLowerCase(),lf=$('lf').value;document.querySelectorAll('#tb tr[data-i]').forEach(tr=>{const r=R.find(x=>x.id==tr.dataset.i);tr.style.display=((!q||tr.textContent.toLowerCase().includes(q))&&(!lf||(r&&r.lv==lf)))?'':'none'})}
-$('q1').addEventListener('input',flt);$('lf').addEventListener('change',flt);flt();
+function flt(){if(whBusy)return;if(cellEdit)cancelCellEdit(cellEdit);render()}
+$('q1').addEventListener('input',flt);$('lf').addEventListener('change',flt);
+$('whDept').addEventListener('change',()=>{$('whSection').value='';flt()});$('whSection').addEventListener('change',flt);
 function dl(rows,name){const csv='\ufeff'+rows.map(a=>a.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(',')).join('\r\n'),l=document.createElement('a');l.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));l.download=name;l.click()}
 $('x2').onclick=()=>{const T=['5:00 PM','6:00 PM','7:00 PM','8:00 PM','9:00 PM','10:00 PM'],g=['Plan TM','Punch Out','Short/Excess'],h4=['Plan TM','Utilized TM','Short/Excess','Punch Out'],hd=['Date','Department','Total TM','Plan Work Hour'];
  T.forEach((t,i)=>(i?h4:g).forEach(x=>hd.push(t+' '+x)));hd.push('Total');
