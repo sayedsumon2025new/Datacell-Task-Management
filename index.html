@@ -1082,7 +1082,7 @@ html[data-theme="light"] .leave-recon-sub{
 </div>
 
 <script>
-window.DATACELL_BUILD='DATACELL_BUILD_2026_10_05_WORK_HOUR_APPROVAL';
+window.DATACELL_BUILD='DATACELL_BUILD_2026_10_05_WORK_HOUR_DEPT_SECTION';
 console.info(window.DATACELL_BUILD);
 // ─── CREDENTIALS ───
 let CREDS={}; // credentials are loaded from the database; no hardcoded password fallback
@@ -4038,6 +4038,37 @@ async function workHourApprovalSaveState(state){
 }
 window.workHourApprovalLoadState=workHourApprovalLoadState;
 window.workHourApprovalSaveState=workHourApprovalSaveState;
+
+async function workHourDepartmentSectionsList(){
+  return await dbRequest('work_hour_department_sections','GET',
+    'select=id,department,section,sort_order&order=sort_order.asc,id.asc');
+}
+async function workHourDepartmentSectionsSave(item){
+  const department=String(item?.department||'').trim(),section=String(item?.section||'').trim();
+  if(!department||!section)throw new Error('Department and Section are required');
+  if(item?.id){
+    const rows=await dbRequest('work_hour_department_sections','PATCH',
+      'id=eq.'+encodeURIComponent(item.id),
+      {department,section,updated_at:new Date().toISOString()});
+    if(!Array.isArray(rows)||rows.length!==1)throw new Error('Department / Section update was not confirmed');
+    await notifySaved();return rows[0];
+  }
+  const existing=await dbRequest('work_hour_department_sections','GET','select=sort_order&order=sort_order.desc&limit=1');
+  const sortOrder=Math.max(1,Number(existing?.[0]?.sort_order||0)+1);
+  const rows=await dbRequest('work_hour_department_sections','POST','',
+    {department,section,sort_order:sortOrder,updated_at:new Date().toISOString()});
+  if(!Array.isArray(rows)||rows.length!==1)throw new Error('Department / Section insert was not confirmed');
+  await notifySaved();return rows[0];
+}
+async function workHourDepartmentSectionsDelete(id){
+  const rows=await dbRequest('work_hour_department_sections','DELETE',
+    'id=eq.'+encodeURIComponent(id));
+  if(!Array.isArray(rows)||rows.length!==1)throw new Error('Department / Section delete was not confirmed');
+  await notifySaved();return true;
+}
+window.workHourDepartmentSectionsList=workHourDepartmentSectionsList;
+window.workHourDepartmentSectionsSave=workHourDepartmentSectionsSave;
+window.workHourDepartmentSectionsDelete=workHourDepartmentSectionsDelete;
 
 function buildWorkHourApproval(c){
   const frame=document.createElement('iframe');
