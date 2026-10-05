@@ -77,12 +77,25 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 .ds-table button{padding:5px 9px;font-size:11px}.ds-table button.edit{background:#fff;border-color:#777}.ds-table button.del{background:#fff;color:#b42318;border-color:#b42318}
 .ds-toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px}.ds-toolbar input{max-width:320px}
 @media(max-width:650px){.ds-f{min-width:100%}.ds-head{align-items:stretch}.ds-actions{width:100%}.ds-actions button{flex:1}}
+.otc-wrap{padding:14px;max-width:none}
+.otc-bar{display:flex;gap:10px;align-items:end;flex-wrap:wrap;padding:12px;background:#f8fafc;border:1px solid #d8dee8;border-radius:8px;margin-bottom:10px}
+.otc-f label{display:block;font-size:11px;font-weight:700;margin-bottom:4px}.otc-f{min-width:170px}
+.otc-file{min-width:280px;flex:1}.otc-info{font-size:12px;font-weight:700;color:#374151;margin:4px 0 10px}
+.otc-table-wrap{overflow:auto;border:1px solid #bfc5ce;border-radius:6px;background:#fff}
+#otcTable{border-collapse:collapse;table-layout:fixed;width:1780px;background:#fff}
+#otcTable th,#otcTable td{border:1px solid #cfcfcf;padding:6px 5px;font:600 11px Arial;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#otcTable th{background:#FFF2CC;color:#000;font-weight:700;position:sticky;top:0;z-index:2}
+#otcTable td.txt{text-align:left}#otcTable tbody tr:nth-child(even) td{background:#fafafa}
+#otcTable tbody tr:hover td{background:#fff9db}
+.otc-kpis{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.otc-kpi{background:#fff;border:1px solid #d1d5db;border-radius:6px;padding:8px 12px;min-width:135px}.otc-kpi b{display:block;font-size:18px}.otc-kpi span{font-size:10px;color:#555;font-weight:700;text-transform:uppercase}
+@media(max-width:700px){.otc-f,.otc-file{min-width:100%}}
+
 
 
 /* Integrated inside Datacell Task Management; source layout intentionally preserved. */
 html,body{min-height:100%}
 </style></head><body>
-<div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button><button class="tab" data-t="p3">Department &amp; Section Setup</button></div>
+<div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button><button class="tab" data-t="p3">Department &amp; Section Setup</button><button class="tab" data-t="p4">OT Cost Data</button></div>
 <div id="p1">
 <div class="bar">
 <button id="add">+ New Entry</button>
@@ -111,6 +124,33 @@ html,body{min-height:100%}
     <div id="dsMsg" class="ds-msg"></div>
     <div class="ds-toolbar"><input id="dsSearch" placeholder="Search department or section…"><button class="g" id="dsReload">Reload</button></div>
     <table class="ds-table"><thead><tr><th style="width:45%">Department</th><th style="width:40%">Section</th><th class="act">Action</th></tr></thead><tbody id="dsBody"></tbody></table>
+  </div>
+</div>
+
+<div id="p4" class="hide">
+  <div class="otc-wrap">
+    <div class="otc-bar">
+      <div class="otc-f otc-file"><label>Daily OT Cost CSV</label><input type="file" id="otcFile" accept=".csv,text/csv"></div>
+      <div class="otc-f"><label>Work Date</label><select id="otcDate"><option value="">Select date</option></select></div>
+      <div class="otc-f"><label>Search</label><input id="otcSearch" placeholder="ID, name, department, section, line…"></div>
+      <button id="otcUpload">Upload / Update</button>
+      <button class="g" id="otcReload">Reload</button>
+    </div>
+    <div id="otcInfo" class="otc-info">Upload a CSV with the same 15 columns as the OT Cost source file.</div>
+    <div id="otcKpis" class="otc-kpis"></div>
+    <div class="otc-table-wrap">
+      <table id="otcTable">
+        <colgroup>
+          <col style="width:90px"><col style="width:95px"><col style="width:190px"><col style="width:170px"><col style="width:170px"><col style="width:145px"><col style="width:85px">
+          <col style="width:105px"><col style="width:85px"><col style="width:105px"><col style="width:115px"><col style="width:105px"><col style="width:120px"><col style="width:110px"><col style="width:110px">
+        </colgroup>
+        <thead><tr>
+          <th>Date</th><th>ID</th><th>Name</th><th>Department</th><th>Designation</th><th>Section</th><th>Line</th>
+          <th>Gross Salary</th><th>OT Rate</th><th>Total OT Hour</th><th>Regular OT Hour</th><th>Extra OT Hour</th><th>Regular OT Cost</th><th>Extra OT cost</th><th>Total OT Cost</th>
+        </tr></thead>
+        <tbody id="otcBody"><tr><td colspan="15" style="padding:22px">Select a date or upload a CSV.</td></tr></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -275,7 +315,7 @@ function r2(){const P='#F8CBAD',G='#A9D08E',T=['5:00 PM','6:00 PM','7:00 PM','8:
    h+=`<td style="background:${P}">${a[0]==null?'':a[0]}</td><td style="background:${G}">${a[1]}</td><td style="${a[2]>TOL()?'background:#f00;color:#fff;font-weight:700':'background:#92D050'}">${a[2]}</td><td style="background:${P}">${a[3]}</td>`}
   h+=`<td class="tt">${d[1]}</td></tr>`});
  $('t2').innerHTML=h+'</tbody>'}
-document.querySelectorAll('.tab').forEach(b=>b.onclick=async()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x==b));['p1','p2','p3'].forEach(p=>$(p).classList.toggle('hide',p!=b.dataset.t));if(b.dataset.t==='p3')await dsLoad()});
+document.querySelectorAll('.tab').forEach(b=>b.onclick=async()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x==b));['p1','p2','p3','p4'].forEach(p=>$(p).classList.toggle('hide',p!=b.dataset.t));if(b.dataset.t==='p3')await dsLoad();if(b.dataset.t==='p4')await otcInit()});
 r2();
 
 // ---------- Department & Section Setup ----------
@@ -319,6 +359,103 @@ $('dsBody').onclick=async e=>{
   }catch(err){console.error(err);dsSetMsg('Delete failed: '+err.message,true)}
  }
 };
+
+// ---------- OT Cost Data ----------
+const OTC_HDR=['Date','ID','Name','Department','Designation','Section','Line','Gross Salary','OT Rate','Total OT Hour','Regular OT Hour','Extra OT Hour','Regular OT Cost','Extra OT cost','Total OT Cost'];
+let OTC_ROWS=[],otcReady=false;
+function otcNum(v){const s=String(v==null?'':v).trim().replace(/,/g,'');if(!s)return null;const n=Number(s);return Number.isFinite(n)?n:null}
+function otcIsoDate(v){
+ const s=String(v||'').trim();if(!s)return'';
+ if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;
+ const m=s.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2}|\d{4})$/);if(!m)return'';
+ const mons={jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
+ const mm=mons[m[2].toLowerCase()];if(!mm)return'';
+ const yy=m[3].length===2?'20'+m[3]:m[3];return yy+'-'+mm+'-'+m[1].padStart(2,'0')
+}
+function otcFmtDate(v){if(!v)return'';const p=v.split('-');return p.length===3?p[2]+'-'+['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+p[1]-1]+'-'+p[0].slice(2):v}
+function otcCsv(text){
+ const out=[],row=[];let a=row,cell='',q=false;
+ for(let i=0;i<text.length;i++){const ch=text[i],nx=text[i+1];
+  if(ch==='"'){if(q&&nx==='"'){cell+='"';i++}else q=!q}
+  else if(ch===','&&!q){a.push(cell);cell=''}
+  else if((ch==='\n'||ch==='\r')&&!q){if(ch==='\r'&&nx==='\n')i++;a.push(cell);cell='';if(a.some(x=>String(x).trim()!==''))out.push(a);a=[]}
+  else cell+=ch
+ }
+ if(cell||a.length){a.push(cell);if(a.some(x=>String(x).trim()!==''))out.push(a)}
+ return out
+}
+function otcMapCsv(text){
+ const rows=otcCsv(text);if(!rows.length)throw new Error('CSV is empty');
+ const h=rows[0].map(x=>String(x).replace(/^\uFEFF/,'').trim());
+ const miss=OTC_HDR.filter(x=>!h.includes(x));if(miss.length)throw new Error('Missing column(s): '+miss.join(', '));
+ const ix=Object.fromEntries(OTC_HDR.map(x=>[x,h.indexOf(x)]));
+ const mapped=[];let skipped=0;
+ for(let i=1;i<rows.length;i++){
+  const r=rows[i],work_date=otcIsoDate(r[ix.Date]),eid=otcNum(r[ix.ID]);
+  if(!work_date||!eid){skipped++;continue}
+  mapped.push({
+   work_date,employee_id:Math.trunc(eid),employee_name:String(r[ix.Name]||'').trim(),
+   department:String(r[ix.Department]||'').trim(),designation:String(r[ix.Designation]||'').trim(),
+   section:String(r[ix.Section]||'').trim(),line:String(r[ix.Line]||'').trim(),
+   gross_salary:otcNum(r[ix['Gross Salary']]),ot_rate:otcNum(r[ix['OT Rate']]),
+   total_ot_hour:otcNum(r[ix['Total OT Hour']]),regular_ot_hour:otcNum(r[ix['Regular OT Hour']]),
+   extra_ot_hour:otcNum(r[ix['Extra OT Hour']]),regular_ot_cost:otcNum(r[ix['Regular OT Cost']]),
+   extra_ot_cost:otcNum(r[ix['Extra OT cost']]),total_ot_cost:otcNum(r[ix['Total OT Cost']])
+  })
+ }
+ return {mapped,skipped}
+}
+async function otcDates(selectLatest=false){
+ try{
+  const ds=parent&&typeof parent.workHourOtCostDates==='function'?await parent.workHourOtCostDates():[];
+  const s=$('otcDate'),old=s.value;s.innerHTML='<option value="">Select date</option>'+ds.map(x=>'<option value="'+E(x)+'">'+E(otcFmtDate(x))+'</option>').join('');
+  if(old&&ds.includes(old))s.value=old;else if(selectLatest&&ds[0])s.value=ds[0];
+  return ds
+ }catch(e){$('otcInfo').textContent='Date load failed: '+e.message;return[]}
+}
+function otcDraw(){
+ const q=$('otcSearch').value.trim().toLowerCase();
+ const rows=OTC_ROWS.filter(r=>!q||[r.employee_id,r.employee_name,r.department,r.designation,r.section,r.line].some(v=>String(v??'').toLowerCase().includes(q)));
+ const sum=(k)=>rows.reduce((a,r)=>a+(Number(r[k])||0),0);
+ $('otcKpis').innerHTML=
+  '<div class="otc-kpi"><span>Employees</span><b>'+rows.length+'</b></div>'+
+  '<div class="otc-kpi"><span>Total OT Hour</span><b>'+sum('total_ot_hour').toFixed(1)+'</b></div>'+
+  '<div class="otc-kpi"><span>Regular OT Cost</span><b>'+Math.round(sum('regular_ot_cost')).toLocaleString()+'</b></div>'+
+  '<div class="otc-kpi"><span>Extra OT Cost</span><b>'+Math.round(sum('extra_ot_cost')).toLocaleString()+'</b></div>'+
+  '<div class="otc-kpi"><span>Total OT Cost</span><b>'+Math.round(sum('total_ot_cost')).toLocaleString()+'</b></div>';
+ const n=v=>v==null?'':Number(v).toLocaleString(undefined,{maximumFractionDigits:2});
+ $('otcBody').innerHTML=rows.length?rows.map(r=>'<tr>'+
+  '<td>'+E(otcFmtDate(r.work_date))+'</td><td>'+E(r.employee_id)+'</td><td class="txt">'+E(r.employee_name)+'</td>'+
+  '<td class="txt">'+E(r.department)+'</td><td class="txt">'+E(r.designation)+'</td><td class="txt">'+E(r.section)+'</td><td>'+E(r.line)+'</td>'+
+  '<td>'+n(r.gross_salary)+'</td><td>'+n(r.ot_rate)+'</td><td>'+n(r.total_ot_hour)+'</td><td>'+n(r.regular_ot_hour)+'</td><td>'+n(r.extra_ot_hour)+'</td>'+
+  '<td>'+n(r.regular_ot_cost)+'</td><td>'+n(r.extra_ot_cost)+'</td><td>'+n(r.total_ot_cost)+'</td></tr>').join(''):
+  '<tr><td colspan="15" style="padding:22px">No OT Cost rows found for this date/filter.</td></tr>';
+ $('otcInfo').textContent=rows.length+' row(s) shown'+(q?' after search filter':'');
+}
+async function otcLoadRows(){
+ const dt=$('otcDate').value;if(!dt){OTC_ROWS=[];otcDraw();return}
+ $('otcInfo').textContent='Loading '+otcFmtDate(dt)+'...';
+ try{OTC_ROWS=parent&&typeof parent.workHourOtCostRows==='function'?await parent.workHourOtCostRows(dt):[];otcDraw()}
+ catch(e){$('otcInfo').textContent='Load failed: '+e.message}
+}
+async function otcInit(){if(!otcReady){otcReady=true;await otcDates(true);$('otcDate').onchange=otcLoadRows;$('otcSearch').oninput=otcDraw;$('otcReload').onclick=async()=>{await otcDates(false);await otcLoadRows()};$('otcUpload').onclick=otcUpload}if($('otcDate').value)await otcLoadRows()}
+async function otcUpload(){
+ const f=$('otcFile').files[0];if(!f){$('otcInfo').textContent='Choose a CSV file first.';return}
+ const b=$('otcUpload');b.disabled=true;b.textContent='Uploading...';
+ try{
+  const parsed=otcMapCsv(await f.text());if(!parsed.mapped.length)throw new Error('No valid dated employee rows were found');
+  const dates=[...new Set(parsed.mapped.map(r=>r.work_date))].sort();
+  let done=0;const batch=350;
+  for(let i=0;i<parsed.mapped.length;i+=batch){
+   const chunk=parsed.mapped.slice(i,i+batch).map(r=>({...r,uploaded_by:'dashboard',uploaded_at:new Date().toISOString(),updated_at:new Date().toISOString()}));
+   if(!parent||typeof parent.workHourOtCostUpsert!=='function')throw new Error('Database upload bridge is unavailable');
+   await parent.workHourOtCostUpsert(chunk);done+=chunk.length;$('otcInfo').textContent='Uploaded '+done+' / '+parsed.mapped.length+' rows...'
+  }
+  await otcDates(false);$('otcDate').value=dates[dates.length-1];await otcLoadRows();
+  $('otcInfo').textContent='Upload complete: '+done+' valid row(s), '+parsed.skipped+' blank/invalid row(s) skipped. Dates: '+dates.map(otcFmtDate).join(', ')
+ }catch(e){console.error(e);$('otcInfo').textContent='Upload failed: '+e.message}
+ finally{b.disabled=false;b.textContent='Upload / Update'}
+}
 
 const PAL=['#0072B2','#E69F00','#009E73','#CC79A7','#56B4E9','#D55E00','#8c8c8c'],RED='#C62828',GRN='#2E7D32';
 const nice=m=>{const p=Math.pow(10,Math.floor(Math.log10(m||1))),f=m/p;return(f<=1?1:f<=2?2:f<=5?5:10)*p};
