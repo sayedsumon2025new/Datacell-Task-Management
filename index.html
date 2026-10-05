@@ -4012,29 +4012,25 @@ function buildLeaveManagement(c){
 
 // ── WORK HOUR APPROVAL ──
 async function workHourApprovalLoadState(){
-  try{
-    const rows=await dbRequest('work_hour_approval_state','GET','id=eq.main&select=report_date,rows');
-    const r=Array.isArray(rows)?rows[0]:null;
-    return r?{date:r.report_date||'',R:Array.isArray(r.rows)?r.rows:[]}:{date:'',R:[]};
-  }catch(e){
-    console.error('Work Hour Approval SQL load failed:',e);
-    toast('Work Hour Approval data could not be loaded','error');
-    return {date:'',R:[]};
-  }
+  const rows=await dbRequest('work_hour_approval_state','GET','id=eq.main&select=report_date,rows,updated_at');
+  const r=Array.isArray(rows)?rows[0]:null;
+  if(!r||!Array.isArray(r.rows)||!r.updated_at)throw new Error('Work Hour Approval data is unavailable. Reload before editing.');
+  return {date:r.report_date||'',R:r.rows,updatedAt:r.updated_at};
 }
 async function workHourApprovalSaveState(state){
+  if(!Array.isArray(state?.R)||!state.updatedAt)throw new Error('Reload Work Hour Approval before saving.');
   const payload={
-    id:'main',
     report_date:state&&state.date?state.date:null,
-    rows:Array.isArray(state?.R)?state.R:[],
+    rows:state.R,
     updated_by:currentUser||'',
     updated_at:new Date().toISOString()
   };
-  const saved=await dbRequest('work_hour_approval_state','POST','on_conflict=id',
-    [payload],'resolution=merge-duplicates,return=representation');
-  if(!Array.isArray(saved)||!saved.some(r=>r.id==='main'))throw new Error('Work Hour Approval write was not confirmed');
+  const saved=await dbRequest('work_hour_approval_state','PATCH',
+    'id=eq.main&updated_at=eq.'+encodeURIComponent(state.updatedAt),payload);
+  if(!Array.isArray(saved)||saved.length!==1||saved[0].id!=='main'||!saved[0].updated_at)
+    throw new Error('Data changed in another session or the save was not confirmed. Reload and try again.');
   await notifySaved();
-  return true;
+  return {updatedAt:saved[0].updated_at};
 }
 window.workHourApprovalLoadState=workHourApprovalLoadState;
 window.workHourApprovalSaveState=workHourApprovalSaveState;
@@ -4126,7 +4122,7 @@ window.workHourDailyPunchUpsert=workHourDailyPunchUpsert;
 function buildWorkHourApproval(c){
   const frame=document.createElement('iframe');
   frame.title='Work Hour Approval';
-  frame.src='work_hour_approval_dashboard.html?build=20261005_6';
+  frame.src='work_hour_approval_dashboard.html?build=20261005_7';
   frame.style.cssText='display:block;width:100%;height:calc(100vh - 110px);min-height:760px;border:1px solid var(--border);border-radius:12px;background:#fff;box-shadow:var(--card-shadow);';
   c.appendChild(frame);
 }
