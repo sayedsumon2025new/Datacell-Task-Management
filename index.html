@@ -1082,7 +1082,7 @@ html[data-theme="light"] .leave-recon-sub{
 </div>
 
 <script>
-window.DATACELL_BUILD='DATACELL_BUILD_2026_10_05_OT_COST_DATA';
+window.DATACELL_BUILD='DATACELL_BUILD_2026_10_05_DAILY_PUNCH';
 console.info(window.DATACELL_BUILD);
 // ─── CREDENTIALS ───
 let CREDS={}; // credentials are loaded from the database; no hardcoded password fallback
@@ -4090,6 +4090,27 @@ async function workHourOtCostUpsert(rows){
 window.workHourOtCostDates=workHourOtCostDates;
 window.workHourOtCostRows=workHourOtCostRows;
 window.workHourOtCostUpsert=workHourOtCostUpsert;
+
+async function workHourDailyPunchDates(){
+  const rows=await dbRequest('work_hour_daily_punch','GET','select=work_date&order=work_date.desc');
+  return [...new Set((Array.isArray(rows)?rows:[]).map(r=>r.work_date).filter(Boolean))];
+}
+async function workHourDailyPunchRows(workDate){
+  const q='select=id,work_date,employee_id,employee_name,designation,doj,department,section,line,log_in,log_out'
+    +(workDate?'&work_date=eq.'+encodeURIComponent(workDate):'')
+    +'&order=department.asc,section.asc,line.asc,employee_id.asc&limit=12000';
+  return await dbRequest('work_hour_daily_punch','GET',q);
+}
+async function workHourDailyPunchUpsert(rows){
+  if(!Array.isArray(rows)||!rows.length)return [];
+  const saved=await dbRequest('work_hour_daily_punch','POST','on_conflict=work_date,employee_id',
+    rows,'resolution=merge-duplicates,return=representation');
+  await notifySaved();
+  return saved;
+}
+window.workHourDailyPunchDates=workHourDailyPunchDates;
+window.workHourDailyPunchRows=workHourDailyPunchRows;
+window.workHourDailyPunchUpsert=workHourDailyPunchUpsert;
 
 function buildWorkHourApproval(c){
   const frame=document.createElement('iframe');
