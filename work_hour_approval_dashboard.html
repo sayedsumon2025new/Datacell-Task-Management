@@ -600,14 +600,15 @@ const uiPunchCache=new Map();
 const uiMatchText=value=>String(value??'').trim().replace(/\s+/g,' ').toLowerCase();
 function uiMatchLine(value){const text=uiMatchText(value),m=text.match(/^(?:(?:ln|line)\s*[-:]?\s*)?(\d+)$/);return m?String(Number(m[1])):text}
 function uiMatchLevel(value){return uiMatchText(value).replace(/^level\s*[-:]?\s*0*(\d+)$/,'level-$1')}
+function uiLineWise(row){return ['sewing','quality assurance'].includes(uiMatchText(row.department))&&uiMatchText(row.section)==='sewing'}
 function uiPunchKey(row){
  if(!row.work_date||!uiMatchText(row.department)||!uiMatchText(row.section))return '';
- const sewing=uiMatchText(row.department)==='sewing'&&uiMatchText(row.section)==='sewing';
+ const sewing=uiLineWise(row);
  if(sewing&&(!uiMatchText(row.level)||!uiMatchLine(row.line_no)))return '';
  return JSON.stringify([row.work_date,uiMatchText(row.department),uiMatchText(row.section),sewing?uiMatchLevel(row.level):'',sewing?uiMatchLine(row.line_no):'']);
 }
 function uiPunchCount(row,rows){
- const sewing=uiMatchText(row.department)==='sewing'&&uiMatchText(row.section)==='sewing';
+ const sewing=uiLineWise(row);
  if(sewing){
   const levels=new Set(R.filter(r=>r.k==='L'&&uiMatchLine(r.v[0])===uiMatchLine(row.line_no)).map(r=>uiMatchLevel(r.lv)));
   if(levels.size!==1)throw new Error('Set a unique Level for Line '+row.line_no+' in Line & Level Settings.');
@@ -628,6 +629,27 @@ async function uiRefreshManpower(row){
   if(!Array.isArray(rows))throw new Error('Punch rows were not returned.');
   update(uiPunchCount(row,rows));
  }catch(e){if(UI_ROWS.includes(row)&&row._punchRevision===revision&&uiPunchKey(row)===key){row._punchError=e.message;uiMessage('Present Manpower: '+e.message,true)}}
+}
+async function uiExpandLevel(row){
+ if(uiBusy||!uiReady||!uiLineWise(row)||!row.work_date||!uiMatchText(row.level))return;
+ if(!dbReady){uiMessage('Wait for Line & Level Settings to finish loading, then select Level again.',true);return}
+ const lines=[...new Map(R.filter(r=>r.k==='L'&&uiMatchLevel(r.lv)===uiMatchLevel(row.level)).map(r=>[uiMatchLine(r.v[0]),String(r.v[0])])).values()].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+ if(!lines.length){uiMessage('No lines configured for '+row.level+'.',true);return}
+ const matches=r=>r.work_date===row.work_date&&uiMatchText(r.department)===uiMatchText(row.department)&&uiMatchText(r.section)===uiMatchText(row.section)&&uiMatchLevel(r.level)===uiMatchLevel(row.level);
+ const occupied=new Set(UI_ROWS.filter(r=>r!==row&&matches(r)).map(r=>uiMatchLine(r.line_no)).filter(Boolean));
+ const current=uiMatchLine(row.line_no),available=lines.filter(line=>!occupied.has(uiMatchLine(line)));
+ const hasEntry=UI_SPEC.some(([key])=>!['work_date','department','section','level','line_no','present_manpower'].includes(key)&&String(row[key]??'').trim()!=='');
+ if(!lines.some(line=>uiMatchLine(line)===current)){
+  if(hasEntry||row.updated_at){uiMessage('This row contains saved/entered data. Choose a Line in '+row.level+' before expanding.',true);return}
+  if(!available.length){uiMessage('All lines for this Level already exist for this date and department.');return}
+  row.line_no=available[0];uiDirty.add(row.id)
+ }
+ const targets=UI_ROWS.filter(matches),newRows=[];
+ const present=new Set(targets.map(r=>uiMatchLine(r.line_no)).filter(Boolean));
+ for(const line of lines){if(present.has(uiMatchLine(line)))continue;const next=uiBlank();Object.assign(next,{work_date:row.work_date,department:row.department,section:row.section,level:row.level,line_no:line});newRows.push(next);targets.push(next);uiDirty.add(next.id)}
+ if(newRows.length)UI_ROWS.splice(UI_ROWS.indexOf(row)+1,0,...newRows);
+ uiDraw();await Promise.all(targets.map(uiRefreshManpower));
+ if(!targets.some(r=>r._punchError))uiMessage(lines.length+' line(s) filled for '+row.level+' — click Save Changes.');
 }
 function uiSuggestions(row){
  const unique=values=>[...new Set(values.filter(Boolean))];
@@ -662,6 +684,10 @@ $('uiBody').oninput=e=>{
  const row=UI_ROWS[Number(input.dataset.row)];row[input.dataset.key]=input.value;uiDirty.add(row.id);input.removeAttribute('aria-invalid');
  uiMessage('Unsaved changes — click Save Changes.');if(input.dataset.key==='department')uiSuggestions(row);
  if(['work_date','department','section','level','line_no'].includes(input.dataset.key))void uiRefreshManpower(row)
+};
+$('uiBody').onchange=e=>{
+ const input=e.target.closest('input[data-key]');if(!input||uiBusy||!uiReady)return;
+ if(['work_date','department','section','level'].includes(input.dataset.key))void uiExpandLevel(UI_ROWS[Number(input.dataset.row)]);
 };
 $('uiBody').onfocusin=e=>{
  const input=e.target.closest('input[data-key]');if(!input)return;
