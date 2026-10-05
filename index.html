@@ -4066,6 +4066,36 @@ window.workHourDepartmentSectionsList=workHourDepartmentSectionsList;
 window.workHourDepartmentSectionsSave=workHourDepartmentSectionsSave;
 window.workHourDepartmentSectionsDelete=workHourDepartmentSectionsDelete;
 
+const WH_UI_FIELDS=['work_date','department','section','level','line_no','buyer','ewo','present_manpower','asking_manpower','asking_hour','ot_5_pm','ot_6_pm','ot_7_pm','ot_8_pm','ot_9_pm','ot_10_pm','ot_11_pm','ot_12_am','ot_1_am','iron_man','staff','total_manpower','reason_eot','responsible_department'];
+const WH_UI_NUMBERS=new Set(['present_manpower','asking_manpower','asking_hour','ot_5_pm','ot_6_pm','ot_7_pm','ot_8_pm','ot_9_pm','ot_10_pm','ot_11_pm','ot_12_am','ot_1_am','iron_man','staff','total_manpower']);
+async function workHourUserInterfaceList(){
+  return await fetchPagedTableRows('work_hour_user_interface','select=*&order=created_at.asc,id.asc');
+}
+async function workHourUserInterfaceSave(row){
+  if(!row?.id)throw new Error('Entry ID is required.');
+  const payload={updated_by:currentUser||'',updated_at:new Date().toISOString()};
+  for(const key of WH_UI_FIELDS){
+    const value=row[key];
+    if(WH_UI_NUMBERS.has(key)){
+      const number=value==null||value===''?null:Number(value);
+      if(number!==null&&(!Number.isFinite(number)||number<0||(key!=='asking_hour'&&!Number.isSafeInteger(number))))throw new Error('Invalid '+key);
+      payload[key]=number;
+    }else payload[key]=key==='work_date'?(value||null):String(value??'').trim();
+  }
+  const query='id=eq.'+encodeURIComponent(row.id);
+  let saved;
+  if(row.updated_at){
+    saved=await dbRequest('work_hour_user_interface','PATCH',query+'&updated_at=eq.'+encodeURIComponent(row.updated_at),payload);
+  }else{
+    saved=await dbRequest('work_hour_user_interface','POST','',{id:row.id,...payload});
+  }
+  if(!Array.isArray(saved)||saved.length!==1||saved[0].id!==row.id||!saved[0].updated_at)
+    throw new Error('Entry changed in another session or save was not confirmed. Reload and try again.');
+  await notifySaved();return saved[0];
+}
+window.workHourUserInterfaceList=workHourUserInterfaceList;
+window.workHourUserInterfaceSave=workHourUserInterfaceSave;
+
 async function workHourOtCostDates(){
   const rows=await dbRequest('work_hour_ot_cost','GET','select=work_date&order=work_date.desc');
   return [...new Set((Array.isArray(rows)?rows:[]).map(r=>r.work_date).filter(Boolean))];
@@ -4122,7 +4152,7 @@ window.workHourDailyPunchUpsert=workHourDailyPunchUpsert;
 function buildWorkHourApproval(c){
   const frame=document.createElement('iframe');
   frame.title='Work Hour Approval';
-  frame.src='work_hour_approval_dashboard.html?build=20261005_12';
+  frame.src='work_hour_approval_dashboard.html?build=20261005_13';
   frame.style.cssText='display:block;width:100%;height:calc(100vh - 110px);min-height:760px;border:1px solid var(--border);border-radius:12px;background:#fff;box-shadow:var(--card-shadow);';
   c.appendChild(frame);
 }

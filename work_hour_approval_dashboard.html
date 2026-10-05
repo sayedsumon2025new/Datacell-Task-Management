@@ -111,8 +111,18 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 
 /* Integrated inside Datacell Task Management; source layout intentionally preserved. */
 html,body{min-height:100%}
+#uiTable{width:2048px;border-collapse:collapse;table-layout:fixed;background:#fff;color:#000;font-family:Arial,Helvetica,sans-serif}
+#uiTable th{height:61px;background:#FFF2CC;border:1px solid #555;padding:0 4px;font-size:11px;line-height:1.2;font-weight:700;text-align:center;white-space:normal}
+#uiTable td{height:27.5px;border:1px solid #666;padding:0;background:#fff;font-weight:400}
+#uiTable input{display:block;width:100%;height:26px;border:0;border-radius:0;margin:0;padding:2px 4px;font:11px Arial;background:transparent;color:#000;outline:none;box-shadow:none}
+#uiTable input:focus{outline:2px solid #0072B2;outline-offset:-2px;background:#fffdf2}
+#uiTable input[aria-invalid="true"]{outline:2px solid #b42318;outline-offset:-2px}
+#uiTable input[type=number]{appearance:textfield;-moz-appearance:textfield;text-align:center}
+#uiTable input::-webkit-inner-spin-button,#uiTable input::-webkit-outer-spin-button{appearance:none;margin:0}
+#uiTable input::-webkit-calendar-picker-indicator{opacity:0}#uiTable input:focus::-webkit-calendar-picker-indicator{opacity:1}
+@media print{#uiTable input{border:0;outline:none;background:transparent}}
 </style></head><body>
-<div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button><button class="tab" data-t="p3">Department &amp; Section Setup</button><button class="tab" data-t="p4">OT Cost Data</button><button class="tab" data-t="p5">Daily Punch Report</button><button class="tab" data-t="p6">Line &amp; Level Settings</button></div>
+<div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button><button class="tab" data-t="p3">Department &amp; Section Setup</button><button class="tab" data-t="p4">OT Cost Data</button><button class="tab" data-t="p5">Daily Punch Report</button><button class="tab" data-t="p6">Line &amp; Level Settings</button><button class="tab" data-t="p7">User Interface</button></div>
 <div id="p1">
 <div class="bar">
 <button id="add">+ New Entry</button>
@@ -221,6 +231,17 @@ html,body{min-height:100%}
     </div>
     <div class="wrap"><table class="ds-table"><thead><tr><th>Line No</th><th>Level</th><th class="act">Action</th></tr></thead><tbody id="llBody"></tbody></table></div>
   </div>
+</div>
+
+<div id="p7" class="hide">
+  <div class="bar">
+    <strong>User Interface</strong>
+    <button id="uiAdd">+ Add Row</button><button id="uiSave">Save Changes</button>
+    <button class="g" id="uiReload">Reload</button><button class="g" id="uiExport">Export CSV</button>
+    <span class="hint" id="uiMsg" role="status" aria-live="polite">Enter data directly in the cells, then save.</span>
+  </div>
+  <div class="wrap"><table id="uiTable"><colgroup id="uiCols"></colgroup><thead id="uiHead"></thead><tbody id="uiBody"></tbody></table></div>
+  <datalist id="uiDepartments"></datalist><datalist id="uiSections"></datalist><datalist id="uiLevels"></datalist>
 </div>
 
 <dialog id="dlg"><form id="f" novalidate>
@@ -506,7 +527,7 @@ function r2(){const P='#F8CBAD',G='#A9D08E',T=['5:00 PM','6:00 PM','7:00 PM','8:
    h+=`<td style="background:${P}">${a[0]==null?'':a[0]}</td><td style="background:${G}">${a[1]}</td><td style="${a[2]>TOL()?'background:#f00;color:#fff;font-weight:700':'background:#92D050'}">${a[2]}</td><td style="background:${P}">${a[3]}</td>`}
   h+=`<td class="tt">${d[1]}</td></tr>`});
  $('t2').innerHTML=h+'</tbody>'}
-document.querySelectorAll('.tab').forEach(b=>b.onclick=async()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x==b));['p1','p2','p3','p4','p5','p6'].forEach(p=>$(p).classList.toggle('hide',p!=b.dataset.t));if(b.dataset.t==='p3')await dsLoad();if(b.dataset.t==='p4')await otcInit();if(b.dataset.t==='p5')await dprInit();if(b.dataset.t==='p6'){llDraw();if(!dbReady&&!whBusy)await load()}});
+document.querySelectorAll('.tab').forEach(b=>b.onclick=async()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x==b));['p1','p2','p3','p4','p5','p6','p7'].forEach(p=>$(p).classList.toggle('hide',p!=b.dataset.t));if(b.dataset.t==='p3')await dsLoad();if(b.dataset.t==='p4')await otcInit();if(b.dataset.t==='p5')await dprInit();if(b.dataset.t==='p7'){if(!uiLoaded)await uiLoad();}if(b.dataset.t==='p6'){llDraw();if(!dbReady&&!whBusy)await load()}});
 r2();
 
 // ---------- Line & Level Settings (shared SQL report rows) ----------
@@ -547,6 +568,96 @@ $('llBody').onclick=async e=>{
   try{await save(R.filter(x=>x.id!==r.id));if(llEditId===r.id)llResetForm();whSetMsg('Line '+r.v[0]+' deleted successfully.')}catch(err){console.error(err)}
  }
 };
+
+// ---------- User Interface: independent SQL-backed data entry ----------
+const UI_SPEC=[
+ ['work_date','Date','date',82],['department','Department','text',131],['section','Section','text',130],['level','Level','text',131],
+ ['line_no','Line No','text',72],['buyer','Buyer','text',91],['ewo','EWO','text',57],
+ ['present_manpower','Present Manpower','number',60],['asking_manpower','Asking manpower','number',78],['asking_hour','Asking Hour','number',59],
+ ['ot_5_pm','5.00 PM','number',60],['ot_6_pm','6.00 PM','number',60],['ot_7_pm','7.00 PM','number',61],['ot_8_pm','8.00 PM','number',60],
+ ['ot_9_pm','9.00 PM','number',68],['ot_10_pm','10.00 PM','number',94],['ot_11_pm','11.00 PM','number',68],['ot_12_am','12.00 AM','number',80],['ot_1_am','1.00 AM','number',92],
+ ['iron_man','Iron Man','number',92],['staff','Staff','number',39],['total_manpower','Total Manpower','number',64],
+ ['reason_eot','Reason EOT','text',187],['responsible_department','Responsible department','text',129]
+];
+let UI_ROWS=[],uiDirty=new Set(),uiBusy=false,uiLoaded=false,uiReady=false;
+function uiBlank(){return {id:crypto.randomUUID(),updated_at:null,...Object.fromEntries(UI_SPEC.map(([key])=>[key,'']))}}
+function uiHasData(row){return UI_SPEC.some(([key])=>row[key]!==null&&row[key]!==undefined&&String(row[key]).trim()!=='')}
+function uiMessage(message,bad=false){$('uiMsg').textContent=message;$('uiMsg').style.color=bad?'#b42318':'#166534'}
+function uiControls(){
+ for(const id of ['uiAdd','uiSave','uiExport'])$(id).disabled=uiBusy||!uiReady;
+ $('uiReload').disabled=uiBusy;
+ document.querySelectorAll('#uiBody input').forEach(input=>input.disabled=uiBusy||!uiReady)
+}
+function uiDraw(){
+ while(UI_ROWS.length<9)UI_ROWS.push(uiBlank());
+ $('uiCols').innerHTML=UI_SPEC.map(([, , ,width])=>`<col style="width:${width}px">`).join('');
+ $('uiHead').innerHTML='<tr>'+UI_SPEC.map(([,label])=>`<th>${E(label)}</th>`).join('')+'</tr>';
+ $('uiBody').innerHTML=UI_ROWS.map((row,i)=>'<tr>'+UI_SPEC.map(([key,label,type])=>
+  `<td><input data-row="${i}" data-key="${key}" aria-label="Row ${i+1} ${E(label)}" type="${type==='number'?'number':'text'}"${type==='number'?` min="0" step="${key==='asking_hour'?'any':'1'}"`:''}${['department','section','level'].includes(key)?` list="ui${key==='department'?'Departments':key==='section'?'Sections':'Levels'}"`:''} value="${E(row[key]??'')}"></td>`).join('')+'</tr>').join('');
+ uiSuggestions();uiControls()
+}
+function uiSuggestions(row){
+ const unique=values=>[...new Set(values.filter(Boolean))];
+ $('uiDepartments').innerHTML=unique(DS.map(x=>x.department)).map(x=>`<option value="${E(x)}"></option>`).join('');
+ $('uiSections').innerHTML=unique(DS.filter(x=>!row?.department||x.department===row.department).map(x=>x.section)).map(x=>`<option value="${E(x)}"></option>`).join('');
+ $('uiLevels').innerHTML=unique([...reportLevels(),...UI_ROWS.map(x=>x.level)]).map(x=>`<option value="${E(x)}"></option>`).join('')
+}
+async function uiLoad(){
+ if(uiBusy)return;
+ if(uiDirty.size&&!confirm('Reload will discard unsaved User Interface edits. Continue?'))return;
+ uiBusy=true;uiControls();uiMessage('Loading saved entries…');
+ try{
+  if(!parent||typeof parent.workHourUserInterfaceList!=='function')throw new Error('Database bridge is unavailable.');
+  const rows=await parent.workHourUserInterfaceList();if(!Array.isArray(rows))throw new Error('Saved entries were not returned.');
+  UI_ROWS=rows;uiDirty.clear();uiLoaded=true;uiReady=true;uiMessage('Loaded '+rows.length+' saved entry(s). Enter data, then Save Changes.');
+ }catch(err){uiMessage('Load failed: '+err.message,true);if(!uiLoaded)uiReady=false}
+ finally{uiBusy=false;uiDraw()}
+}
+function uiValidate(row){
+ for(const [key,label,type] of UI_SPEC){
+  const value=String(row[key]??'').trim();if(!value)continue;
+  if(type==='number'&&(!Number.isFinite(Number(value))||Number(value)<0||(key!=='asking_hour'&&!Number.isSafeInteger(Number(value)))))throw new Error(label+' must be a non-negative '+(key==='asking_hour'?'number.':'whole number.'));
+  if(type==='date'){
+   const date=new Date(value+'T00:00:00Z');
+   if(!/^\d{4}-\d{2}-\d{2}$/.test(value)||!Number.isFinite(date.getTime())||date.toISOString().slice(0,10)!==value)throw new Error('Use a valid Date (YYYY-MM-DD).');
+  }
+ }
+}
+$('uiBody').oninput=e=>{
+ const input=e.target.closest('input[data-key]');if(!input||uiBusy||!uiReady)return;
+ const row=UI_ROWS[Number(input.dataset.row)];row[input.dataset.key]=input.value;uiDirty.add(row.id);input.removeAttribute('aria-invalid');
+ uiMessage('Unsaved changes — click Save Changes.');if(input.dataset.key==='department')uiSuggestions(row)
+};
+$('uiBody').onfocusin=e=>{
+ const input=e.target.closest('input[data-key]');if(!input)return;
+ if(input.dataset.key==='work_date')input.type='date';
+ if(input.dataset.key==='section')uiSuggestions(UI_ROWS[Number(input.dataset.row)])
+};
+$('uiBody').onfocusout=e=>{const input=e.target.closest('input[data-key="work_date"]');if(input)input.type='text'};
+$('uiAdd').onclick=()=>{if(uiBusy||!uiReady)return;UI_ROWS.push(uiBlank());uiDraw();$('uiBody').lastElementChild.querySelector('input').focus()};
+$('uiSave').onclick=async()=>{
+ if(uiBusy||!uiReady)return;
+ const pending=UI_ROWS.filter(row=>uiDirty.has(row.id)&&(row.updated_at||uiHasData(row)));
+ if(!pending.length){uiDirty.clear();uiMessage('No changes to save.');return}
+ let saved=0;
+ try{
+  for(const row of pending)uiValidate(row);
+  if(!parent||typeof parent.workHourUserInterfaceSave!=='function')throw new Error('Database bridge is unavailable.');
+  uiBusy=true;uiControls();
+  for(const row of pending){
+   uiMessage('Saving '+(saved+1)+' / '+pending.length+'…');
+   const result=await parent.workHourUserInterfaceSave(row);
+   if(!result?.updated_at||result.id!==row.id)throw new Error('Entry save was not confirmed.');
+   Object.assign(row,result);uiDirty.delete(row.id);saved++;
+  }
+  for(const row of UI_ROWS)if(!row.updated_at&&!uiHasData(row))uiDirty.delete(row.id);
+  uiMessage(saved+' entry(s) saved successfully.');
+ }catch(err){uiMessage('Save failed'+(saved?' after '+saved+' entry(s)':'')+': '+err.message+'. Unsaved entries remain in the table.',true)}
+ finally{uiBusy=false;uiDraw()}
+};
+$('uiReload').onclick=uiLoad;
+$('uiExport').onclick=()=>dl([UI_SPEC.map(([,label])=>label),...UI_ROWS.filter(uiHasData).map(row=>UI_SPEC.map(([key])=>row[key]??''))],'user_interface.csv');
+window.addEventListener('beforeunload',e=>{if(uiDirty.size){e.preventDefault();e.returnValue=''}});
 
 // ---------- Department & Section Setup ----------
 let DS=[],dsEditId=null;
