@@ -607,7 +607,22 @@ function uiControls(){
  document.querySelectorAll('#uiBody input').forEach(input=>input.disabled=uiBusy||!uiReady)
 }
 function uiVisibleRows(){const date=$('uiDate').value;return UI_ROWS.filter(row=>!date||row.work_date===date||!row.work_date&&!uiHasData(row))}
+const UI_HOURS=['ot_5_pm','ot_6_pm','ot_7_pm','ot_8_pm','ot_9_pm','ot_10_pm','ot_11_pm','ot_12_am','ot_1_am'];
+function uiHourError(row){
+ for(let i=1;i<UI_HOURS.length;i++){
+  const key=UI_HOURS[i],previous=UI_HOURS[i-1];
+  if(row[key]!==''&&row[key]!=null&&Number(row[key])>Number(row[previous]||0)){
+   const label=k=>UI_SPEC.find(([field])=>field===k)[1];
+   return {key,message:label(key)+' cannot exceed '+label(previous)+' ('+Number(row[previous]||0)+').'};
+  }
+ }
+ return null;
+}
+function uiHoursPaint(row){const error=uiHourError(row),i=UI_ROWS.indexOf(row);UI_HOURS.slice(1).forEach((key,n)=>{const input=$('uiBody').querySelector(`input[data-row="${i}"][data-key="${key}"]`);if(input){input.max=Number(row[UI_HOURS[n]]||0);if(error?.key===key)input.setAttribute('aria-invalid','true');else input.removeAttribute('aria-invalid')}});return error}
 function uiRecalcTotal(row){
+ const five=row.asking_manpower===''||row.asking_manpower==null?null:Number(row.asking_manpower);
+ if(row.ot_5_pm!==five){row.ot_5_pm=five;if(uiHasData(row))uiDirty.add(row.id)}
+ const rowIndex=UI_ROWS.indexOf(row),fiveCell=$('uiBody').querySelector(`input[data-row="${rowIndex}"][data-key="ot_5_pm"]`);if(fiveCell)fiveCell.value=five??'';
  const fields=UI_SPEC.slice(UI_SPEC.findIndex(([key])=>key==='ot_5_pm'),UI_SPEC.findIndex(([key])=>key==='staff')+1).map(([key])=>key),value=fields.some(key=>row[key]!==''&&row[key]!=null)?fields.reduce((sum,key)=>sum+(Number(row[key])||0),0):null;
  if(row.total_manpower!==value){row.total_manpower=value;if(uiHasData(row))uiDirty.add(row.id)}
  const i=UI_ROWS.indexOf(row),cell=$('uiBody').querySelector(`input[data-row="${i}"][data-key="total_manpower"]`);if(cell)cell.value=value??'';
@@ -620,8 +635,8 @@ function uiDraw(){
  for(const row of UI_ROWS)uiRecalcTotal(row);
  $('uiHead').innerHTML='<tr>'+UI_SPEC.map(([,label])=>`<th>${E(label)}</th>`).join('')+'</tr><tr class="ui-totals">'+UI_SPEC.map(([key,,type],i)=>`<th${type==='number'?` id="uiTotal_${key}"`:''}>${i===0?'Total':''}</th>`).join('')+'</tr>';
  $('uiBody').innerHTML=uiVisibleRows().map(row=>{const i=UI_ROWS.indexOf(row);return '<tr>'+UI_SPEC.map(([key,label,type])=>
-  `<td><input data-row="${i}" data-key="${key}" aria-label="Row ${i+1} ${E(label)}" type="${type==='number'?'number':type==='date'?'date':'text'}"${type==='number'?` min="0" step="${key==='asking_hour'?'any':'1'}"`:''}${['department','section','level'].includes(key)?` list="ui${key==='department'?'Departments':key==='section'?'Sections':'Levels'}"`:''} ${['present_manpower','total_manpower'].includes(key)?` readonly title="${key==='present_manpower'?'From Daily Punch Report':'5.00 PM through Staff'}"`:''} value="${E(row[key]??'')}"></td>`).join('')+'</tr>'}).join('');
- uiSuggestions();uiUpdateTotals();uiControls()
+  `<td><input data-row="${i}" data-key="${key}" aria-label="Row ${i+1} ${E(label)}" type="${type==='number'?'number':type==='date'?'date':'text'}"${type==='number'?` min="0" step="${key==='asking_hour'?'any':'1'}"`:''}${['department','section','level'].includes(key)?` list="ui${key==='department'?'Departments':key==='section'?'Sections':'Levels'}"`:''} ${['present_manpower','total_manpower','ot_5_pm'].includes(key)?` readonly title="${key==='present_manpower'?'From Daily Punch Report':key==='ot_5_pm'?'From Asking manpower — read only':'5.00 PM through Staff'}"`:''} value="${E(row[key]??'')}"></td>`).join('')+'</tr>'}).join('');
+ UI_ROWS.forEach(uiHoursPaint);uiSuggestions();uiUpdateTotals();uiControls()
 }
 const uiPunchCache=new Map();
 const uiMatchText=value=>String(value??'').trim().replace(/\s+/g,' ').toLowerCase();
@@ -697,6 +712,7 @@ async function uiLoad(){
  if(uiReady)await Promise.all(UI_ROWS.filter(uiHasData).map(uiRefreshManpower));
 }
 function uiValidate(row){
+ const hourError=uiHourError(row);if(hourError)throw new Error(hourError.message);
  for(const [key,label,type] of UI_SPEC){
   const value=String(row[key]??'').trim();if(!value)continue;
   if(type==='number'&&(!Number.isFinite(Number(value))||Number(value)<0||(key!=='asking_hour'&&!Number.isSafeInteger(Number(value)))))throw new Error(label+' must be a non-negative '+(key==='asking_hour'?'number.':'whole number.'));
@@ -707,10 +723,12 @@ function uiValidate(row){
  }
 }
 $('uiBody').oninput=e=>{
- const input=e.target.closest('input[data-key]');if(!input||uiBusy||!uiReady)return;
- const row=UI_ROWS[Number(input.dataset.row)];row[input.dataset.key]=input.value;uiDirty.add(row.id);input.removeAttribute('aria-invalid');
+ const input=e.target.closest('input[data-key]');if(!input||input.readOnly||uiBusy||!uiReady)return;
+ const row=UI_ROWS[Number(input.dataset.row)],key=input.dataset.key,hour=UI_HOURS.indexOf(key);
+ if(hour>0&&input.value!==''&&Number(input.value)>Number(row[UI_HOURS[hour-1]]||0)){input.value=row[key]??'';uiMessage(UI_SPEC.find(([field])=>field===key)[1]+' cannot exceed '+UI_SPEC.find(([field])=>field===UI_HOURS[hour-1])[1]+' ('+Number(row[UI_HOURS[hour-1]]||0)+').',true);return}
+ row[input.dataset.key]=input.value;uiDirty.add(row.id);input.removeAttribute('aria-invalid');
  uiRecalcTotal(row);uiUpdateTotals();
- uiMessage('Unsaved changes — click Save Changes.');if(input.dataset.key==='department')uiSuggestions(row);
+ const hourError=uiHoursPaint(row);uiMessage(hourError?hourError.message:'Unsaved changes — click Save Changes.',!!hourError);if(input.dataset.key==='department')uiSuggestions(row);
  if(['work_date','department','section','level','line_no'].includes(input.dataset.key))void uiRefreshManpower(row)
 };
 $('uiBody').onchange=e=>{
