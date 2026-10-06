@@ -122,6 +122,21 @@ html,body{min-height:100%}
 #uiTable input::-webkit-calendar-picker-indicator{opacity:1}#uiTable input:focus::-webkit-calendar-picker-indicator{opacity:1}
 #uiTable .ui-totals th{height:26px;font-size:11px;background:#FFF2CC}
 @media print{#uiTable input{border:0;outline:none;background:transparent}}
+
+/* Keep each report's complete heading and totals inside its own scroll viewport. */
+.table-scroll{overflow:auto;max-height:var(--table-scroll-height,65vh);scrollbar-gutter:stable;scrollbar-width:auto;scrollbar-color:#858585 #eee;position:relative}
+.table-scroll::-webkit-scrollbar{width:14px;height:14px}
+.table-scroll::-webkit-scrollbar-track{background:#eee}
+.table-scroll::-webkit-scrollbar-thumb{background:#858585;border:3px solid #eee;border-radius:8px}
+.table-scroll table{border-collapse:separate;border-spacing:0;border-top:1px solid #999;border-left:1px solid #999}
+.table-scroll table th,.table-scroll table td{border-top-width:0;border-left-width:0}
+.table-scroll thead{position:sticky;top:0;z-index:5;background:#fff}
+.table-scroll thead th,.table-scroll thead td{background-clip:border-box}
+#otcTable thead th,#dprTable thead th{position:relative;top:auto}
+@media print{
+ .table-scroll{overflow:visible!important;max-height:none!important;height:auto!important;scrollbar-gutter:auto}
+ .table-scroll thead{position:static!important}
+}
 </style></head><body>
 <div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button><button class="tab" data-t="p3">Department &amp; Section Setup</button><button class="tab" data-t="p4">OT Cost Data</button><button class="tab" data-t="p5">Daily Punch Report</button><button class="tab" data-t="p6">Line &amp; Level Settings</button><button class="tab" data-t="p7">User Interface</button></div>
 <div id="p1">
@@ -1081,4 +1096,35 @@ $('cc').addEventListener('click',e=>{const b=e.target.closest('.png');if(!b)retu
  sv.setAttribute('font-family','Arial');sv.setAttribute('width',w);sv.setAttribute('height',h);
  const im=new Image();im.onload=()=>{const c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,w,h);x.drawImage(im,0,0);const a=document.createElement('a');a.href=c.toDataURL('image/png');a.download='chart.png';a.click()};
  im.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(sv))});
+
+// Use one inner viewport per table; the entire thead stays together, including totals.
+(()=>{
+ const tables=document.querySelectorAll('#p1 table,#t2,#p3 .ds-table,#otcTable,#dprTable,#p6 .ds-table,#uiTable');
+ const viewports=Array.from(tables,table=>{
+  let viewport=table.parentElement;
+  if(!viewport.matches('.wrap,.otc-table-wrap,.dpr-table-wrap')){
+   viewport=document.createElement('div');table.before(viewport);viewport.append(table);
+  }
+  viewport.classList.add('table-scroll');
+  viewport.tabIndex=0;
+  viewport.setAttribute('role','region');
+  viewport.setAttribute('aria-label',document.querySelector('.tab[data-t="'+table.closest('[id^="p"]').id+'"]')?.textContent.trim()+' table — scroll to view more rows and columns');
+  return viewport;
+ });
+ let pending=false;
+ function resizeTables(){
+  pending=false;
+  for(const viewport of viewports){
+   if(!viewport.getClientRects().length)continue;
+   const available=Math.max(180,window.innerHeight-viewport.getBoundingClientRect().top-16);
+   viewport.style.setProperty('--table-scroll-height',available+'px');
+  }
+ }
+ function schedule(){if(!pending){pending=true;requestAnimationFrame(resizeTables)}}
+ window.addEventListener('resize',schedule);
+ document.querySelectorAll('.tab').forEach(tab=>tab.addEventListener('click',schedule));
+ const observer=new ResizeObserver(schedule);
+ document.querySelectorAll('.tabs,.bar,.ds-head,.ds-toolbar,.otc-head,.dpr-head').forEach(el=>observer.observe(el));
+ schedule();
+})();
 </script></body></html>
