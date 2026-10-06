@@ -120,6 +120,7 @@ html,body{min-height:100%}
 #uiTable input[type=number]{appearance:textfield;-moz-appearance:textfield;text-align:center}
 #uiTable input::-webkit-inner-spin-button,#uiTable input::-webkit-outer-spin-button{appearance:none;margin:0}
 #uiTable input::-webkit-calendar-picker-indicator{opacity:1}#uiTable input:focus::-webkit-calendar-picker-indicator{opacity:1}
+#uiTable .ui-totals th{height:26px;font-size:11px;background:#FFF2CC}
 @media print{#uiTable input{border:0;outline:none;background:transparent}}
 </style></head><body>
 <div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button><button class="tab" data-t="p3">Department &amp; Section Setup</button><button class="tab" data-t="p4">OT Cost Data</button><button class="tab" data-t="p5">Daily Punch Report</button><button class="tab" data-t="p6">Line &amp; Level Settings</button><button class="tab" data-t="p7">User Interface</button></div>
@@ -236,14 +237,16 @@ html,body{min-height:100%}
 <div id="p7" class="hide">
   <div class="bar">
     <strong>User Interface</strong>
+    <label for="uiDate">Date</label><input id="uiDate" type="date" style="width:150px" aria-label="User Interface date filter">
     <button id="uiAdd">+ Add Row</button><button id="uiSave">Save Changes</button>
-    <button class="g" id="uiReload">Reload</button><button class="g" id="uiExport">Export CSV</button>
+    <button class="g" id="uiReload">Reload</button><button class="g" id="uiExcel">Export Excel</button><button class="g" id="uiPdf">Export PDF</button>
     <span class="hint" id="uiMsg" role="status" aria-live="polite">Enter data directly in the cells, then save.</span>
   </div>
   <div class="wrap"><table id="uiTable"><colgroup id="uiCols"></colgroup><thead id="uiHead"></thead><tbody id="uiBody"></tbody></table></div>
   <datalist id="uiDepartments"></datalist><datalist id="uiSections"></datalist><datalist id="uiLevels"></datalist>
 </div>
 
+<script src="user_interface_exports.js?build=20261006_1"></script>
 <dialog id="dlg"><form id="f" novalidate>
 <div class="dh" id="dt">New Entry</div>
 <div class="fb">
@@ -580,21 +583,30 @@ const UI_SPEC=[
  ['reason_eot','Reason EOT','text',187],['responsible_department','Responsible department','text',129]
 ];
 let UI_ROWS=[],uiDirty=new Set(),uiBusy=false,uiLoaded=false,uiReady=false;
-function uiBlank(){return {id:crypto.randomUUID(),updated_at:null,...Object.fromEntries(UI_SPEC.map(([key])=>[key,'']))}}
-function uiHasData(row){return UI_SPEC.some(([key])=>row[key]!==null&&row[key]!==undefined&&String(row[key]).trim()!=='')}
+function uiBlank(){return {id:crypto.randomUUID(),updated_at:null,...Object.fromEntries(UI_SPEC.map(([key])=>[key,''])),work_date:$('uiDate').value}}
+function uiHasData(row){return UI_SPEC.some(([key])=>!['work_date','total_manpower'].includes(key)&&row[key]!==null&&row[key]!==undefined&&String(row[key]).trim()!=='')}
 function uiMessage(message,bad=false){$('uiMsg').textContent=message;$('uiMsg').style.color=bad?'#b42318':'#166534'}
 function uiControls(){
- for(const id of ['uiAdd','uiSave','uiExport'])$(id).disabled=uiBusy||!uiReady;
+ for(const id of ['uiAdd','uiSave','uiExcel','uiPdf','uiDate'])$(id).disabled=uiBusy||!uiReady;
  $('uiReload').disabled=uiBusy;
  document.querySelectorAll('#uiBody input').forEach(input=>input.disabled=uiBusy||!uiReady)
 }
+function uiVisibleRows(){const date=$('uiDate').value;return UI_ROWS.filter(row=>!date||row.work_date===date||!row.work_date&&!uiHasData(row))}
+function uiRecalcTotal(row){
+ const fields=UI_SPEC.slice(UI_SPEC.findIndex(([key])=>key==='ot_5_pm'),UI_SPEC.findIndex(([key])=>key==='staff')+1).map(([key])=>key),value=fields.some(key=>row[key]!==''&&row[key]!=null)?fields.reduce((sum,key)=>sum+(Number(row[key])||0),0):null;
+ if(row.total_manpower!==value){row.total_manpower=value;if(uiHasData(row))uiDirty.add(row.id)}
+ const i=UI_ROWS.indexOf(row),cell=$('uiBody').querySelector(`input[data-row="${i}"][data-key="total_manpower"]`);if(cell)cell.value=value??'';
+}
+function uiColumnTotals(){return Object.fromEntries(UI_SPEC.filter(([, ,type])=>type==='number').map(([key])=>[key,uiVisibleRows().reduce((sum,row)=>sum+(Number(row[key])||0),0)]))}
+function uiUpdateTotals(){const totals=uiColumnTotals();for(const key in totals){const el=$('uiTotal_'+key);if(el)el.textContent=Number(totals[key].toFixed(6))}}
 function uiDraw(){
- while(UI_ROWS.length<9)UI_ROWS.push(uiBlank());
+ while(uiVisibleRows().length<9)UI_ROWS.push(uiBlank());
  $('uiCols').innerHTML=UI_SPEC.map(([, , ,width])=>`<col style="width:${width}px">`).join('');
- $('uiHead').innerHTML='<tr>'+UI_SPEC.map(([,label])=>`<th>${E(label)}</th>`).join('')+'</tr>';
- $('uiBody').innerHTML=UI_ROWS.map((row,i)=>'<tr>'+UI_SPEC.map(([key,label,type])=>
-  `<td><input data-row="${i}" data-key="${key}" aria-label="Row ${i+1} ${E(label)}" type="${type==='number'?'number':type==='date'?'date':'text'}"${type==='number'?` min="0" step="${key==='asking_hour'?'any':'1'}"`:''}${['department','section','level'].includes(key)?` list="ui${key==='department'?'Departments':key==='section'?'Sections':'Levels'}"`:''} ${key==='present_manpower'?' readonly title="From Daily Punch Report"':''} value="${E(row[key]??'')}"></td>`).join('')+'</tr>').join('');
- uiSuggestions();uiControls()
+ for(const row of UI_ROWS)uiRecalcTotal(row);
+ $('uiHead').innerHTML='<tr>'+UI_SPEC.map(([,label])=>`<th>${E(label)}</th>`).join('')+'</tr><tr class="ui-totals">'+UI_SPEC.map(([key,,type],i)=>`<th${type==='number'?` id="uiTotal_${key}"`:''}>${i===0?'Total':''}</th>`).join('')+'</tr>';
+ $('uiBody').innerHTML=uiVisibleRows().map(row=>{const i=UI_ROWS.indexOf(row);return '<tr>'+UI_SPEC.map(([key,label,type])=>
+  `<td><input data-row="${i}" data-key="${key}" aria-label="Row ${i+1} ${E(label)}" type="${type==='number'?'number':type==='date'?'date':'text'}"${type==='number'?` min="0" step="${key==='asking_hour'?'any':'1'}"`:''}${['department','section','level'].includes(key)?` list="ui${key==='department'?'Departments':key==='section'?'Sections':'Levels'}"`:''} ${['present_manpower','total_manpower'].includes(key)?` readonly title="${key==='present_manpower'?'From Daily Punch Report':'5.00 PM through Staff'}"`:''} value="${E(row[key]??'')}"></td>`).join('')+'</tr>'}).join('');
+ uiSuggestions();uiUpdateTotals();uiControls()
 }
 const uiPunchCache=new Map();
 const uiMatchText=value=>String(value??'').trim().replace(/\s+/g,' ').toLowerCase();
@@ -618,7 +630,7 @@ function uiPunchCount(row,rows){
 }
 async function uiRefreshManpower(row){
  const key=uiPunchKey(row),revision=(row._punchRevision||0)+1;row._punchRevision=revision;row._punchError='';
- function update(value){if(row.present_manpower!==value){row.present_manpower=value;if(uiHasData(row))uiDirty.add(row.id)}const i=UI_ROWS.indexOf(row);const cell=$('uiBody').querySelector(`input[data-row="${i}"][data-key="present_manpower"]`);if(cell)cell.value=value??''}
+ function update(value){if(row.present_manpower!==value){row.present_manpower=value;if(uiHasData(row))uiDirty.add(row.id)}const i=UI_ROWS.indexOf(row);const cell=$('uiBody').querySelector(`input[data-row="${i}"][data-key="present_manpower"]`);if(cell)cell.value=value??'';uiUpdateTotals()}
  if(!key){update(null);return}
  update(null);
  try{
@@ -682,6 +694,7 @@ function uiValidate(row){
 $('uiBody').oninput=e=>{
  const input=e.target.closest('input[data-key]');if(!input||uiBusy||!uiReady)return;
  const row=UI_ROWS[Number(input.dataset.row)];row[input.dataset.key]=input.value;uiDirty.add(row.id);input.removeAttribute('aria-invalid');
+ uiRecalcTotal(row);uiUpdateTotals();
  uiMessage('Unsaved changes — click Save Changes.');if(input.dataset.key==='department')uiSuggestions(row);
  if(['work_date','department','section','level','line_no'].includes(input.dataset.key))void uiRefreshManpower(row)
 };
@@ -704,7 +717,7 @@ $('uiSave').onclick=async()=>{
  try{
   uiBusy=true;uiControls();uiPunchCache.clear();
   await Promise.all(pending.map(uiRefreshManpower));
-  for(const row of pending){if(row._punchError)throw new Error(row._punchError);uiValidate(row)}
+  for(const row of pending){uiRecalcTotal(row);if(row._punchError)throw new Error(row._punchError);uiValidate(row)}
   if(!parent||typeof parent.workHourUserInterfaceSave!=='function')throw new Error('Database bridge is unavailable.');
   uiBusy=true;uiControls();
   for(const row of pending){
@@ -719,7 +732,14 @@ $('uiSave').onclick=async()=>{
  finally{uiBusy=false;uiDraw()}
 };
 $('uiReload').onclick=uiLoad;
-$('uiExport').onclick=()=>dl([UI_SPEC.map(([,label])=>label),...UI_ROWS.filter(uiHasData).map(row=>UI_SPEC.map(([key])=>row[key]??''))],'user_interface.csv');
+$('uiDate').onchange=async()=>{
+ const date=$('uiDate').value;for(const row of UI_ROWS)if(!uiHasData(row)&&!row.updated_at){row.work_date=date;uiDirty.delete(row.id)}
+ uiDraw();uiMessage(date?'Showing '+date+'. New rows use this date.':'Showing all dates.');
+ await Promise.all(uiVisibleRows().filter(uiHasData).map(uiRefreshManpower));
+};
+function uiExportRows(){return uiVisibleRows().map(row=>Object.fromEntries(UI_SPEC.map(([key])=>[key,row[key]??''])))}
+$('uiExcel').onclick=()=>{try{const blob=UserInterfaceExports.xlsx(UI_SPEC,uiExportRows(),uiColumnTotals());const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='User_Interface'+($('uiDate').value?'_'+$('uiDate').value:'')+'.xlsx';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}catch(e){uiMessage('Excel export failed: '+e.message,true)}};
+$('uiPdf').onclick=()=>{const w=window.open('','_blank');if(!w){uiMessage('Allow popups to export PDF.',true);return}w.document.write(UserInterfaceExports.printHtml(UI_SPEC,uiExportRows(),uiColumnTotals()));w.document.close();w.onload=()=>{w.focus();w.print()}};
 window.addEventListener('beforeunload',e=>{if(uiDirty.size){e.preventDefault();e.returnValue=''}});
 
 // ---------- Department & Section Setup ----------
