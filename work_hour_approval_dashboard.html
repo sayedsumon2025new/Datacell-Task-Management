@@ -269,13 +269,13 @@ Quick fill: asking manpower from 5.00 PM until <select id="fe" style="width:110p
 const $=id=>document.getElementById(id);
 const E=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const KEY='ekwl_wh_approval_v1',MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const HDR=["Date","Department","Section","Level","Line No","Buyer","EWO","Present Manpower","Asking manpowar","Asking Hour","5.00 PM","6.00 PM","7.00 PM","8.00 PM","9.00 PM","10.00 PM","11.00 PM","12.00 AM","1.00 AM","Input man","Iron man","pack","Quality","Staff","Total Manpower","Reason EOT","Responsible department"];
+const HDR=["Date","Department","Section","Level","Line No","Buyer","EWO","Present Manpower","Asking manpowar","Asking Hour","5.00 PM","6.00 PM","7.00 PM","8.00 PM","9.00 PM","10.00 PM","11.00 PM","12.00 PM","1.00 AM","Input man","Iron man","pack","Quality","Staff","Total Manpower","Reason EOT","Responsible department"];
 const W=[75,75,119,90,90,82,54,54,72,54,54,54,55,56,66,74,74,76,81,35,35,36,51,36,59,169,118];
 const COL={Spot:'#E2EFDA',Repoter:'#9DC3E6',Recone:'#F8CBAD','Management Staff':'#D9E1F2'};
 const NUM=[3,4,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20], LVS=['Level-03','Level-04','Level-06'];
 // field spec: index in v, label, group (L = sewing line only), grid, type
 const SPEC=[[0,'Line No','', 1],[1,'Buyer','L',1],[2,'EWO','L',1],[3,'Present manpower','',1],[4,'Asking manpower','',1],[5,'Asking hour','',1],
-...[ '5.00 PM','6.00 PM','7.00 PM','8.00 PM','9.00 PM','10.00 PM','11.00 PM','12.00 AM','1.00 AM'].map((t,i)=>[6+i,t,'',2]),
+...[ '5.00 PM','6.00 PM','7.00 PM','8.00 PM','9.00 PM','10.00 PM','11.00 PM','12.00 PM','1.00 AM'].map((t,i)=>[6+i,t,'',2]),
 [15,'Input man','L',3],[16,'Iron man','L',3],[17,'Pack','L',3],[18,'Quality','L',3],[19,'Staff','L',3],[20,'Total manpower','',3],[21,'Reason EOT','L',3],[22,'Responsible dept','L',3]];
 const TXT=[0,1,21,22];
 let R=[],APPROVAL_ROWS=[],date='',nid=0,cur=null,approvalLoaded=false,approvalRevision=0;
@@ -406,7 +406,7 @@ function buildForm(){
  SPEC.forEach(([i,l,g,gr])=>{const d=document.createElement('div');if(g)d.dataset.g=g;if(i==0)d.id='n0w';
   d.innerHTML=`<label id="l${i}">${l}</label><input id="f${i}" ${TXT.includes(i)?(i==1?'list="bl"':i==21?'list="rl"':i==22?'list="dl"':''):'type="number" min="0" step="1"'}>`;
   $('g'+gr).appendChild(d)});
- $('fe').innerHTML=['5.00 PM','6.00 PM','7.00 PM','8.00 PM','9.00 PM','10.00 PM','11.00 PM','12.00 AM','1.00 AM'].map((t,i)=>`<option value="${i}" ${i==5?'selected':''}>${t}</option>`).join('');
+ $('fe').innerHTML=['5.00 PM','6.00 PM','7.00 PM','8.00 PM','9.00 PM','10.00 PM','11.00 PM','12.00 PM','1.00 AM'].map((t,i)=>`<option value="${i}" ${i==5?'selected':''}>${t}</option>`).join('');
  document.body.insertAdjacentHTML('beforeend','<datalist id="bl"><option>Tommy<option>Carhartt<option>M&S<option>Ralph Lauren<option>Varner<option>BESTSELLER</datalist><datalist id="rl"><option>Shipment<option>Pack Balance<option>Needle cut</datalist><datalist id="dl"><option>M&M<option>Production</datalist><datalist id="nl"><option>Finishing<option>Quality<option>Spot<option>Repoter<option>Recone<option>Management Staff<option>Automation<option>Afterwash<option>Cutting<option>Embellishment<option>Embroidery<option>HR, Admin &amp; Compliance<option>Industrial Engineering<option>Maintenance<option>Material Control<option>Pilot Run &amp; Training Line<option>Printing<option>Product Development Center<option>Quality Assurance</datalist>')}
 function sync(){const k=$('k').value;
  document.querySelectorAll('[data-g=L]').forEach(e=>e.classList.toggle('hide',k!='L'));
@@ -593,7 +593,7 @@ const UI_SPEC=[
  ['line_no','Line No','text',72],['buyer','Buyer','text',91],['ewo','EWO','text',57],
  ['present_manpower','Present Manpower','number',60],['asking_manpower','Asking manpower','number',78],['asking_hour','Asking Hour','number',59],
  ['ot_5_pm','5.00 PM','number',60],['ot_6_pm','6.00 PM','number',60],['ot_7_pm','7.00 PM','number',61],['ot_8_pm','8.00 PM','number',60],
- ['ot_9_pm','9.00 PM','number',68],['ot_10_pm','10.00 PM','number',94],['ot_11_pm','11.00 PM','number',68],['ot_12_am','12.00 AM','number',80],['ot_1_am','1.00 AM','number',92],
+ ['ot_9_pm','9.00 PM','number',68],['ot_10_pm','10.00 PM','number',94],['ot_11_pm','11.00 PM','number',68],['ot_12_am','12.00 PM','number',80],['ot_1_am','1.00 AM','number',92],
  ['iron_man','Iron Man','number',92],['staff','Staff','number',39],['total_manpower','Total Manpower','number',64],
  ['reason_eot','Reason EOT','text',187],['responsible_department','Responsible department','text',129]
 ];
