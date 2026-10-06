@@ -126,10 +126,10 @@ html,body{min-height:100%}
 <div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button><button class="tab" data-t="p3">Department &amp; Section Setup</button><button class="tab" data-t="p4">OT Cost Data</button><button class="tab" data-t="p5">Daily Punch Report</button><button class="tab" data-t="p6">Line &amp; Level Settings</button><button class="tab" data-t="p7">User Interface</button></div>
 <div id="p1">
 <div class="bar">
-<button id="add">+ New Entry</button>
+<button class="g" id="whReload">Reload</button>
 <label>Report date <input type="date" id="rd" style="width:150px"></label>
 <button class="g" id="exp">Export CSV</button>
-<button class="r" id="rst">Reset to sample data</button>
+
 <input id="q1" placeholder="Search line, buyer, EWO…" style="width:210px">
 <label style="display:flex;align-items:center;gap:6px">Department <select id="whDept" style="width:190px"><option value="">All departments</option></select></label>
 <label style="display:flex;align-items:center;gap:6px">Section <select id="whSection" style="width:170px"><option value="">All sections</option></select></label>
@@ -217,7 +217,7 @@ html,body{min-height:100%}
 <div id="p6" class="hide">
   <div class="ds-wrap">
     <h2 style="font-size:20px;margin:0 0 8px">Line &amp; Level Settings</h2>
-    <p style="font-size:13px;color:#555;line-height:1.5">Edit a sewing line's number and level, or delete the line. Changes also update the Work Hour Approval Request and its totals.</p>
+    <p style="font-size:13px;color:#555;line-height:1.5">Edit a sewing line's number and level, or delete the line. This mapping supplies the User Interface level and line autofill.</p>
     <div class="ds-head hide" id="llForm">
       <div class="ds-f"><label for="llLine">Line No</label><input id="llLine" type="number" min="1" step="1"></div>
       <div class="ds-f"><label for="llLevel">Level</label><input id="llLevel" list="llLevels" placeholder="e.g. Level-03"></div>
@@ -266,7 +266,6 @@ Quick fill: asking manpower from 5.00 PM until <select id="fe" style="width:110p
 </form></dialog>
 
 <script>
-const DEF=[{"k":"L","lv":"Level-03","v":["1","Tommy","271720","26","23","11","23","23","23","23","5","5","","","","","6","3","3","3","20","",""]},{"k":"L","lv":"Level-03","v":["2","Carhartt","271293","42","42","8","42","12","12","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-03","v":["3","M&S","270713","41","41","8","41","","","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-03","v":["4","Carhartt","271289","43","43","8","43","","","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-03","v":["5","Tommy","271692","30","30","8","30","6","6","6","6","6","","","","","8","4","4","3","25","",""]},{"k":"L","lv":"Level-03","v":["6","Ralph Lauren","271682","33","33","8","33","18","18","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-03","v":["7","Carhartt","271305","43","43","8","43","4","4","4","4","4","","","","","6","4","4","2","20","",""]},{"k":"L","lv":"Level-03","v":["8","M&S","270713","40","40","8","40","4","4","4","4","4","","","","","6","4","4","2","20","",""]},{"k":"L","lv":"Level-03","v":["9","Ralph Lauren","271772","37","44","13","44","44","44","44","44","44","","","","1","12","4","6","3","70","","M&M"]},{"k":"L","lv":"Level-03","v":["10","Ralph Lauren","272004","34","37","13","37","37","37","37","37","37","3","3","","1","18","7","9","5","80","","M&M"]},{"k":"L","lv":"Level-03","v":["11","Tommy","271424","40","35","15","35","35","35","35","35","35","35","35","","1","12","8","12","6","109","",""]},{"k":"L","lv":"Level-03","v":["12","Tommy","270797","38","40","11","40","40","40","40","4","4","","","","","6","4","4","2","20","",""]},{"k":"L","lv":"Level-03","v":["13","Tommy","270795","39","39","8","39","6","6","6","6","6","","","","","6","3","3","2","20","",""]},{"k":"L","lv":"Level-03","v":["14","Carhartt","271309","33","33","8","33","6","6","6","6","6","","","","","6","3","3","2","20","",""]},{"k":"L","lv":"Level-03","v":["15","M&S","271534","37","37","8","37","11","11","11","11","11","","","","","8","4","4","3","30","","M&M"]},{"k":"L","lv":"Level-03","v":["16","Tommy","270903","37","38","11","38","38","38","38","4","4","","","","","6","4","4","2","20","",""]},{"k":"L","lv":"Level-03","v":["17","M&S","270740","41","41","8","41","20","20","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-03","v":["18","Tommy","271946","39","42","13","42","42","42","42","42","42","","","","1","14","4","6","3","70","","M&M"]},{"k":"L","lv":"Level-03","v":["19","Tommy","271754","39","39","13","39","39","39","39","39","39","","","","1","6","4","6","2","58","","M&M"]},{"k":"L","lv":"Level-03","v":["20","Tommy","271687","39","44","15","44","44","44","44","44","44","44","44","","2","24","8","12","6","140","","M&M"]},{"k":"L","lv":"Level-03","v":["21","Tommy","271720","32","34","11","34","34","34","34","3","3","","","","","8","4","4","3","22","",""]},{"k":"L","lv":"Level-03","v":["22","Varner","271949","35","35","8","35","18","18","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-03","v":["23","Tommy","270903","34","34","8","34","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-03","v":["Finishing","","","","","8","50","50","50","50","50","50","","","","","","","","","50","",""]},{"k":"S","lv":"Level-03","v":["Quality","","","","","8","","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-03","v":["Spot","","","","","8","10","10","10","10","10","10","3","3","","","","","","","13","",""]},{"k":"S","lv":"Level-03","v":["Repoter","","","","","8","1","1","1","1","1","1","","","","","","","","","1","",""]},{"k":"S","lv":"Level-03","v":["Recone","","","","","8","1","1","1","1","1","1","","","","","","","","","1","",""]},{"k":"S","lv":"Level-03","v":["Management Staff","","","","","8","33","33","33","33","33","33","13","13","","","","","","","46","",""]},{"k":"L","lv":"Level-04","v":["24","M&S","270574","37","43","15","43","43","43","43","43","43","43","43","","4","16","8","16","6","136","Shipment","M&M"]},{"k":"L","lv":"Level-04","v":["25","M&S","270841","39","39","8","39","","","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["26","BESTSELLER","271095","40","40","11","40","40","40","40","17","17","","","","","4","4","4","1","30","Pack Balance","Production"]},{"k":"L","lv":"Level-04","v":["27","M&S","270911","42","42","8","42","13","13","13","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["28","Tommy","270962","37","37","8","37","20","20","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["29","M&S","270741","43","43","8","43","15","15","15","","","","","","","","","","","0","","Production"]},{"k":"L","lv":"Level-04","v":["30","Tommy","271178","41","41","0","41","","","","","","","","","","6","4","4","1","15","Needle cut",""]},{"k":"L","lv":"Level-04","v":["31","Tommy","271753","34","34","8","34","","","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["32","M&S","270187","38","38","10","38","38","38","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["33","Tommy","271178","41","41","10","41","41","41","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["34","Ralph Lauren","271937","38","38","11","38","38","38","38","10","10","","","","","6","3","5","1","25","","Production"]},{"k":"L","lv":"Level-04","v":["35","Ralph Lauren","272720","41","43","13","43","43","43","43","43","43","","","","2","12","4","8","3","72","","M&M"]},{"k":"L","lv":"Level-04","v":["36","Tommy","271022","42","42","8","42","12","12","12","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["37","M&S","270461","41","41","8","41","22","22","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["38","Tommy","271374","40","40","10","40","40","40","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["39","Ralph Lauren","272720","41","43","13","43","43","43","43","43","43","","","","2","12","4","8","3","72","","M&M"]},{"k":"L","lv":"Level-04","v":["40","M&S","270912","39","43","13","43","43","43","43","43","43","","","","2","8","4","8","3","68","",""]},{"k":"L","lv":"Level-04","v":["41","M&S","270713","42","42","8","42","12","12","12","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["42","Varner","271949","43","43","8","43","12","12","12","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["43","Ralph Lauren","272720","40","43","13","43","43","43","43","43","43","","","","2","12","4","8","3","72","","M&M"]},{"k":"L","lv":"Level-04","v":["44","Tommy","271955","33","33","8","33","","","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-04","v":["45","Tommy","271531","38","38","8","38","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-04","v":["Finishing","","","","","8","","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-04","v":["Quality","","","","","8","","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-04","v":["Spot","","","","","8","12","12","12","12","12","12","","","","","","","","","12","",""]},{"k":"S","lv":"Level-04","v":["Repoter","","","","","8","","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-04","v":["Recone","","","","","8","","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-04","v":["Management Staff","","","","","8","14","14","14","14","14","14","","","","","","","","","14","",""]},{"k":"S","lv":"Level-04","v":["Automation","","","","","8","","","","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-06","v":["47","Tommy","270905","38","38","8","38","","","","","","","","","","","","","","0","",""]},{"k":"L","lv":"Level-06","v":["48","M&S","270741","31","31","8","31","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-06","v":["Spot","","","","","8","","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-06","v":["Recone","","","","","","","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-06","v":["Management Staff","","","","","8","","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-06","v":["Finishing","","","","","8","","","","","","","","","","","","","","","0","",""]},{"k":"S","lv":"Level-06","v":["Afterwash","","","56","55","13","","","","","","","","","","","","","","","0","",""]},{"k":"D","lv":"","v":["Cutting","","","256","250","11","250","250","250","250","","","","","","","","","","","0","",""]},{"k":"D","lv":"","v":["Embellishment","","","20","21","11","21","21","21","21","","","","","","","","","","","0","",""]},{"k":"D","lv":"","v":["Embroidery","","","75","79","79","79","50","50","50","","","","","","","","","","","0","",""]},{"k":"D","lv":"","v":["Finishing","","","271","166","10","166","130","130","130","9","9","","","","","","","","","9","",""]},{"k":"D","lv":"","v":["HR, Admin & Compliance","","","236","","10","","","","","","","","","","","","","","","0","",""]},{"k":"D","lv":"","v":["Industrial Engineering","","","11","","11","","","","","","","","","","","","","","","0","",""]},{"k":"D","lv":"","v":["Maintenance","","","26","1","13","1","1","1","1","","","","","","","","","","","0","",""]},{"k":"D","lv":"","v":["Material Control","","","109","240","10","240","143","143","143","18","18","","","","","","","","","18","",""]},{"k":"D","lv":"","v":["Pilot Run & Training Line","","","62","","13","","","","","","","","","","","","","","","0","",""]},{"k":"D","lv":"","v":["Printing","","","116","115","11","115","90","90","90","","","","","","","","","","","0","",""]},{"k":"D","lv":"","v":["Product Development Center","","","186","","11","","","","","","","","","","","","","","","0","",""]},{"k":"D","lv":"","v":["Quality Assurance","","","423","98","11","98","98","98","98","","","","","","","","","","","0","",""]}];
 const $=id=>document.getElementById(id);
 const E=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const KEY='ekwl_wh_approval_v1',MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -279,14 +278,14 @@ const SPEC=[[0,'Line No','', 1],[1,'Buyer','L',1],[2,'EWO','L',1],[3,'Present ma
 ...[ '5.00 PM','6.00 PM','7.00 PM','8.00 PM','9.00 PM','10.00 PM','11.00 PM','12.00 AM','1.00 AM'].map((t,i)=>[6+i,t,'',2]),
 [15,'Input man','L',3],[16,'Iron man','L',3],[17,'Pack','L',3],[18,'Quality','L',3],[19,'Staff','L',3],[20,'Total manpower','',3],[21,'Reason EOT','L',3],[22,'Responsible dept','L',3]];
 const TXT=[0,1,21,22];
-let R=[],date='',nid=0,cur=null;
+let R=[],APPROVAL_ROWS=[],date='',nid=0,cur=null,approvalLoaded=false,approvalRevision=0;
 let dbReady=false,dbRevision='',whBusy=false,llEditId=null,cellEdit=null;
 function whSetMsg(msg,bad=false){
  for(const id of ['whMsg','llMsg']){$(id).textContent=msg;$(id).style.color=bad?'#b42318':'#166534'}
 }
 function whSetBusy(busy){
  whBusy=busy;
- for(const id of ['add','rd','rst','whSave','del','llSave','llCancel','llReload','llLine','llLevel','whDept','whSection','lf','q1'])$(id).disabled=busy||!dbReady;
+ for(const id of ['whReload','rd','whSave','del','llSave','llCancel','llReload','llLine','llLevel','whDept','whSection','lf','q1'])$(id).disabled=busy||!dbReady;
  document.querySelectorAll('#llBody button').forEach(b=>b.disabled=busy||!dbReady)
 }
 async function load(){
@@ -297,9 +296,9 @@ async function load(){
   if(!parent||typeof parent.workHourApprovalLoadState!=='function')throw new Error('Open this dashboard from Datacell Task Management.');
   const s=await parent.workHourApprovalLoadState();
   if(!s||!Array.isArray(s.R)||!s.updatedAt)throw new Error('Saved report is unavailable.');
-  R=s.R;date=s.date||'';dbRevision=s.updatedAt;
+  R=s.R;dbRevision=s.updatedAt;
   nid=0;R.forEach(r=>r.id=nid++);$('rd').value=date;dbReady=true;
-  llResetForm();render();llDraw();whSetMsg('Saved report loaded. Click a cell to edit; Enter or Tab saves, Esc cancels.');return true
+  llResetForm();llDraw();await approvalLoad();return true
  }catch(e){console.error('Work Hour Approval load failed:',e);dbReady=false;whSetMsg('Load failed: '+e.message,true);return false}
  finally{whSetBusy(false);$('llReload').disabled=false}
 }
@@ -325,13 +324,13 @@ function syncLevels(){
  }
  $('llLevels').innerHTML=levels.map(l=>`<option value="${E(l)}"></option>`).join('')
 }
-function fd(){if(!date)return'00-Jan-00';const p=date.split('-');return p[2]+'-'+MON[p[1]-1]+'-'+p[0].slice(2)}
+function fd(value=date){if(!value)return'';const p=value.split('-');return p[2]+'-'+MON[p[1]-1]+'-'+p[0].slice(2)}
 function sums(rs){const s={};NUM.forEach(i=>s[i]=0);rs.forEach(r=>NUM.forEach(i=>s[i]+=+r.v[i]||0));return s}
 function ht(r){const a=+r.v[5]||0,l=r.lv,n=r.v[0];
  if(r.k=='L')return l=='Level-04'?(a>=10?22:21):l=='Level-06'?21:a>=15?26:a>=13?32:24;
  if(r.k=='S')return l=='Level-03'?18:l=='Level-04'?(['Finishing','Quality','Management Staff'].includes(n)?24:21):({'Management Staff':38,Finishing:38,Afterwash:40}[n]||21);
  return 27}
-function row(r,dt){const v=r.v;let c;
+function row(r,dt){if(r.sourceId)dt=fd(r.work_date);const v=r.v;let c;
  const labels=reportRowLabels(r);
  if(r.k=='L'||r.k=='S')c=[dt,labels.department,labels.section,r.lv,...v];else c=[dt,labels.department,labels.section,'','',...v.slice(1)];
  let bg=r.k=='S'?(COL[v[0]]||''):'';if(r.lv=='Level-06'&&v[0]=='Recone')bg='#9DC3E6';
@@ -340,6 +339,7 @@ function row(r,dt){const v=r.v;let c;
   return `<td data-col="${i}" class="${i==0?'d':i==1?'dp':(i==2||i==3||(i==5&&r.k=='L'))?'l':''}${field?' cell-editable':''}"${field?` data-field="${field}" tabindex="0" title="Click to edit · Enter/Tab saves · Esc cancels"`:''}${bg&&i>=2?` style="background:${bg}"`:''}>${E(x)}</td>`
  }).join('')+'</tr>'}
 function cellField(r,col){
+ if(r.sourceId)return '';
  if(col===0)return 'date';
  if(col===2)return r.k==='D'?'v0':'level';
  if(col===3)return r.k==='D'?'':'level';
@@ -355,33 +355,52 @@ function totRow(lv,s){const big=lv=='Level-03'?'15px':'15px',sm=lv=='Level-06';
  const h={'Level-03':34,'Level-04':30,'Level-06':40}[lv]||30;
  return `<tr class="lt" style="height:${h}px"><td></td><td></td><td class="c"></td><td class="c"></td><td class="c"></td><td class="c" colspan="2" style="font-size:17px">${E(lv.replace('-0','-'))} Total=</td>`+
  vals(s).map((x,j)=>`<td class="c" style="font-size:${sm||(lv=='Level-04'&&j<2)?'10.5px':big}">${E(x)}</td>`).join('')+'</tr>'}
-function reportRowLabels(r){return r.k==='D'?{department:String(r.v[0]||''),section:String(r.v[0]||'')}:{department:'Sewing',section:String(r.lv||'')}}
+function reportRowLabels(r){if(r.sourceId)return {department:r.department,section:r.section};return r.k==='D'?{department:String(r.v[0]||''),section:String(r.v[0]||'')}:{department:'Sewing',section:String(r.lv||'')}}
 function syncReportFilters(){
  const sorted=values=>[...new Set(values.filter(Boolean))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
  function options(id,values,label){const el=$(id),old=el.value;el.innerHTML=`<option value="">${label}</option>`+values.map(v=>`<option value="${E(v)}">${E(v)}</option>`).join('');el.value=values.includes(old)?old:''}
- const departments=sorted(R.map(r=>reportRowLabels(r).department));
+ const departments=sorted(APPROVAL_ROWS.map(r=>reportRowLabels(r).department));
  const setupOrder=DS.map(x=>String(x.department||'')).filter(d=>departments.includes(d));
  options('whDept',[...new Set([...setupOrder,...departments])],'All departments');
  const department=$('whDept').value;
- options('whSection',sorted(R.filter(r=>!department||reportRowLabels(r).department===department).map(r=>reportRowLabels(r).section)),'All sections')
+ options('whSection',sorted(APPROVAL_ROWS.filter(r=>!department||reportRowLabels(r).department===department).map(r=>reportRowLabels(r).section)),'All sections')
 }
 function filteredReportRows(){
  const department=$('whDept').value,section=$('whSection').value,level=$('lf').value,q=$('q1').value.trim().toLowerCase();
- return R.filter(r=>{
+ return APPROVAL_ROWS.filter(r=>{
   const labels=reportRowLabels(r);
-  return (!department||labels.department===department)&&(!section||labels.section===section)&&(!level||r.lv===level)
-   &&(!q||[fd(),labels.department,labels.section,...r.v].some(v=>String(v??'').toLowerCase().includes(q)))
+  return (!date||r.work_date===date)&&(!department||labels.department===department)&&(!section||labels.section===section)&&(!level||r.lv===level)
+   &&(!q||[fd(r.work_date),labels.department,labels.section,...r.v].some(v=>String(v??'').toLowerCase().includes(q)))
  })
 }
-function render(){syncLevels();syncReportFilters();const dt=fd(),visible=filteredReportRows();let h='';
- reportLevels().forEach(lv=>{const rs=visible.filter(r=>r.lv==lv);if(!rs.length)return;rs.forEach(r=>h+=row(r,dt));h+=totRow(lv,sums(rs))});
- const ss=sums(visible.filter(r=>r.k!='D')),dp=visible.filter(r=>r.k=='D'),sd=sums(dp);
- const sv=vals(ss);sv[1]='';
- h+=`<tr class="sub" style="height:34px"><td class="d">${dt}</td><td></td><td class="c"></td><td class="c"></td><td class="c"></td><td class="c" style="font-size:19px">Subtotal</td><td class="c"></td>`+sv.map(x=>`<td class="c">${E(x)}</td>`).join('')+'</tr>';
- dp.forEach(r=>h+=row(r,dt));
- const gv=vals(ss,sd,1);gv[0]=ss[3]+sd[3];gv[1]=ss[4]+sd[4];
- h+=`<tr class="gt" style="height:20px"><td class="d">${dt}</td><td></td><td class="c" style="font-size:10px">Grand Total</td><td class="c"></td><td class="c"></td><td class="c"></td><td class="c"></td>`+gv.map(x=>`<td class="c" style="font-size:14px">${E(x)}</td>`).join('')+'</tr>';
- $('tb').innerHTML=visible.length?h:`<tr><td colspan="${HDR.length}" style="padding:18px;text-align:left">No rows match the selected filters.</td></tr>`}
+function render(){
+ syncLevels();syncReportFilters();const visible=filteredReportRows();let h='';
+ const levels=[...new Set(visible.map(r=>r.lv))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
+ for(const lv of levels){const rows=visible.filter(r=>r.lv===lv);for(const r of rows)h+=row(r,fd(r.work_date));if(lv)h+=totRow(lv,sums(rows))}
+ const totals=vals(sums(visible));
+ h+=`<tr class="gt"><td class="d">${E(fd())}</td><td></td><td>Grand Total</td><td></td><td></td><td></td><td></td>`+totals.map(x=>`<td>${E(x)}</td>`).join('')+'</tr>';
+ $('tb').innerHTML=visible.length?h:`<tr><td colspan="${HDR.length}" style="padding:18px;text-align:left">${APPROVAL_ROWS.length?'No saved entries match the selected filters.':'No saved User Interface entries. Enter data in User Interface and click Save Changes.'}</td></tr>`;
+}
+function approvalRow(entry){
+ const fields=['line_no','buyer','ewo','present_manpower','asking_manpower','asking_hour','ot_5_pm','ot_6_pm','ot_7_pm','ot_8_pm','ot_9_pm','ot_10_pm','ot_11_pm','ot_12_am','ot_1_am',null,'iron_man',null,null,'staff','total_manpower','reason_eot','responsible_department'];
+ return {id:entry.id,sourceId:entry.id,k:'L',lv:entry.level||'',work_date:entry.work_date||'',department:entry.department||'',section:entry.section||'',v:fields.map(key=>key?String(entry[key]??''):'')};
+}
+function approvalSetEntries(entries){
+ approvalRevision++;APPROVAL_ROWS=entries.map(approvalRow);
+ if(!approvalLoaded&&!date){date=[...new Set(entries.map(r=>r.work_date).filter(Boolean))].sort().pop()||'';$('rd').value=date}
+ approvalLoaded=true;render();
+}
+function approvalUpsert(entry){approvalRevision++;const row=approvalRow(entry),index=APPROVAL_ROWS.findIndex(r=>r.sourceId===entry.id);if(index<0)APPROVAL_ROWS.push(row);else APPROVAL_ROWS[index]=row;date=$('uiDate').value||entry.work_date||date;$('rd').value=date;render()}
+async function approvalLoad(){
+ const revision=++approvalRevision;whSetMsg('Loading saved User Interface entries…');
+ try{
+  if(typeof parent.workHourUserInterfaceList!=='function')throw new Error('User Interface database bridge is unavailable.');
+  const entries=await parent.workHourUserInterfaceList();if(!Array.isArray(entries))throw new Error('Saved entries were not returned.');
+  if(revision!==approvalRevision)return;
+  approvalSetEntries(entries);whSetMsg(entries.length+' saved User Interface entry(s) loaded. Edit and save in User Interface.');
+ }catch(e){if(revision===approvalRevision){APPROVAL_ROWS=[];render();whSetMsg('Saved entries load failed: '+e.message,true)}return false}
+}
+$('whReload').onclick=approvalLoad;
 // ---------- form ----------
 function buildForm(){
  SPEC.forEach(([i,l,g,gr])=>{const d=document.createElement('div');if(g)d.dataset.g=g;if(i==0)d.id='n0w';
@@ -414,7 +433,7 @@ $('f').addEventListener('submit',async e=>{e.preventDefault();if(!dbReady||whBus
  if(cur&&cur.lv==lv){next.find(r=>r.id===cur.id).v=v}else{if(cur)next.splice(next.findIndex(r=>r.id===cur.id),1);insert({k,lv,v,id:cur?cur.id:nid++},next)}
  try{await save(next);llResetForm();$('dlg').close()}catch(err){$('err').textContent=err.message}
 });
-$('add').onclick=()=>openF();$('cx').onclick=()=>$('dlg').close();$('k').onchange=sync;
+$('cx').onclick=()=>$('dlg').close();$('k').onchange=sync;
 $('del').onclick=async()=>{if(!cur||whBusy||!confirm('Delete this entry from the saved report?'))return;
  try{await save(R.filter(r=>r.id!==cur.id));llResetForm();$('dlg').close()}catch(err){$('err').textContent=err.message}
 };
@@ -480,11 +499,7 @@ async function commitCellEdit(editor,direction=0){
 }
 $('tb').onclick=e=>{if(e.target.closest('.cell-input'))return;startCellEdit(e.target.closest('td[data-field]'))};
 $('tb').onkeydown=e=>{if(e.target.matches('td[data-field]')&&(e.key==='Enter'||e.key==='F2')){e.preventDefault();startCellEdit(e.target)}};
-$('rd').onchange=async e=>{try{await save(R,e.target.value)}catch(err){$('rd').value=date}};
-$('rst').onclick=async()=>{if(!dbReady||whBusy||!confirm('Discard all changes and restore the original sample data?'))return;
- const rows=JSON.parse(JSON.stringify(DEF));rows.forEach(r=>r.id=nid++);
- try{await save(rows,'');llResetForm()}catch(err){console.error(err)}
-};
+$('rd').onchange=e=>{date=e.target.value;render()};
 $('exp').onclick=()=>{const rows=[HDR];document.querySelectorAll('#tb tr').forEach(tr=>{const a=[];tr.querySelectorAll('td').forEach(td=>{a.push(td.textContent);for(let i=1;i<td.colSpan;i++)a.push('')});rows.push(a)});
  const csv='\ufeff'+rows.map(a=>a.map(x=>'"'+x.replace(/"/g,'""')+'"').join(',')).join('\r\n');
  const l=document.createElement('a');l.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));l.download='work_appval_report.csv';l.click()};
@@ -530,7 +545,7 @@ function r2(){const P='#F8CBAD',G='#A9D08E',T=['5:00 PM','6:00 PM','7:00 PM','8:
    h+=`<td style="background:${P}">${a[0]==null?'':a[0]}</td><td style="background:${G}">${a[1]}</td><td style="${a[2]>TOL()?'background:#f00;color:#fff;font-weight:700':'background:#92D050'}">${a[2]}</td><td style="background:${P}">${a[3]}</td>`}
   h+=`<td class="tt">${d[1]}</td></tr>`});
  $('t2').innerHTML=h+'</tbody>'}
-document.querySelectorAll('.tab').forEach(b=>b.onclick=async()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x==b));['p1','p2','p3','p4','p5','p6','p7'].forEach(p=>$(p).classList.toggle('hide',p!=b.dataset.t));if(b.dataset.t==='p3')await dsLoad();if(b.dataset.t==='p4')await otcInit();if(b.dataset.t==='p5')await dprInit();if(b.dataset.t==='p7'){if(!uiLoaded)await uiLoad();}if(b.dataset.t==='p6'){llDraw();if(!dbReady&&!whBusy)await load()}});
+document.querySelectorAll('.tab').forEach(b=>b.onclick=async()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x==b));['p1','p2','p3','p4','p5','p6','p7'].forEach(p=>$(p).classList.toggle('hide',p!=b.dataset.t));if(b.dataset.t==='p1')await approvalLoad();if(b.dataset.t==='p3')await dsLoad();if(b.dataset.t==='p4')await otcInit();if(b.dataset.t==='p5')await dprInit();if(b.dataset.t==='p7'){if(!uiLoaded)await uiLoad();}if(b.dataset.t==='p6'){llDraw();if(!dbReady&&!whBusy)await load()}});
 r2();
 
 // ---------- Line & Level Settings (shared SQL report rows) ----------
@@ -676,7 +691,7 @@ async function uiLoad(){
  try{
   if(!parent||typeof parent.workHourUserInterfaceList!=='function')throw new Error('Database bridge is unavailable.');
   const rows=await parent.workHourUserInterfaceList();if(!Array.isArray(rows))throw new Error('Saved entries were not returned.');
-  UI_ROWS=rows;uiDirty.clear();uiLoaded=true;uiReady=true;uiMessage('Loaded '+rows.length+' saved entry(s). Enter data, then Save Changes.');
+  approvalSetEntries(rows);UI_ROWS=rows;uiDirty.clear();uiLoaded=true;uiReady=true;uiMessage('Loaded '+rows.length+' saved entry(s). Enter data, then Save Changes.');
  }catch(err){uiMessage('Load failed: '+err.message,true);if(!uiLoaded)uiReady=false}
  finally{uiBusy=false;uiDraw()}
  if(uiReady)await Promise.all(UI_ROWS.filter(uiHasData).map(uiRefreshManpower));
@@ -724,7 +739,7 @@ $('uiSave').onclick=async()=>{
    uiMessage('Saving '+(saved+1)+' / '+pending.length+'…');
    const result=await parent.workHourUserInterfaceSave(row);
    if(!result?.updated_at||result.id!==row.id)throw new Error('Entry save was not confirmed.');
-   Object.assign(row,result);uiDirty.delete(row.id);saved++;
+   Object.assign(row,result);approvalUpsert(result);uiDirty.delete(row.id);saved++;
   }
   for(const row of UI_ROWS)if(!row.updated_at&&!uiHasData(row))uiDirty.delete(row.id);
   uiMessage(saved+' entry(s) saved successfully.');
