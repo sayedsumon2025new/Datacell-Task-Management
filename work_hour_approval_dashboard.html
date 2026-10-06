@@ -128,10 +128,10 @@ html,body{min-height:100%}
 .table-scroll::-webkit-scrollbar{width:14px;height:14px}
 .table-scroll::-webkit-scrollbar-track{background:#eee}
 .table-scroll::-webkit-scrollbar-thumb{background:#858585;border:3px solid #eee;border-radius:8px}
-.table-scroll table{border-collapse:separate;border-spacing:0;border-top:1px solid #999;border-left:1px solid #999}
-.table-scroll table th,.table-scroll table td{border-top-width:0;border-left-width:0}
+.table-scroll table,.table-scroll #uiTable{border-collapse:separate;border-spacing:0;border-top:1px solid #999;border-left:1px solid #999}
+.table-scroll table th,.table-scroll table td,.table-scroll #uiTable th,.table-scroll #uiTable td{border-top-width:0;border-left-width:0}
 .table-scroll thead{position:sticky;top:0;z-index:5;background:#fff}
-.table-scroll thead th,.table-scroll thead td{background-clip:border-box}
+.table-scroll thead th,.table-scroll thead td{background-clip:border-box;box-shadow:inset -1px 0 0 #666,inset 0 -1px 0 #666}
 #otcTable thead th,#dprTable thead th{position:relative;top:auto}
 @media print{
  .table-scroll{overflow:visible!important;max-height:none!important;height:auto!important;scrollbar-gutter:auto}
