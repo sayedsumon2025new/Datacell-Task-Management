@@ -2,9 +2,11 @@
 (()=>{
  const permitted=(tab,action='view')=>{const p=parent.workHourAccess;return p?.active===true&&(p.is_admin===true||p.permissions?.[tab]?.[action]===true)};
  const actionIds={exp:'export',pr1:'export',x2:'export',pr2:'export',uiExcel:'export',uiPdf:'export',uiAdd:'edit',uiSave:'edit',dsSave:'edit',otcUpload:'edit',dprUpload:'edit',llSave:'edit'};
- let pending=false;
+ let pending=false,lastEntryScope='';
  window.whApplyAccess=()=>{
   pending=false;
+  const signature=JSON.stringify(parent.workHourAccess?.permissions?.p7?.entry_scope||{});
+  if(signature!==lastEntryScope){lastEntryScope=signature;window.uiApplyEntryScope?.();}
   document.querySelectorAll('.tab').forEach(b=>{b.hidden=!permitted(b.dataset.t);b.style.display=b.hidden?'none':''});
   document.querySelectorAll('[id^="p"]').forEach(panel=>{
    if(!/^p[1-7]$/.test(panel.id))return;

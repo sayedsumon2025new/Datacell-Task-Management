@@ -621,7 +621,20 @@ function uiControls(){
  $('uiReload').disabled=uiBusy;
  document.querySelectorAll('#uiBody input').forEach(input=>input.disabled=uiBusy||!uiReady)
 }
-function uiVisibleRows(){const date=$('uiDate').value;return UI_ROWS.filter(row=>!date||row.work_date===date||!row.work_date&&!uiHasData(row))}
+function uiEntryScope(){const profile=parent.workHourAccess;return !profile||profile.is_admin||profile.permissions?.p7?.entry_scope==null?{mode:'all',rules:[]}:profile.permissions.p7.entry_scope}
+function uiEntryAllowed(row){const scope=uiEntryScope();return scope.mode==='all'||scope.rules.some(r=>row.department===r.department&&(r.section==='*'||row.section===r.section)&&(r.level==='*'||String(row.level||'')===r.level))}
+function uiScopeOptions(key,values,row){
+ const scope=uiEntryScope();if(scope.mode==='all')return values;
+ return values.filter(value=>scope.rules.some(r=>
+  (key==='department'?value===r.department:!row?.department||row.department===r.department)&&
+  (key==='section'?(r.section==='*'||value===r.section):key==='level'?(!row?.section||r.section==='*'||row.section===r.section)&&(r.level==='*'||value===r.level):true)));
+}
+function uiApplyEntryScope(){
+ let message=$('uiScopeNotice');if(!message){message=document.createElement('span');message.id='uiScopeNotice';message.className='hint';$('uiMsg').before(message);}
+ const scope=uiEntryScope();message.textContent='Entry access: '+(scope.mode==='all'?'All departments / sections / levels':scope.rules.length?scope.rules.map(r=>r.department+' / '+(r.section==='*'?'All sections':r.section)+' / '+(r.level==='*'?'All levels':r.level||'No Level')).join('; '):'No entry scope assigned');
+ if(uiLoaded)uiDraw();
+}
+function uiVisibleRows(){const date=$('uiDate').value;return UI_ROWS.filter(row=>(!row.updated_at||uiEntryAllowed(row))&&(!date||row.work_date===date||!row.work_date&&!uiHasData(row)))}
 const UI_HOURS=['ot_5_pm','ot_6_pm','ot_7_pm','ot_8_pm','ot_9_pm','ot_10_pm','ot_11_pm','ot_12_am','ot_1_am'];
 function uiHourError(row){
  for(let i=1;i<UI_HOURS.length;i++){
@@ -689,6 +702,7 @@ async function uiRefreshManpower(row){
 }
 async function uiExpandLevel(row){
  if(uiBusy||!uiReady||!uiLineWise(row)||!row.work_date||!uiMatchText(row.level))return;
+ if(!uiEntryAllowed(row)){uiMessage('This Department / Section / Level is outside your assigned entry access.',true);return}
  if(!dbReady){uiMessage('Wait for Line & Level Settings to finish loading, then select Level again.',true);return}
  const lines=[...new Map(R.filter(r=>r.k==='L'&&uiMatchLevel(r.lv)===uiMatchLevel(row.level)).map(r=>[uiMatchLine(r.v[0]),String(r.v[0])])).values()].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true}));
  if(!lines.length){uiMessage('No lines configured for '+row.level+'.',true);return}
@@ -710,9 +724,9 @@ async function uiExpandLevel(row){
 }
 function uiSuggestions(row){
  const unique=values=>[...new Set(values.filter(Boolean))];
- $('uiDepartments').innerHTML=unique(DS.map(x=>x.department)).map(x=>`<option value="${E(x)}"></option>`).join('');
- $('uiSections').innerHTML=unique(DS.filter(x=>!row?.department||x.department===row.department).map(x=>x.section)).map(x=>`<option value="${E(x)}"></option>`).join('');
- $('uiLevels').innerHTML=unique([...reportLevels(),...UI_ROWS.map(x=>x.level)]).map(x=>`<option value="${E(x)}"></option>`).join('')
+ $('uiDepartments').innerHTML=uiScopeOptions('department',unique(DS.map(x=>x.department)),row).map(x=>`<option value="${E(x)}"></option>`).join('');
+ $('uiSections').innerHTML=uiScopeOptions('section',unique(DS.filter(x=>!row?.department||x.department===row.department).map(x=>x.section)),row).map(x=>`<option value="${E(x)}"></option>`).join('');
+ $('uiLevels').innerHTML=uiScopeOptions('level',unique([...reportLevels(),...UI_ROWS.map(x=>x.level)]),row).map(x=>`<option value="${E(x)}"></option>`).join('')
 }
 async function uiLoad(){
  if(uiBusy)return;
@@ -720,13 +734,14 @@ async function uiLoad(){
  uiPunchCache.clear();uiBusy=true;uiControls();uiMessage('Loading saved entries…');
  try{
   if(!parent||typeof parent.workHourUserInterfaceList!=='function')throw new Error('Database bridge is unavailable.');
-  const rows=await parent.workHourUserInterfaceList();if(!Array.isArray(rows))throw new Error('Saved entries were not returned.');
-  approvalSetEntries(rows);UI_ROWS=rows;uiDirty.clear();uiLoaded=true;uiReady=true;uiMessage('Loaded '+rows.length+' saved entry(s). Enter data, then Save Changes.');
+  const rows=await parent.workHourUserInterfaceList('p7');if(!Array.isArray(rows))throw new Error('Saved entries were not returned.');
+  UI_ROWS=rows;uiDirty.clear();uiLoaded=true;uiReady=true;uiMessage('Loaded '+rows.length+' saved entry(s). Enter data, then Save Changes.');
  }catch(err){uiMessage('Load failed: '+err.message,true);if(!uiLoaded)uiReady=false}
  finally{uiBusy=false;uiDraw()}
  if(uiReady)await Promise.all(UI_ROWS.filter(uiHasData).map(uiRefreshManpower));
 }
 function uiValidate(row){
+ if(!uiEntryAllowed(row))throw new Error('This Department / Section / Level is outside your assigned entry access.');
  const hourError=uiHourError(row);if(hourError)throw new Error(hourError.message);
  for(const [key,label,type] of UI_SPEC){
   const value=String(row[key]??'').trim();if(!value)continue;
@@ -753,7 +768,7 @@ $('uiBody').onchange=e=>{
 $('uiBody').onfocusin=e=>{
  const input=e.target.closest('input[data-key]');if(!input)return;
 
- if(input.dataset.key==='section')uiSuggestions(UI_ROWS[Number(input.dataset.row)])
+ if(['department','section','level'].includes(input.dataset.key))uiSuggestions(UI_ROWS[Number(input.dataset.row)])
 };
 $('uiBody').onclick=e=>{const input=e.target.closest('input[data-key="work_date"]');if(input&&!input.disabled&&typeof input.showPicker==='function'){try{input.showPicker()}catch(e){}}};
 $('uiAdd').onclick=()=>{if(uiBusy||!uiReady)return;UI_ROWS.push(uiBlank());uiDraw();$('uiBody').lastElementChild.querySelector('input').focus()};

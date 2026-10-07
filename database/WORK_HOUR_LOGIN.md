@@ -29,3 +29,20 @@ Disabling a user or reducing permissions takes effect on the next API operation 
 Other legacy Datacell modules and their credential system are outside this isolated authentication migration.
 Do not grant legacy browser roles access back to Work Hour data to fix an authentication error.
 Tests: check_access_backend.mjs, check_login_portal.py and temporary-account live integration check.
+
+## User Interface entry scope
+
+In User & Tab Access, select a user, enable User Interface View/Edit, and add
+allowed Department / Section / Level combinations under Data Entry Scope.
+Multiple rules are supported; a rule's section and level apply only to its own
+department. All sections / All levels are optional wildcards; No Level matches
+rows without a level. New editable users must have at least one rule or explicit
+All departments, sections & levels access. Existing users without an assigned
+scope retain their previous access until the administrator assigns one.
+
+The User Interface loads scoped rows, limits entry suggestions and line expansion,
+and validates scope before batch save. Server checks apply to both the existing
+row and its new values, preventing users from moving other users' rows into their
+scope. Approval Request visibility remains controlled separately by its View
+permission. Scope changes reach the open UI within 15 seconds; saves check the
+current server profile immediately. Fast atomic batch saves remain enabled.
