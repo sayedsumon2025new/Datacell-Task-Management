@@ -94,15 +94,25 @@ async function workHourUserInterfaceSave(row){
 window.workHourUserInterfaceList=workHourUserInterfaceList;
 window.workHourUserInterfaceSave=workHourUserInterfaceSave;
 
-async function workHourOtCostDates(){
-  const rows=await dbRequest('work_hour_ot_cost','GET','select=work_date&order=work_date.desc');
-  return [...new Set((Array.isArray(rows)?rows:[]).map(r=>r.work_date).filter(Boolean))];
+// Seek one date at a time so employee row limits cannot hide older dates.
+async function workHourReportDates(table){
+ const dates=[];let before='';
+ for(;;){
+  const query='select=work_date&order=work_date.desc&limit=1'+(before?'&work_date=lt.'+encodeURIComponent(before):'');
+  const rows=await dbRequest(table,'GET',query);
+  if(!Array.isArray(rows))throw new Error('Report dates were not returned.');
+  if(!rows.length)return dates;
+  const date=rows[0].work_date;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||before&&date>=before)throw new Error('Invalid report date response.');
+  dates.push(date);before=date;
+ }
 }
+async function workHourOtCostDates(){return await workHourReportDates('work_hour_ot_cost');}
 async function workHourOtCostRows(workDate){
   const q='select=id,work_date,employee_id,employee_name,department,designation,section,line,gross_salary,ot_rate,total_ot_hour,regular_ot_hour,extra_ot_hour,regular_ot_cost,extra_ot_cost,total_ot_cost'
     +(workDate?'&work_date=eq.'+encodeURIComponent(workDate):'')
-    +'&order=department.asc,section.asc,line.asc,employee_id.asc&limit=10000';
-  return await dbRequest('work_hour_ot_cost','GET',q);
+    +'&order=work_date.desc,department.asc,section.asc,line.asc,employee_id.asc,id.asc';
+  return await fetchPagedTableRows('work_hour_ot_cost',q);
 }
 async function workHourOtCostUpsert(rows){
   if(!Array.isArray(rows)||!rows.length)return [];
@@ -115,25 +125,23 @@ window.workHourOtCostDates=workHourOtCostDates;
 window.workHourOtCostRows=workHourOtCostRows;
 window.workHourOtCostUpsert=workHourOtCostUpsert;
 
-async function fetchPagedTableRows(table,baseQuery,pageSize=1000,maxPages=50,context){
+async function fetchPagedTableRows(table,baseQuery,pageSize=1000,maxPages=Infinity,context){
   const all=[];
   for(let page=0;page<maxPages;page++){
     const sep=baseQuery?'&':'';
     const rows=await dbRequest(table,'GET',baseQuery+sep+'limit='+pageSize+'&offset='+(page*pageSize),undefined,undefined,context);
-    const list=Array.isArray(rows)?rows:[];
+    if(!Array.isArray(rows))throw new Error('Report rows were not returned.');
+    const list=rows;
     all.push(...list);
-    if(list.length<pageSize)break;
+    if(list.length<pageSize)return all;
   }
-  return all;
+  throw new Error('Report exceeded its page limit; reload with a narrower filter.');
 }
-async function workHourDailyPunchDates(){
-  const rows=await fetchPagedTableRows('work_hour_daily_punch','select=work_date&order=work_date.desc');
-  return [...new Set(rows.map(r=>r.work_date).filter(Boolean))];
-}
+async function workHourDailyPunchDates(){return await workHourReportDates('work_hour_daily_punch');}
 async function workHourDailyPunchRows(workDate){
   const q='select=id,work_date,employee_id,employee_name,designation,doj,department,section,line,log_in,log_out'
     +(workDate?'&work_date=eq.'+encodeURIComponent(workDate):'')
-    +'&order=department.asc,section.asc,line.asc,employee_id.asc';
+    +'&order=work_date.desc,department.asc,section.asc,line.asc,employee_id.asc,id.asc';
   return await fetchPagedTableRows('work_hour_daily_punch',q);
 }
 async function workHourDailyPunchUpsert(rows){
