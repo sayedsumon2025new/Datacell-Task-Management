@@ -51,6 +51,13 @@ async function cleanEntryScope(value:any){
  return {mode:'selected',rules};
 }
 export function can(profile:any,tab:string,action='view'){return profile.active===true&&(profile.is_admin===true||profile.permissions?.[tab]?.[action]===true)}
+// p2 dependencies expose only report quantities, never employee identities or salaries.
+export function eotDependency(p:any,b:any,q:URLSearchParams){
+ if((b.method||'GET')!=='GET'||b.context!=='p2'||!can(p,'p2'))return false;
+ const projection=q.get('select'),dated=/^eq\.\d{4}-\d{2}-\d{2}$/.test(q.get('work_date')||'');
+ const dates=projection==='work_date'&&(!q.has('work_date')||/^lt\.\d{4}-\d{2}-\d{2}$/.test(q.get('work_date')||''));
+ return b.table==='work_hour_user_interface'&&(dates||dated&&projection==='work_date,department,present_manpower,asking_hour,ot_5_pm,ot_6_pm,ot_7_pm,ot_8_pm,ot_9_pm,ot_10_pm')||b.table==='work_hour_ot_cost'&&(dates||dated&&projection==='work_date,department,total_ot_hour');
+}
 export function authorizeData(p:any,b:any){
  const {table,method='GET'}=b;if(!tables.includes(table)||!['GET','POST','PATCH','DELETE'].includes(method))fail('Unsupported request');
  const q=new URLSearchParams(b.query||'');
@@ -60,8 +67,8 @@ export function authorizeData(p:any,b:any){
  if(method==='GET'){
   if(table==='work_hour_department_sections')allowed=anyView;
   if(table==='work_hour_approval_state')allowed=anyView;
-  if(table==='work_hour_user_interface')allowed=can(p,'p1')||can(p,'p7');
-  if(table==='work_hour_ot_cost')allowed=can(p,'p4');
+  if(table==='work_hour_user_interface')allowed=can(p,'p1')||can(p,'p7')||eotDependency(p,b,q);
+  if(table==='work_hour_ot_cost')allowed=can(p,'p4')||eotDependency(p,b,q);
   if(table==='work_hour_daily_punch'){
    allowed=can(p,'p5');
    if(!allowed&&can(p,'p7')){
@@ -113,7 +120,7 @@ Deno.serve(async req=>{
      if(!existingEntry||!entryAllowed(profile,existingEntry))fail('This existing row is outside your data-entry scope',403);
     }
    }
-   if(b.table==='work_hour_user_interface'&&b.method==='GET'&&(b.context==='p7'||!can(profile,'p1'))){
+   if(b.table==='work_hour_user_interface'&&(b.method||'GET')==='GET'&&!eotDependency(profile,b,q)&&(b.context==='p7'||!can(profile,'p1'))){
     if(!can(profile,'p7'))fail('User Interface access required',403);scopeQuery(profile,q);
    }
    if(payload&&b.method!=='GET'){

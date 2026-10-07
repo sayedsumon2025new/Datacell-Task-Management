@@ -95,11 +95,11 @@ window.workHourUserInterfaceList=workHourUserInterfaceList;
 window.workHourUserInterfaceSave=workHourUserInterfaceSave;
 
 // Seek one date at a time so employee row limits cannot hide older dates.
-async function workHourReportDates(table){
+async function workHourReportDates(table,context){
  const dates=[];let before='';
  for(;;){
   const query='select=work_date&order=work_date.desc&limit=1'+(before?'&work_date=lt.'+encodeURIComponent(before):'');
-  const rows=await dbRequest(table,'GET',query);
+  const rows=await dbRequest(table,'GET',query,undefined,undefined,context);
   if(!Array.isArray(rows))throw new Error('Report dates were not returned.');
   if(!rows.length)return dates;
   const date=rows[0].work_date;
@@ -169,3 +169,18 @@ async function workHourUserInterfaceSaveBatch(rows){
  return saved;
 }
 window.workHourUserInterfaceSaveBatch=workHourUserInterfaceSaveBatch;
+
+async function workHourEotDates(){
+ const [plans,actuals]=await Promise.all([workHourReportDates('work_hour_user_interface','p2'),workHourReportDates('work_hour_ot_cost','p2')]);
+ return {dates:[...new Set([...plans,...actuals])].sort().reverse(),common:plans.filter(d=>actuals.includes(d))};
+}
+async function workHourEotSources(workDate){
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(workDate))throw new Error('Select a valid work date.');
+ const filter='&work_date=eq.'+encodeURIComponent(workDate)+'&order=department.asc,id.asc';
+ const [plans,actuals]=await Promise.all([
+  fetchPagedTableRows('work_hour_user_interface','select=work_date,department,present_manpower,asking_hour,ot_5_pm,ot_6_pm,ot_7_pm,ot_8_pm,ot_9_pm,ot_10_pm'+filter,1000,Infinity,'p2'),
+  fetchPagedTableRows('work_hour_ot_cost','select=work_date,department,total_ot_hour'+filter,1000,Infinity,'p2')]);
+ return {plans,actuals};
+}
+window.workHourEotDates=workHourEotDates;
+window.workHourEotSources=workHourEotSources;
