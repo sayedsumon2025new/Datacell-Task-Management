@@ -56,8 +56,8 @@ window.workHourDepartmentSectionsDelete=workHourDepartmentSectionsDelete;
 
 const WH_UI_FIELDS=['work_date','department','section','level','line_no','buyer','ewo','present_manpower','asking_manpower','asking_hour','ot_5_pm','ot_6_pm','ot_7_pm','ot_8_pm','ot_9_pm','ot_10_pm','ot_11_pm','ot_12_am','ot_1_am','iron_man','staff','total_manpower','reason_eot','responsible_department'];
 const WH_UI_NUMBERS=new Set(['present_manpower','asking_manpower','asking_hour','ot_5_pm','ot_6_pm','ot_7_pm','ot_8_pm','ot_9_pm','ot_10_pm','ot_11_pm','ot_12_am','ot_1_am','iron_man','staff','total_manpower']);
-async function workHourUserInterfaceList(){
-  return await fetchPagedTableRows('work_hour_user_interface','select=*&order=created_at.asc,id.asc');
+async function workHourUserInterfaceList(context='p1'){
+  return await fetchPagedTableRows('work_hour_user_interface','select=*&order=created_at.asc,id.asc',1000,50,context);
 }
 async function workHourUserInterfacePunchRows(workDate){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(workDate))throw new Error('A valid punch date is required.');
@@ -115,11 +115,11 @@ window.workHourOtCostDates=workHourOtCostDates;
 window.workHourOtCostRows=workHourOtCostRows;
 window.workHourOtCostUpsert=workHourOtCostUpsert;
 
-async function fetchPagedTableRows(table,baseQuery,pageSize=1000,maxPages=50){
+async function fetchPagedTableRows(table,baseQuery,pageSize=1000,maxPages=50,context){
   const all=[];
   for(let page=0;page<maxPages;page++){
     const sep=baseQuery?'&':'';
-    const rows=await dbRequest(table,'GET',baseQuery+sep+'limit='+pageSize+'&offset='+(page*pageSize));
+    const rows=await dbRequest(table,'GET',baseQuery+sep+'limit='+pageSize+'&offset='+(page*pageSize),undefined,undefined,context);
     const list=Array.isArray(rows)?rows:[];
     all.push(...list);
     if(list.length<pageSize)break;
