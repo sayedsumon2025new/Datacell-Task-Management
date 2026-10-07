@@ -1,0 +1,3 @@
+-- Recompute derived totals; retain historical Iron Man values in SQL.
+with revised as (select id,case when ot_6_pm is null and ot_7_pm is null and ot_8_pm is null and ot_9_pm is null and ot_10_pm is null and ot_11_pm is null and ot_12_am is null and ot_1_am is null and staff is null then null else coalesce(ot_6_pm,0)+coalesce(ot_7_pm,0)+coalesce(ot_8_pm,0)+coalesce(ot_9_pm,0)+coalesce(ot_10_pm,0)+coalesce(ot_11_pm,0)+coalesce(ot_12_am,0)+coalesce(ot_1_am,0)+coalesce(staff,0) end as total from public.work_hour_user_interface)
+update public.work_hour_user_interface u set total_manpower=r.total,updated_at=clock_timestamp() from revised r where u.id=r.id and u.total_manpower is distinct from r.total;

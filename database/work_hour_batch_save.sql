@@ -26,16 +26,17 @@ begin
    if not exists(select 1 from jsonb_array_elements(coalesce(scope->'rules','[]'))r where r->>'department'=nextrow.department and (r->>'section'='*' or r->>'section'=coalesce(nextrow.section,'')) and (r->>'level'='*' or r->>'level'=coalesce(nextrow.level,''))) then raise exception 'Entry is outside your assigned Department / Section / Level';end if;
    if old_exists and not exists(select 1 from jsonb_array_elements(coalesce(scope->'rules','[]'))r where r->>'department'=oldrow.department and (r->>'section'='*' or r->>'section'=coalesce(oldrow.section,'')) and (r->>'level'='*' or r->>'level'=coalesce(oldrow.level,''))) then raise exception 'Existing entry is outside your assigned scope';end if;
   end if;
+  nextrow.iron_man:=case when old_exists then oldrow.iron_man else null end;
   nextrow.ot_5_pm:=nextrow.asking_manpower;
   foreach field in array array['present_manpower','asking_manpower','asking_hour','ot_5_pm','ot_6_pm','ot_7_pm','ot_8_pm','ot_9_pm','ot_10_pm','ot_11_pm','ot_12_am','ot_1_am','iron_man','staff'] loop
    n:=(to_jsonb(nextrow)->>field)::numeric;if n<0 or n::text in ('NaN','Infinity','-Infinity') then raise exception 'Negative quantities are not allowed';end if;
   end loop;
-  previous_n:=coalesce(nextrow.ot_5_pm,0);total_n:=previous_n;
+  previous_n:=coalesce(nextrow.ot_5_pm,0);total_n:=0;
   for i in 2..array_length(hour_keys,1) loop
    n:=coalesce((to_jsonb(nextrow)->>hour_keys[i])::numeric,0);if n>previous_n then raise exception 'Hourly manpower cannot exceed the previous hour';end if;
    total_n:=total_n+n;previous_n:=n;
   end loop;
-  if exists(select 1 from unnest(hour_keys||array['iron_man','staff'])k where to_jsonb(nextrow)->>k is not null) then nextrow.total_manpower:=total_n+coalesce(nextrow.iron_man,0)+coalesce(nextrow.staff,0);else nextrow.total_manpower:=null;end if;
+  if exists(select 1 from unnest(hour_keys[2:9]||array['staff'])k where to_jsonb(nextrow)->>k is not null) then nextrow.total_manpower:=total_n+coalesce(nextrow.staff,0);else nextrow.total_manpower:=null;end if;
   nextrow.updated_by:=account.user_name;nextrow.updated_at:=stamp;
   if old_exists then
    update public.work_hour_user_interface set work_date=nextrow.work_date,department=nextrow.department,section=nextrow.section,level=nextrow.level,line_no=nextrow.line_no,buyer=nextrow.buyer,ewo=nextrow.ewo,

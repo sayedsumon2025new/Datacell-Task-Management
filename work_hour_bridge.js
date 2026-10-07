@@ -54,8 +54,8 @@ window.workHourDepartmentSectionsList=workHourDepartmentSectionsList;
 window.workHourDepartmentSectionsSave=workHourDepartmentSectionsSave;
 window.workHourDepartmentSectionsDelete=workHourDepartmentSectionsDelete;
 
-const WH_UI_FIELDS=['work_date','department','section','level','line_no','buyer','ewo','present_manpower','asking_manpower','asking_hour','ot_5_pm','ot_6_pm','ot_7_pm','ot_8_pm','ot_9_pm','ot_10_pm','ot_11_pm','ot_12_am','ot_1_am','iron_man','staff','total_manpower','reason_eot','responsible_department'];
-const WH_UI_NUMBERS=new Set(['present_manpower','asking_manpower','asking_hour','ot_5_pm','ot_6_pm','ot_7_pm','ot_8_pm','ot_9_pm','ot_10_pm','ot_11_pm','ot_12_am','ot_1_am','iron_man','staff','total_manpower']);
+const WH_UI_FIELDS=['work_date','department','section','level','line_no','buyer','ewo','present_manpower','asking_manpower','asking_hour','ot_5_pm','ot_6_pm','ot_7_pm','ot_8_pm','ot_9_pm','ot_10_pm','ot_11_pm','ot_12_am','ot_1_am','staff','total_manpower','reason_eot','responsible_department'];
+const WH_UI_NUMBERS=new Set(['present_manpower','asking_manpower','asking_hour','ot_5_pm','ot_6_pm','ot_7_pm','ot_8_pm','ot_9_pm','ot_10_pm','ot_11_pm','ot_12_am','ot_1_am','staff','total_manpower']);
 async function workHourUserInterfaceList(context='p1'){
   return await fetchPagedTableRows('work_hour_user_interface','select=*&order=created_at.asc,id.asc',1000,50,context);
 }
@@ -79,7 +79,7 @@ async function workHourUserInterfaceSave(row){
   payload.ot_5_pm=payload.asking_manpower;
   const hours=['ot_5_pm','ot_6_pm','ot_7_pm','ot_8_pm','ot_9_pm','ot_10_pm','ot_11_pm','ot_12_am','ot_1_am'];
   for(let i=1;i<hours.length;i++)if(payload[hours[i]]!==null&&payload[hours[i]]>(payload[hours[i-1]]??0))throw new Error(hours[i]+' cannot exceed the previous hour.');
-  const totalFields=[...hours,'iron_man','staff'];payload.total_manpower=totalFields.some(key=>payload[key]!==null)?totalFields.reduce((sum,key)=>sum+(payload[key]??0),0):null;
+  const totalFields=[...hours.slice(1),'staff'];payload.total_manpower=totalFields.some(key=>payload[key]!==null)?totalFields.reduce((sum,key)=>sum+(payload[key]??0),0):null;
   const query='id=eq.'+encodeURIComponent(row.id);
   let saved;
   if(row.updated_at){

@@ -121,10 +121,11 @@ Deno.serve(async req=>{
     if(b.table==='work_hour_user_interface'){
      if(!entryAllowed(profile,{...existingEntry,...payload}))fail('Department, Section or Level is outside your data-entry scope',403);
      const hours=['ot_5_pm','ot_6_pm','ot_7_pm','ot_8_pm','ot_9_pm','ot_10_pm','ot_11_pm','ot_12_am','ot_1_am'];
-     payload=stamp(payload);payload.ot_5_pm=payload.asking_manpower;
-     for(const h of [...hours,'asking_manpower','present_manpower','iron_man','staff','asking_hour'])if(payload[h]!=null&&(!Number.isFinite(Number(payload[h]))||Number(payload[h])<0||(h!=='asking_hour'&&!Number.isInteger(Number(payload[h])))))fail('Invalid quantity');
+     payload=stamp(payload);delete payload.iron_man;payload.ot_5_pm=payload.asking_manpower;
+     for(const h of [...hours,'asking_manpower','present_manpower','staff','asking_hour'])if(payload[h]!=null&&(!Number.isFinite(Number(payload[h]))||Number(payload[h])<0||(h!=='asking_hour'&&!Number.isInteger(Number(payload[h])))))fail('Invalid quantity');
      for(let i=1;i<hours.length;i++)if(Number(payload[hours[i]]||0)>Number(payload[hours[i-1]]||0))fail('Hourly manpower cannot exceed the previous hour');
-     payload.total_manpower=[...hours,'iron_man','staff'].reduce((n,k)=>n+Number(payload[k]||0),0);
+     const totalFields=[...hours.slice(1),'staff'];
+     payload.total_manpower=totalFields.some(k=>payload[k]!=null)?totalFields.reduce((n,k)=>n+Number(payload[k]||0),0):null;
     }else if(b.table==='work_hour_approval_state'){
      if(!Array.isArray(payload.rows)||payload.rows.some((r:any)=>r.k!=='L'||!Array.isArray(r.v)))fail('Only line and level mappings can be saved');
      const previous=(await rest('work_hour_approval_state?id=eq.main&select=rows'))?.[0];
