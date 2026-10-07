@@ -21,6 +21,35 @@ function cleanProfile(b:any){
 function cleanPermissions(b:any){
  const r:any={};for(const tab of tabs){r[tab]={};for(const action of ['view','edit','delete','export'])r[tab][action]=b?.[tab]?.view===true&&b?.[tab]?.[action]===true;}return r;
 }
+export function entryScope(profile:any){
+ return profile.is_admin||profile.permissions?.p7?.entry_scope==null?{mode:'all',rules:[]}:profile.permissions.p7.entry_scope;
+}
+export function entryAllowed(profile:any,row:any){
+ const scope=entryScope(profile);return scope.mode==='all'||scope.rules?.some((r:any)=>
+  String(row.department??'').trim()===r.department&&(r.section==='*'||String(row.section??'').trim()===r.section)&&(r.level==='*'||String(row.level??'').trim()===r.level));
+}
+export function scopeQuery(profile:any,q:URLSearchParams){
+ const scope=entryScope(profile);if(scope.mode==='all')return;
+ if(!scope.rules?.length){q.set('id','eq.00000000-0000-0000-0000-000000000000');return;}
+ const quote=(v:string)=>'"'+v.replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'"';
+ q.set('or','('+scope.rules.map((r:any)=>'and('+['department','section','level'].filter(k=>r[k]!=='*').map(k=>k+'.eq.'+quote(r[k])).join(',')+')').join(',')+')');
+}
+async function cleanEntryScope(value:any){
+ if(value?.mode==='all')return {mode:'all',rules:[]};
+ if(!Array.isArray(value?.rules))return {mode:'selected',rules:[]};
+ if(value.rules.length>50)fail('At most 50 entry scope rules');
+ const setups=await rest('work_hour_department_sections?select=department,section&limit=10000');
+ const state=(await rest('work_hour_approval_state?id=eq.main&select=rows'))?.[0];
+ const levels=new Set((state?.rows||[]).filter((r:any)=>r.k==='L').map((r:any)=>r.lv));
+ const rules:any[]=[];
+ for(const input of value.rules){
+  const r={department:String(input.department||'').trim(),section:String(input.section??'*').trim(),level:String(input.level??'*').trim()};
+  if(!setups.some((x:any)=>x.department===r.department&&(r.section==='*'||x.section===r.section)))fail('Choose a valid Department and Section for entry access');
+  if(r.level!==''&&r.level!=='*'&&!levels.has(r.level))fail('Choose a configured Level for entry access');
+  if(!rules.some(x=>JSON.stringify(x)===JSON.stringify(r)))rules.push(r);
+ }
+ return {mode:'selected',rules};
+}
 export function can(profile:any,tab:string,action='view'){return profile.active===true&&(profile.is_admin===true||profile.permissions?.[tab]?.[action]===true)}
 export function authorizeData(p:any,b:any){
  const {table,method='GET'}=b;if(!tables.includes(table)||!['GET','POST','PATCH','DELETE'].includes(method))fail('Unsupported request');
@@ -70,11 +99,27 @@ Deno.serve(async req=>{
   const rows=await rest('work_hour_accounts?id=eq.'+encodeURIComponent(user.id));const profile=rows?.[0];
   if(!profile?.active)fail('This account is inactive or has no Work Hour access',403);
   if(b.op==='me')return new Response(JSON.stringify(profile),{headers:cors});
+  if(b.op==='save-entries'){
+   if(!can(profile,'p7','edit'))fail('User Interface edit access required',403);
+   if(!Array.isArray(b.entries)||!b.entries.length||b.entries.length>200)fail('Send 1 to 200 entries');
+   return new Response(JSON.stringify(await rest('rpc/work_hour_save_entries','POST',{actor_id:user.id,entries:b.entries})),{headers:cors});
+  }
   if(b.op==='data'){
-   const q=authorizeData(profile,b);let payload=b.body;
+   const q=authorizeData(profile,b);let payload=b.body,existingEntry:any=null;
+   if(b.table==='work_hour_user_interface'&&b.method!=='GET'){
+    if(q.has('on_conflict')||b.prefer?.includes('merge-duplicates'))fail('Entry upserts are not allowed');
+    if(b.method==='PATCH'||b.method==='DELETE'){
+     existingEntry=(await rest('work_hour_user_interface?id='+encodeURIComponent(q.get('id')||'')+'&select=department,section,level'))?.[0];
+     if(!existingEntry||!entryAllowed(profile,existingEntry))fail('This existing row is outside your data-entry scope',403);
+    }
+   }
+   if(b.table==='work_hour_user_interface'&&b.method==='GET'&&(b.context==='p7'||!can(profile,'p1'))){
+    if(!can(profile,'p7'))fail('User Interface access required',403);scopeQuery(profile,q);
+   }
    if(payload&&b.method!=='GET'){
     const stamp=(row:any)=>({...row,updated_by:profile.user_name});
     if(b.table==='work_hour_user_interface'){
+     if(!entryAllowed(profile,{...existingEntry,...payload}))fail('Department, Section or Level is outside your data-entry scope',403);
      const hours=['ot_5_pm','ot_6_pm','ot_7_pm','ot_8_pm','ot_9_pm','ot_10_pm','ot_11_pm','ot_12_am','ot_1_am'];
      payload=stamp(payload);payload.ot_5_pm=payload.asking_manpower;
      for(const h of [...hours,'asking_manpower','present_manpower','iron_man','staff','asking_hour'])if(payload[h]!=null&&(!Number.isFinite(Number(payload[h]))||Number(payload[h])<0||(h!=='asking_hour'&&!Number.isInteger(Number(payload[h])))))fail('Invalid quantity');
@@ -93,6 +138,9 @@ Deno.serve(async req=>{
   if(b.op==='users')return new Response(JSON.stringify(await rest('work_hour_accounts?order=created_at.asc')),{headers:cors});
   if(b.op==='save-user'){
    const data=cleanProfile(b);const permissions=cleanPermissions(b.permissions);
+   const existingScope=b.id?(await rest('work_hour_accounts?id=eq.'+encodeURIComponent(b.id)+'&select=permissions'))?.[0]?.permissions?.p7?.entry_scope:null;
+   permissions.p7.entry_scope=b.entry_scope===undefined?(existingScope||{mode:'all',rules:[]}):await cleanEntryScope(b.entry_scope);
+   if(permissions.p7.edit&&permissions.p7.entry_scope.mode==='selected'&&!permissions.p7.entry_scope.rules.length)fail('Assign at least one entry scope or select all departments');
    if(b.id===profile.id)fail('Use another administrator to change your account');
    const previous=b.id?(await rest('work_hour_accounts?id=eq.'+encodeURIComponent(b.id)))?.[0]:null;
    if(b.id&&!previous)fail('Account not found',404);

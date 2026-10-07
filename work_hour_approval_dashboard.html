@@ -677,7 +677,7 @@ async function uiRefreshManpower(row){
  const key=uiPunchKey(row),revision=(row._punchRevision||0)+1;row._punchRevision=revision;row._punchError='';
  function update(value){if(row.present_manpower!==value){row.present_manpower=value;if(uiHasData(row))uiDirty.add(row.id)}const i=UI_ROWS.indexOf(row);const cell=$('uiBody').querySelector(`input[data-row="${i}"][data-key="present_manpower"]`);if(cell)cell.value=value??'';uiUpdateTotals()}
  if(!key){update(null);return}
- update(null);
+ // Keep the last count while refreshing; a temporary blank is not a data edit.
  try{
   if(typeof parent.workHourUserInterfacePunchRows!=='function')throw new Error('Punch report bridge is unavailable.');
   if(!uiPunchCache.has(row.work_date))uiPunchCache.set(row.work_date,parent.workHourUserInterfacePunchRows(row.work_date).catch(e=>{uiPunchCache.delete(row.work_date);throw e}));
@@ -766,13 +766,15 @@ $('uiSave').onclick=async()=>{
   uiBusy=true;uiControls();uiPunchCache.clear();
   await Promise.all(pending.map(uiRefreshManpower));
   for(const row of pending){uiRecalcTotal(row);if(row._punchError)throw new Error(row._punchError);uiValidate(row)}
-  if(!parent||typeof parent.workHourUserInterfaceSave!=='function')throw new Error('Database bridge is unavailable.');
+  if(!parent||typeof parent.workHourUserInterfaceSaveBatch!=='function')throw new Error('Refresh this page to load the batch-save bridge.');
   uiBusy=true;uiControls();
-  for(const row of pending){
-   uiMessage('Saving '+(saved+1)+' / '+pending.length+'…');
-   const result=await parent.workHourUserInterfaceSave(row);
-   if(!result?.updated_at||result.id!==row.id)throw new Error('Entry save was not confirmed.');
-   Object.assign(row,result);approvalUpsert(result);uiDirty.delete(row.id);saved++;
+  for(let offset=0;offset<pending.length;offset+=200){
+   const batch=pending.slice(offset,offset+200);
+   uiMessage('Saving '+(offset+1)+'–'+(offset+batch.length)+' / '+pending.length+'…');
+   const results=await parent.workHourUserInterfaceSaveBatch(batch);
+   const byId=new Map(results.map(result=>[result.id,result]));
+   if(results.length!==batch.length||byId.size!==batch.length||batch.some(row=>!byId.get(row.id)?.updated_at))throw new Error('Batch save was not confirmed.');
+   for(const row of batch){const result=byId.get(row.id);Object.assign(row,result);approvalUpsert(result);uiDirty.delete(row.id);saved++;}
   }
   for(const row of UI_ROWS)if(!row.updated_at&&!uiHasData(row))uiDirty.delete(row.id);
   uiMessage(saved+' entry(s) saved successfully.');
