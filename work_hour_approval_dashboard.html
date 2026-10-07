@@ -137,7 +137,7 @@ html,body{min-height:100%}
  .table-scroll{overflow:visible!important;max-height:none!important;height:auto!important;scrollbar-gutter:auto}
  .table-scroll thead{position:static!important}
 }
-</style></head><body>
+</style><script src="work_hour_eot_model.js?build=20261007_5"></script></head><body>
 <div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button><button class="tab" data-t="p3">Department &amp; Section Setup</button><button class="tab" data-t="p4">OT Cost Data</button><button class="tab" data-t="p5">Daily Punch Report</button><button class="tab" data-t="p6">Line &amp; Level Settings</button><button class="tab" data-t="p7">User Interface</button></div>
 <div id="p1">
 <div class="bar">
@@ -153,7 +153,7 @@ html,body{min-height:100%}
 </div>
 <div class="wrap"><table><colgroup id="cg"></colgroup><thead id="th"></thead><tbody id="tb"></tbody></table></div>
 </div>
-<div id="p2" class="hide"><div class="bar" id="bar2"><label>Search <input id="q2" placeholder="Department…" style="width:180px"></label><label>Status <select id="sf" style="width:200px"><option value="">All departments</option><option value="o">Over plan (selected OT slot)</option><option value="w">Within plan (selected OT slot)</option></select></label><label>Tolerance ± <input id="tol" type="number" min="0" value="0" style="width:70px"></label><button class="g" id="x2">Export CSV</button><button class="g" id="pr2">Print / PDF</button><span class="hint">Filters drive the table, KPIs and charts. Tolerance sets how much excess is accepted before a cell turns red.</span></div><div class="wrap"><table id="t2"></table></div>
+<div id="p2" class="hide"><div class="bar" id="bar2"><label>Work Date <select id="eotDate"><option value="">Select date</option></select></label><button class="g" id="eotReload">Reload</button><label>Search <input id="q2" placeholder="Department…" style="width:180px"></label><label>Status <select id="sf" style="width:200px"><option value="">All departments</option><option value="o">Over plan (selected OT slot)</option><option value="w">Within plan (selected OT slot)</option></select></label><label>Tolerance ± <input id="tol" type="number" min="0" value="0" style="width:70px"></label><button class="g" id="x2">Export CSV</button><button class="g" id="pr2">Print / PDF</button><span class="hint" id="eotMsg">Select a date to load saved plans and OT Cost.</span></div><div class="wrap"><table id="t2"></table></div>
 <div id="kpi" class="kp"></div>
 <ul id="ins" class="ins"></ul>
 <select id="ots" class="hide"></select>
@@ -526,41 +526,52 @@ $('cg').parentElement.style.width=W.reduce((sum,w)=>sum+w,0)+'px';
 async function initWorkHourApproval(){buildForm();await load();await dsLoad()}
 initWorkHourApproval();
 
-const D2=[
-['Finishing',352,'',[352,107,0],[227,245,18,6],[208,239,31,26],[208,213,5,168],[78,45,-33,2],[78,43,-35,37]],
-['Quality Assurance',506,'',[506,126,0],[317,380,63,28],[317,352,35,45],[317,307,-10,220],[90,87,-3,4],[90,83,-7,31]],
-['Sewing',2201,'',[2201,885,0],[1056,1316,260,126],[1039,1190,151,367],[745,823,78,266],[577,557,-20,11],[577,546,-31,546]],
-['Cutting',429,11,[433,105,4],[415,324,-91,52],[338,272,-66,20],[338,252,-86,251],[null,1,1,0],[null,1,1,1]],
-['Product Development Center',185,11,[191,106,6],[71,79,8,2],[71,77,6,10],[71,67,-4,31],[44,36,-8,6],[44,30,-14,30]],
-['HR, Admin & Compliance',293,10,[293,116,0],[180,177,-3,25],[155,152,-3,58],[95,94,-1,66],[10,28,18,10],[10,18,8,28]],
-['Pilot Run & Training Line',62,13,[73,1,11],[73,61,-12,1],[73,60,-13,1],[73,59,-14,1],[73,53,-20,5],[73,48,-25,48]],
-['Material Control',151,10,[151,10,0],[140,141,1,41],[125,140,15,30],[125,110,-15,83],[25,27,2,6],[25,21,-4,21]],
-['Embroidery',147,11,[153,34,6],[153,113,-40,10],[153,103,-50,8],[153,95,-58,95],[null,0,0,0],[null,0,0,0]],
-['Embellishment',32,11,[24,2,-8],[24,30,6,1],[24,29,5,0],[24,29,5,29],[null,0,0,0],[null,0,0,0]],
-['Printing',224,11,[209,35,-15],[170,189,19,6],[170,183,13,1],[170,182,12,182],[null,0,0,0],[null,0,0,0]],
-['Industrial Engineering',11,11,[11,1,0],[10,10,0,4],[6,6,0,0],[6,6,0,2],[4,4,0,0],[4,4,0,4]],
-['Maintenance',30,13,[25,3,-5],[25,27,2,0],[25,27,2,3],[25,24,-1,10],[25,14,-11,2],[25,12,-13,12]]];
-const SUM=[4623,10.2,[4622,1531,-1],[2861,3092,231,262],[2704,2830,126,569],[2350,2261,-89,1409],[926,852,-74,46],[926,806,-120,798],4623];
+let D2=[],eotDate='',eotActualLoaded=false,eotRequest=0,eotInitPromise=null;
+async function eotDates(){
+ const old=$('eotDate').value,result=await parent.workHourEotDates();
+ $('eotDate').innerHTML='<option value="">Select date</option>'+result.dates.map(d=>`<option value="${E(d)}">${E(fd(d))}</option>`).join('');
+ $('eotDate').value=result.dates.includes(old)?old:result.common[0]||result.dates[0]||'';
+}
+async function eotLoad(){
+ const request=++eotRequest,selected=$('eotDate').value;eotDate=selected;D2=[];eotActualLoaded=false;SEL=null;refresh();
+ if(!selected){$('eotMsg').textContent='No saved plans or OT Cost dates are available.';return}
+ $('eotMsg').textContent='Loading '+fd(selected)+'…';
+ try{
+  const source=await parent.workHourEotSources(selected);if(request!==eotRequest)return;
+  const report=WorkHourEotModel.derive(source.plans,source.actuals,selected);D2=report.rows;eotActualLoaded=report.available;
+  $('eotMsg').textContent=D2.length+' department(s) · '+report.rounded+' fractional OT hour value(s) rounded to nearest hour (.5 rounds up).'+(!report.available?' No OT Cost uploaded for this date; actuals are unavailable.':'')+(report.outside?' '+report.outside+' employee(s) beyond the displayed 0–5 OT-hour slots.':'')+(report.invalid?' '+report.invalid+' invalid OT row(s) excluded.':'')+' Punch Out has no assigned source.';refresh();
+ }catch(e){if(request!==eotRequest)return;D2=[];eotActualLoaded=false;refresh();$('eotMsg').textContent='Report load failed: '+e.message;}
+}
+async function eotInit(){
+ try{if(!eotInitPromise)eotInitPromise=eotDates().catch(e=>{eotInitPromise=null;throw e});await eotInitPromise;await eotLoad();}catch(e){$('eotMsg').textContent='Date load failed: '+e.message;}
+}
+$('eotDate').onchange=eotLoad;
+$('eotReload').onclick=async()=>{try{await eotDates();await eotLoad();}catch(e){$('eotMsg').textContent='Reload failed: '+e.message}};
+function eotSummary(rows){
+ const known=rows.filter(d=>d[1]!=null),total=known.length?known.reduce((n,d)=>n+d[1],0):rows.length?null:0,hours=rows.filter(d=>d[2]!=null).map(d=>d[2]);
+ const sums=Array.from({length:6},(_,i)=>Array.from({length:i?4:3},(_,j)=>{const values=rows.map(d=>d[3+i][j]).filter(v=>v!=null);return values.length?values.reduce((n,v)=>n+v,0):null;}));
+ return [total,hours.length?Math.max(...hours):null,...sums,total];
+}
 const TOL=()=>Math.max(0,+$('tol').value||0);
-function FD(){const q=$('q2').value.trim().toLowerCase(),sf=$('sf').value,k=+$('ots').value||0,t=TOL();return D2.filter(d=>d[0].toLowerCase().includes(q)&&(!sf||(sf=='o'?d[3+k][2]>t:d[3+k][2]<=t)))}
+function FD(){const q=$('q2').value.trim().toLowerCase(),sf=$('sf').value,k=+$('ots').value||0,t=TOL();return D2.filter(d=>d[0].toLowerCase().includes(q)&&(!sf||(d[3+k][2]!=null&&(sf=='o'?d[3+k][2]>t:d[3+k][2]<=t))))}
 function r2(){const P='#F8CBAD',G='#A9D08E',T=['5:00 PM','6:00 PM','7:00 PM','8:00 PM','9:00 PM','10:00 PM'];
  const W2=[76,224,55,55,50,50,45,47,53,50,50,47,53,50,45,45,55,50,47,48,55,50,50,50,50,50,57,43];
  let h='<colgroup>'+W2.map(w=>`<col style="width:${w}px">`).join('')+'</colgroup><thead>';
  h+='<tr style="height:28px"><th class="ttl" colspan="4" rowspan="3">Department-wise EOT &amp; OT Status Report</th><th class="rg" colspan="11">Regular OT Status</th><th class="ex" colspan="12">Extra OT Status</th><th class="wh" rowspan="3"></th></tr>';
  h+='<tr style="height:17px">'+T.map((t,i)=>`<th class="tm" colspan="${i?4:3}">${t}</th>`).join('')+'</tr>';
  h+='<tr style="height:20px">'+T.map((t,i)=>`<th class="hr" colspan="${i?4:3}">${i} Hour OT</th>`).join('')+'</tr>';
- const s=SUM;
- h+=`<tr class="sm" style="height:18px"><td class="pu">03-Oct-26</td><td class="pu l">Data From HR Punch &amp; OT Cost Report</td><td>${s[0]}</td><td class="cm">${s[1]}</td>`+s.slice(2,8).flat().map(v=>`<td>${v}</td>`).join('')+`<td>${s[8]}</td></tr>`;
+ const s=eotSummary(FD());
+ h+=`<tr class="sm" style="height:18px"><td class="pu">${E(fd(eotDate))}</td><td class="pu l">Saved Approval &amp; OT Cost Report</td><td>${s[0]??'—'}</td><td class="cm">${s[1]??'—'}</td>`+s.slice(2,8).flat().map(v=>`<td>${v??'—'}</td>`).join('')+`<td>${s[8]??'—'}</td></tr>`;
  const H4=['Plan TM','Utilized TM','Short/Excess','Punch Out'];
  const hs=['Date','Department','Total TM','Plan Work Hour','Plan TM','Punch Out','Short/Excess',...H4,...H4,...H4,...H4,...H4,'Total'];
  h+='<tr class="eh" style="height:40px">'+hs.map((x,i)=>`<th>${x}${i==27?'':'<i></i>'}</th>`).join('')+'</tr></thead><tbody>';
- FD().forEach(d=>{h+=`<tr style="height:17.5px"><td class="dt lc">03-Oct-26</td><td class="dn lc">${E(d[0])}</td><td class="lc">${d[1]}</td><td class="lc">${d[2]}</td>`;
-  d[3].forEach((v,j)=>h+=`<td style="background:${j==2&&v==0?'#C6E0B4':P}">${v}</td>`);
+ FD().forEach(d=>{h+=`<tr style="height:17.5px"><td class="dt lc">${E(fd(eotDate))}</td><td class="dn lc">${E(d[0])}</td><td class="lc">${d[1]??'—'}</td><td class="lc">${d[2]??'—'}</td>`;
+  d[3].forEach((v,j)=>h+=`<td style="background:${j==2&&v==0?'#C6E0B4':P}">${v??'—'}</td>`);
   for(let g=4;g<9;g++){const a=d[g];
-   h+=`<td style="background:${P}">${a[0]==null?'':a[0]}</td><td style="background:${G}">${a[1]}</td><td style="${a[2]>TOL()?'background:#f00;color:#fff;font-weight:700':'background:#92D050'}">${a[2]}</td><td style="background:${P}">${a[3]}</td>`}
-  h+=`<td class="tt">${d[1]}</td></tr>`});
+   h+=`<td style="background:${P}">${a[0]==null?'':a[0]}</td><td style="background:${G}">${a[1]??'—'}</td><td style="${a[2]>TOL()?'background:#f00;color:#fff;font-weight:700':'background:#92D050'}">${a[2]??'—'}</td><td style="background:${P}">${a[3]??'—'}</td>`}
+  h+=`<td class="tt">${d[1]??'—'}</td></tr>`});
  $('t2').innerHTML=h+'</tbody>'}
-document.querySelectorAll('.tab').forEach(b=>b.onclick=async()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x==b));['p1','p2','p3','p4','p5','p6','p7'].forEach(p=>$(p).classList.toggle('hide',p!=b.dataset.t));if(b.dataset.t==='p1')await approvalLoad();if(b.dataset.t==='p3')await dsLoad();if(b.dataset.t==='p4')await otcInit();if(b.dataset.t==='p5')await dprInit();if(b.dataset.t==='p7'){if(!uiLoaded)await uiLoad();}if(b.dataset.t==='p6'){llDraw();if(!dbReady&&!whBusy)await load()}});
+document.querySelectorAll('.tab').forEach(b=>b.onclick=async()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x==b));['p1','p2','p3','p4','p5','p6','p7'].forEach(p=>$(p).classList.toggle('hide',p!=b.dataset.t));if(b.dataset.t==='p1')await approvalLoad();if(b.dataset.t==='p2')await eotInit();if(b.dataset.t==='p3')await dsLoad();if(b.dataset.t==='p4')await otcInit();if(b.dataset.t==='p5')await dprInit();if(b.dataset.t==='p7'){if(!uiLoaded)await uiLoad();}if(b.dataset.t==='p6'){llDraw();if(!dbReady&&!whBusy)await load()}});
 r2();
 
 // ---------- Line & Level Settings (shared SQL report rows) ----------
@@ -1048,7 +1059,7 @@ function vBar(F,k){const el=$('v1'),w=W_(el),t=TOL(),rows=F.map(d=>({n:d[0],v:d[
   s+=`<g data-d="${E(r.n)}" data-tt="<b>${E(r.n)}</b><br>Short/Excess: <b>${sgn(r.v)}</b><br>${k} Hour OT" style="cursor:pointer"${dm(r.n)}><rect x="0" y="${y}" width="${w}" height="${rh}" fill="${r.n==SEL?'#eaf3ff':'transparent'}"/>`+T(L-8,y+rh/2+4,cut(r.n,Math.floor(L/6.6)),'text-anchor="end"')+`<rect class="an" style="transform-origin:${r.v>=0?'left':'right'}" x="${Math.min(x0,x1)}" y="${y+4}" width="${Math.max(Math.abs(x1-x0),2)}" height="${rh-8}" rx="2" fill="${r.v>t?RED:GRN}"/>`+T(r.v>=0?x1+5:x1-5,y+rh/2+4,r.v,`text-anchor="${r.v>=0?'start':'end'}" font-weight="700"`)+'</g>'});
  el.innerHTML=svg(w,h,s+T((L+w-R)/2,h-6,'Short / Excess (manpower; + = over plan)','text-anchor="middle" fill="#555" font-size="11"'))}
 function vLine(F2,k){const el=$('v2'),w=W_(el),h=340,L=56,R=18,Tp=14,B=64,ss=(i,j)=>F2.reduce((a,d)=>a+(d[3+i][j]||0),0);
- const S=[['Plan TM',I6.map(i=>ss(i,0))],['Utilized TM',I6.map(i=>i?ss(i,1):null)],['Punch Out',I6.map(i=>i?ss(i,3):ss(0,1))]],vis=S.filter(x=>!HID[x[0]]);
+ const S=[['Plan TM',I6.map(i=>ss(i,0))],['Utilized TM',I6.map(i=>i?ss(i,1):null)]],vis=S.filter(x=>!HID[x[0]]);
  const mx=Math.max(1,...vis.flatMap(x=>x[1].filter(v=>v!=null))),st=nice(mx/5),hi=Math.ceil(mx/st)*st,bw=(w-L-R)/6,sx=i=>L+(i+.5)*bw,sy=v=>Tp+(1-v/hi)*(h-Tp-B);
  let s=`<rect x="${L+k*bw}" y="${Tp}" width="${bw}" height="${h-Tp-B}" fill="#FFD966" opacity=".35"/>`;
  for(let v=0;v<=hi;v+=st)s+=`<line x1="${L}" x2="${w-R}" y1="${sy(v)}" y2="${sy(v)}" stroke="${v?'#e6e6e6':'#444'}"/>`+T(L-8,sy(v)+4,v,'text-anchor="end" fill="#666" font-size="11"');
@@ -1079,20 +1090,20 @@ function charts(){const F=FD(),k=+$('ots').value||0,t=TOL();
  if(SEL&&!F.some(d=>d[0]==SEL))SEL=null;
  const F2=SEL?F.filter(d=>d[0]==SEL):F,ss=(i,j)=>F2.reduce((a,d)=>a+(d[3+i][j]||0),0),pl=ss(k,0),ut=ss(k,1),net=ss(k,2),tm=F2.reduce((a,d)=>a+d[1],0),ov0=F2.filter(d=>d[3+k][2]>t).length,up=pl?ut/pl*100:0;
  const chips=I6.map(i=>`<i class="chip${i==k?' on':''}" data-c="${i}">${i}H · ${SL[i]}</i>`).join('')+(SEL||$('sf').value||$('q2').value?'<i class="chip x" data-c="x">✕ Clear filters</i>':'');
- $('kpi').innerHTML=`<div class="kc ttl"><span>Report dashboard · 03-Oct-26</span><b>Department-wise EOT &amp; OT Status</b><em>${F2.length} department${F2.length==1?'':'s'}${SEL?' · '+E(SEL):''} · ${k} Hour OT</em><div>${chips}</div></div>`+
-  kc('Total TM',tm,SEL?E(SEL):'selected departments','#0072B2')+kc('Plan TM',pl,`${k} Hour OT`,'#0072B2',spark(I6.map(i=>ss(i,0)),'#0072B2'))+kc(k?'Utilized TM':'Punch Out',ut,'actual manpower','#E69F00',spark(I6.map(i=>ss(i,1)),'#E69F00'))+
-  kc('Utilization',up.toFixed(1)+'%',up>100+t/Math.max(pl,1)*100?'above plan':'vs plan','#009E73',pb(up,up>100?RED:'#009E73'))+kc('Net Short/Excess',sgn(net),net>t?'over plan':'within plan',net>t?RED:GRN)+kc('Over plan',ov0+' / '+F2.length,'departments',ov0?RED:GRN,pb(F2.length?ov0/F2.length*100:0,RED));
- if(!F.length){$('ins').innerHTML='';$('cc').innerHTML='<div class="card c6">No departments match the current filter.</div>';return}
+ $('kpi').innerHTML=`<div class="kc ttl"><span>Report dashboard · ${E(fd(eotDate))}</span><b>Department-wise EOT &amp; OT Status</b><em>${F2.length} department${F2.length==1?'':'s'}${SEL?' · '+E(SEL):''} · ${k} Hour OT</em><div>${chips}</div></div>`+
+  kc('Total TM',F2.some(d=>d[1]!=null)?tm:'—',SEL?E(SEL):'selected departments','#0072B2')+kc('Plan TM',F2.some(d=>d[3+k][0]!=null)?pl:'—',`${k} Hour OT`,'#0072B2',spark(I6.map(i=>ss(i,0)),'#0072B2'))+kc(k?'Utilized TM':'Punch Out',k&&eotActualLoaded?ut:'—','actual manpower','#E69F00',spark(I6.map(i=>ss(i,1)),'#E69F00'))+
+  kc('Utilization',k&&eotActualLoaded?up.toFixed(1)+'%':'—',up>100+t/Math.max(pl,1)*100?'above plan':'vs plan','#009E73',pb(up,up>100?RED:'#009E73'))+kc('Net Short/Excess',eotActualLoaded?sgn(net):'—',net>t?'over plan':'within plan',net>t?RED:GRN)+kc('Over plan',ov0+' / '+F2.length,'departments',ov0?RED:GRN,pb(F2.length?ov0/F2.length*100:0,RED));
+ if(!eotActualLoaded&&F.length){$('ins').innerHTML='';$('cc').innerHTML='<div class="card c6">No OT Cost uploaded for this date. Utilized TM is unavailable.</div>';return}if(!F.length){$('ins').innerHTML='';$('cc').innerHTML='<div class="card c6">No departments match the current date and filters.</div>';return}
  const hi=[...F].sort((a,b)=>b[3+k][2]-a[3+k][2]),lo=hi[hi.length-1],dt=[...F].sort((a,b)=>b[1]-a[1]),I=[];
  if(hi[0][3+k][2]>t)I.push(`<b>${E(hi[0][0])}</b> has the highest excess at ${k} Hour OT (${sgn(hi[0][3+k][2])}).`);if(lo[3+k][2]<0)I.push(`<b>${E(lo[0])}</b> is furthest under plan (${lo[3+k][2]}).`);
  I.push(`${F.filter(d=>d[3+k][2]>t).length} of ${F.length} departments exceed plan beyond the ±${t} tolerance.`);I.push(`<b>${E(dt[0][0])}</b> is the largest department by Total TM (${dt[0][1]}).`);
  $('ins').innerHTML=I.map(x=>`<li>${x}</li>`).join('');
  const cd=(c,i,h)=>`<div class="card ${c}"><button class="g png">PNG</button><h3>${h}</h3><div class="cv" id="v${i}"></div></div>`;
- $('cc').innerHTML=cd('c6',1,`Short / Excess by Department – ${k} Hour OT`)+cd('c6',2,`Plan vs Utilized vs Punch Out by OT Slot${SEL?' – '+E(SEL):''}`)+cd('c6',3,'Short / Excess Heat Map – Department × OT Slot')+cd('c3',4,'Total TM Share by Department')+cd('c3',5,`Plan Status – ${k} Hour OT`);
+ $('cc').innerHTML=cd('c6',1,`Short / Excess by Department – ${k} Hour OT`)+cd('c6',2,`Plan vs Utilized by OT Slot${SEL?' – '+E(SEL):''}`)+cd('c6',3,'Short / Excess Heat Map – Department × OT Slot')+cd('c3',4,'Total TM Share by Department')+cd('c3',5,`Plan Status – ${k} Hour OT`);
  vBar(F,k);vLine(F2,k);vHeat(F,k);
  const top=dt.slice(0,5).map((d,i)=>({n:d[0],v:d[1],c:PAL[i],d:d[0]}));if(dt.length>5)top.push({n:'Others ('+(dt.length-5)+')',v:dt.slice(5).reduce((a,d)=>a+d[1],0),c:PAL[6]});
  donut($('v4'),top,{u:'TM',c:[F.reduce((a,d)=>a+d[1],0),'Total TM']});
- const ov=F.filter(d=>d[3+k][2]>t).length,st=[{n:'Over plan (> '+t+')',v:ov,c:RED,s:'o'},{n:'Within plan (≤ '+t+')',v:F.length-ov,c:GRN,s:'w'}].filter(x=>x.v);
+ const ov=F.filter(d=>d[3+k][2]>t).length,st=[{n:'Over plan (> '+t+')',v:ov,c:RED,s:'o'},{n:'Within plan (≤ '+t+')',v:F.filter(d=>d[3+k][2]!=null&&d[3+k][2]<=t).length,c:GRN,s:'w'},{n:'Plan unavailable',v:F.filter(d=>d[3+k][2]==null).length,c:'#999'}].filter(x=>x.v);
  donut($('v5'),st,{u:'depts',c:[F.length,'departments'],st:1})}
 $('ots').innerHTML=['5:00 PM','6:00 PM','7:00 PM','8:00 PM','9:00 PM','10:00 PM'].map((t,i)=>`<option value="${i}" ${i==1?'selected':''}>${i} Hour OT (${t})</option>`).join('');
 const tip=document.createElement('div');tip.id='tt';document.body.appendChild(tip);
@@ -1112,7 +1123,7 @@ $('whDept').addEventListener('change',()=>{$('whSection').value='';flt()});$('wh
 function dl(rows,name){const csv='\ufeff'+rows.map(a=>a.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(',')).join('\r\n'),l=document.createElement('a');l.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));l.download=name;l.click()}
 $('x2').onclick=()=>{const T=['5:00 PM','6:00 PM','7:00 PM','8:00 PM','9:00 PM','10:00 PM'],g=['Plan TM','Punch Out','Short/Excess'],h4=['Plan TM','Utilized TM','Short/Excess','Punch Out'],hd=['Date','Department','Total TM','Plan Work Hour'];
  T.forEach((t,i)=>(i?h4:g).forEach(x=>hd.push(t+' '+x)));hd.push('Total');
- dl([hd,...FD().map(d=>['03-Oct-26',d[0],d[1],d[2],...d.slice(3).flat().map(v=>v==null?'':v),d[1]])],'department_wise_eot_ot_status.csv')};
+ dl([hd,...FD().map(d=>[fd(eotDate),d[0],d[1]??'',d[2]??'',...d.slice(3).flat().map(v=>v==null?'':v),d[1]??''])],'department_wise_eot_ot_status.csv')};
 $('cc').addEventListener('click',e=>{const b=e.target.closest('.png');if(!b)return;const sv=b.parentNode.querySelector('svg').cloneNode(true),vb=sv.viewBox.baseVal,w=vb.width*2,h=vb.height*2;
  sv.setAttribute('font-family','Arial');sv.setAttribute('width',w);sv.setAttribute('height',h);
  const im=new Image();im.onload=()=>{const c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,w,h);x.drawImage(im,0,0);const a=document.createElement('a');a.href=c.toDataURL('image/png');a.download='chart.png';a.click()};

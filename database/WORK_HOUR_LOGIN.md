@@ -46,3 +46,19 @@ row and its new values, preventing users from moving other users' rows into thei
 scope. Approval Request visibility remains controlled separately by its View
 permission. Scope changes reach the open UI within 15 seconds; saves check the
 current server profile immediately. Fast atomic batch saves remain enabled.
+
+## Department-wise EOT & OT Status
+
+p2 now derives its report from saved User Interface entries (the Approval Request
+source) and OT Cost for the selected work date. Total TM sums Present Manpower
+by department. Plan Work Hour takes the maximum Asking Work Hour. Plan TM sums
+each matching time column. Utilized TM counts employees in one exclusive slot,
+rounding Total OT Hour to nearest integer with .5 rounding upward; 1 hour goes
+only to 6 PM, 3 hours only to 8 PM. The existing table displays 0–5 OT-hour slots;
+records beyond those slots are reported in the status message. Missing dated OT
+Cost remains unavailable rather than zero. Punch Out stays unassigned.
+
+The p2 permission grants read-only, date-restricted dependency projections of
+plan quantities and OT hours, without employee names, IDs or salary fields.
+Full p1/p4 data access remains separate. Scoped p7 reads and writes retain their
+existing guards. p2 totals, charts and CSV all use the current date and filters.
