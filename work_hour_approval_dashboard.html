@@ -177,7 +177,7 @@ html,body{min-height:100%}
   <div class="otc-wrap">
     <div class="otc-bar">
       <div class="otc-f otc-file"><label>Daily OT Cost CSV</label><input type="file" id="otcFile" accept=".csv,text/csv"></div>
-      <div class="otc-f"><label>Work Date</label><select id="otcDate"><option value="">Select date</option></select></div>
+      <div class="otc-f"><label>Work Date</label><select id="otcDate"><option value="">All dates</option></select></div>
       <div class="otc-f"><label>Department Slicer</label><select id="otcDept"><option value="">All Departments</option></select></div>
       <div class="otc-f"><label>Search</label><input id="otcSearch" placeholder="ID, name, department, section, line…"></div>
       <button id="otcUpload">Upload / Update</button>
@@ -206,7 +206,7 @@ html,body{min-height:100%}
     <div class="dpr-bar">
       <div class="dpr-f dpr-file"><label>Daily Punch CSV</label><input type="file" id="dprFile" accept=".csv,text/csv"></div>
       <div class="dpr-f"><label>Report Year</label><input type="number" id="dprYear" min="2020" max="2100" value="2026"></div>
-      <div class="dpr-f"><label>Work Date</label><select id="dprDate"><option value="">Select date</option></select></div>
+      <div class="dpr-f"><label>Work Date</label><select id="dprDate"><option value="">All dates</option></select></div>
       <div class="dpr-f"><label>Department Slicer</label><select id="dprDept"><option value="">All Departments</option></select></div>
       <div class="dpr-f"><label>Search</label><input id="dprSearch" placeholder="ID, name, designation, section, line…"></div>
       <button id="dprUpload">Upload / Update</button>
@@ -851,7 +851,7 @@ $('dsBody').onclick=async e=>{
 
 // ---------- OT Cost Data ----------
 const OTC_HDR=['Date','ID','Name','Department','Designation','Section','Line','Gross Salary','OT Rate','Total OT Hour','Regular OT Hour','Extra OT Hour','Regular OT Cost','Extra OT cost','Total OT Cost'];
-let OTC_ROWS=[],otcReady=false;
+let OTC_ROWS=[],otcReady=false,otcRequest=0;
 function otcNum(v){const s=String(v==null?'':v).trim().replace(/,/g,'');if(!s)return null;const n=Number(s);return Number.isFinite(n)?n:null}
 function otcIsoDate(v){
  const s=String(v||'').trim();if(!s)return'';
@@ -897,7 +897,7 @@ function otcMapCsv(text){
 async function otcDates(selectLatest=false){
  try{
   const ds=parent&&typeof parent.workHourOtCostDates==='function'?await parent.workHourOtCostDates():[];
-  const s=$('otcDate'),old=s.value;s.innerHTML='<option value="">Select date</option>'+ds.map(x=>'<option value="'+E(x)+'">'+E(otcFmtDate(x))+'</option>').join('');
+  const s=$('otcDate'),old=s.value;s.innerHTML='<option value="">All dates</option>'+ds.map(x=>'<option value="'+E(x)+'">'+E(otcFmtDate(x))+'</option>').join('');
   if(old&&ds.includes(old))s.value=old;else if(selectLatest&&ds[0])s.value=ds[0];
   return ds
  }catch(e){$('otcInfo').textContent='Date load failed: '+e.message;return[]}
@@ -922,19 +922,21 @@ function otcDraw(){
  $('otcInfo').textContent=rows.length+' row(s) shown'+(q?' after search filter':'');
 }
 async function otcLoadRows(){
- const dt=$('otcDate').value;if(!dt){OTC_ROWS=[];otcDraw();return}
- $('otcInfo').textContent='Loading '+otcFmtDate(dt)+'...';
+ const dt=$('otcDate').value,request=++otcRequest;
+ $('otcInfo').textContent='Loading '+(dt?otcFmtDate(dt):'all dates')+'...';
  try{
-  OTC_ROWS=parent&&typeof parent.workHourOtCostRows==='function'?await parent.workHourOtCostRows(dt):[];
+  const rows=parent&&typeof parent.workHourOtCostRows==='function'?await parent.workHourOtCostRows(dt):[];
+  if(request!==otcRequest)return;
+  OTC_ROWS=rows;
   const deps=[...new Set(OTC_ROWS.map(r=>r.department).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
   const sel=$('otcDept'),old=sel.value;
   sel.innerHTML='<option value="">All Departments</option>'+deps.map(x=>'<option value="'+E(x)+'">'+E(x)+'</option>').join('');
   if(old&&deps.includes(old))sel.value=old;
   otcDraw()
  }
- catch(e){$('otcInfo').textContent='Load failed: '+e.message}
+ catch(e){if(request!==otcRequest)return;OTC_ROWS=[];otcDraw();$('otcInfo').textContent='Load failed: '+e.message}
 }
-async function otcInit(){if(!otcReady){otcReady=true;await otcDates(true);$('otcDate').onchange=otcLoadRows;$('otcDept').onchange=otcDraw;$('otcSearch').oninput=otcDraw;$('otcReload').onclick=async()=>{await otcDates(false);await otcLoadRows()};$('otcUpload').onclick=otcUpload}if($('otcDate').value)await otcLoadRows()}
+async function otcInit(){if(!otcReady){otcReady=true;await otcDates(true);$('otcDate').onchange=otcLoadRows;$('otcDept').onchange=otcDraw;$('otcSearch').oninput=otcDraw;$('otcReload').onclick=async()=>{await otcDates(false);await otcLoadRows()};$('otcUpload').onclick=otcUpload}await otcLoadRows()}
 async function otcUpload(){
  const f=$('otcFile').files[0];if(!f){$('otcInfo').textContent='Choose a CSV file first.';return}
  const b=$('otcUpload');b.disabled=true;b.textContent='Uploading...';
@@ -955,7 +957,7 @@ async function otcUpload(){
 
 // ---------- Daily Punch Report ----------
 const DPR_HDR=['Date','ID','Name','Designation','DOJ','Department','Section','Line','Log In','Log Out'];
-let DPR_ROWS=[],dprReady=false;
+let DPR_ROWS=[],dprReady=false,dprRequest=0;
 function dprIsoDate(v,year){
  const s=String(v||'').trim();if(!s)return'';
  if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;
@@ -982,7 +984,7 @@ function dprMapCsv(text){
 async function dprDates(selectLatest=false){
  try{
   const ds=parent&&typeof parent.workHourDailyPunchDates==='function'?await parent.workHourDailyPunchDates():[],s=$('dprDate'),old=s.value;
-  s.innerHTML='<option value="">Select date</option>'+ds.map(x=>'<option value="'+E(x)+'">'+E(dprFmtDate(x))+'</option>').join('');
+  s.innerHTML='<option value="">All dates</option>'+ds.map(x=>'<option value="'+E(x)+'">'+E(dprFmtDate(x))+'</option>').join('');
   if(old&&ds.includes(old))s.value=old;else if(selectLatest&&ds[0])s.value=ds[0];return ds
  }catch(e){$('dprInfo').textContent='Date load failed: '+e.message;return[]}
 }
@@ -1001,15 +1003,17 @@ function dprDraw(){
  $('dprInfo').textContent=rows.length+' row(s) shown'+(q||dept?' after filter':'')
 }
 async function dprLoadRows(){
- const dt=$('dprDate').value;if(!dt){DPR_ROWS=[];dprDraw();return}
- $('dprInfo').textContent='Loading '+dprFmtDate(dt)+'...';
+ const dt=$('dprDate').value,request=++dprRequest;
+ $('dprInfo').textContent='Loading '+(dt?dprFmtDate(dt):'all dates')+'...';
  try{
-  DPR_ROWS=parent&&typeof parent.workHourDailyPunchRows==='function'?await parent.workHourDailyPunchRows(dt):[];
+  const rows=parent&&typeof parent.workHourDailyPunchRows==='function'?await parent.workHourDailyPunchRows(dt):[];
+  if(request!==dprRequest)return;
+  DPR_ROWS=rows;
   const deps=[...new Set(DPR_ROWS.map(r=>r.department).filter(Boolean))].sort((a,b)=>a.localeCompare(b)),sel=$('dprDept'),old=sel.value;
   sel.innerHTML='<option value="">All Departments</option>'+deps.map(x=>'<option value="'+E(x)+'">'+E(x)+'</option>').join('');if(old&&deps.includes(old))sel.value=old;dprDraw()
- }catch(e){$('dprInfo').textContent='Load failed: '+e.message}
+ }catch(e){if(request!==dprRequest)return;DPR_ROWS=[];dprDraw();$('dprInfo').textContent='Load failed: '+e.message}
 }
-async function dprInit(){if(!dprReady){dprReady=true;await dprDates(true);$('dprDate').onchange=dprLoadRows;$('dprDept').onchange=dprDraw;$('dprSearch').oninput=dprDraw;$('dprReload').onclick=async()=>{await dprDates(false);await dprLoadRows()};$('dprUpload').onclick=dprUpload}if($('dprDate').value)await dprLoadRows()}
+async function dprInit(){if(!dprReady){dprReady=true;await dprDates(true);$('dprDate').onchange=dprLoadRows;$('dprDept').onchange=dprDraw;$('dprSearch').oninput=dprDraw;$('dprReload').onclick=async()=>{await dprDates(false);await dprLoadRows()};$('dprUpload').onclick=dprUpload}await dprLoadRows()}
 async function dprUpload(){
  const f=$('dprFile').files[0];if(!f){$('dprInfo').textContent='Choose a CSV file first.';return}
  const b=$('dprUpload');b.disabled=true;b.textContent='Uploading...';
