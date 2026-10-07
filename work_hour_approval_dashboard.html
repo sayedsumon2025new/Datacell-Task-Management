@@ -609,7 +609,7 @@ const UI_SPEC=[
  ['present_manpower','Present Manpower','number',60],['asking_manpower','Asking manpower','number',78],['asking_hour','Asking Hour','number',59],
  ['ot_5_pm','5.00 PM','number',60],['ot_6_pm','6.00 PM','number',60],['ot_7_pm','7.00 PM','number',61],['ot_8_pm','8.00 PM','number',60],
  ['ot_9_pm','9.00 PM','number',68],['ot_10_pm','10.00 PM','number',94],['ot_11_pm','11.00 PM','number',68],['ot_12_am','12.00 PM','number',80],['ot_1_am','1.00 AM','number',92],
- ['iron_man','Iron Man','number',92],['staff','Staff','number',39],['total_manpower','Total Manpower','number',64],
+ ['staff','Staff','number',39],['total_manpower','Total Manpower','number',64],
  ['reason_eot','Reason EOT','text',187],['responsible_department','Responsible department','text',129]
 ];
 let UI_ROWS=[],uiDirty=new Set(),uiBusy=false,uiLoaded=false,uiReady=false;
@@ -651,7 +651,7 @@ function uiRecalcTotal(row){
  const five=row.asking_manpower===''||row.asking_manpower==null?null:Number(row.asking_manpower);
  if(row.ot_5_pm!==five){row.ot_5_pm=five;if(uiHasData(row))uiDirty.add(row.id)}
  const rowIndex=UI_ROWS.indexOf(row),fiveCell=$('uiBody').querySelector(`input[data-row="${rowIndex}"][data-key="ot_5_pm"]`);if(fiveCell)fiveCell.value=five??'';
- const fields=UI_SPEC.slice(UI_SPEC.findIndex(([key])=>key==='ot_5_pm'),UI_SPEC.findIndex(([key])=>key==='staff')+1).map(([key])=>key),value=fields.some(key=>row[key]!==''&&row[key]!=null)?fields.reduce((sum,key)=>sum+(Number(row[key])||0),0):null;
+ const fields=UI_SPEC.slice(UI_SPEC.findIndex(([key])=>key==='ot_6_pm'),UI_SPEC.findIndex(([key])=>key==='staff')+1).map(([key])=>key),value=fields.some(key=>row[key]!==''&&row[key]!=null)?fields.reduce((sum,key)=>sum+(Number(row[key])||0),0):null;
  if(row.total_manpower!==value){row.total_manpower=value;if(uiHasData(row))uiDirty.add(row.id)}
  const i=UI_ROWS.indexOf(row),cell=$('uiBody').querySelector(`input[data-row="${i}"][data-key="total_manpower"]`);if(cell)cell.value=value??'';
 }
@@ -663,7 +663,7 @@ function uiDraw(){
  for(const row of UI_ROWS)uiRecalcTotal(row);
  $('uiHead').innerHTML='<tr>'+UI_SPEC.map(([,label])=>`<th>${E(label)}</th>`).join('')+'</tr><tr class="ui-totals">'+UI_SPEC.map(([key,,type],i)=>`<th${type==='number'?` id="uiTotal_${key}"`:''}>${i===0?'Total':''}</th>`).join('')+'</tr>';
  $('uiBody').innerHTML=uiVisibleRows().map(row=>{const i=UI_ROWS.indexOf(row);return '<tr>'+UI_SPEC.map(([key,label,type])=>
-  `<td><input data-row="${i}" data-key="${key}" aria-label="Row ${i+1} ${E(label)}" type="${type==='number'?'number':type==='date'?'date':'text'}"${type==='number'?` min="0" step="${key==='asking_hour'?'any':'1'}"`:''}${['department','section','level'].includes(key)?` list="ui${key==='department'?'Departments':key==='section'?'Sections':'Levels'}"`:''} ${['present_manpower','total_manpower','ot_5_pm'].includes(key)?` readonly title="${key==='present_manpower'?'From Daily Punch Report':key==='ot_5_pm'?'From Asking manpower — read only':'5.00 PM through Staff'}"`:''} value="${E(row[key]??'')}"></td>`).join('')+'</tr>'}).join('');
+  `<td><input data-row="${i}" data-key="${key}" aria-label="Row ${i+1} ${E(label)}" type="${type==='number'?'number':type==='date'?'date':'text'}"${type==='number'?` min="0" step="${key==='asking_hour'?'any':'1'}"`:''}${['department','section','level'].includes(key)?` list="ui${key==='department'?'Departments':key==='section'?'Sections':'Levels'}"`:''} ${['present_manpower','total_manpower','ot_5_pm'].includes(key)?` readonly title="${key==='present_manpower'?'From Daily Punch Report':key==='ot_5_pm'?'From Asking manpower — read only':'6.00 PM through Staff'}"`:''} value="${E(row[key]??'')}"></td>`).join('')+'</tr>'}).join('');
  UI_ROWS.forEach(uiHoursPaint);uiSuggestions();uiUpdateTotals();uiControls()
 }
 const uiPunchCache=new Map();
