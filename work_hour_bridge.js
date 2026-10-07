@@ -178,7 +178,7 @@ async function workHourEotSources(workDate){
  if(!/^\d{4}-\d{2}-\d{2}$/.test(workDate))throw new Error('Select a valid work date.');
  const filter='&work_date=eq.'+encodeURIComponent(workDate)+'&order=department.asc,id.asc';
  const [plans,actuals]=await Promise.all([
-  fetchPagedTableRows('work_hour_user_interface','select=work_date,department,present_manpower,asking_hour,ot_5_pm,ot_6_pm,ot_7_pm,ot_8_pm,ot_9_pm,ot_10_pm'+filter,1000,Infinity,'p2'),
+  fetchPagedTableRows('work_hour_user_interface','select=work_date,department,present_manpower,asking_hour,ot_5_pm,ot_6_pm,ot_7_pm,ot_8_pm,ot_9_pm,ot_10_pm,ot_11_pm,ot_12_am,ot_1_am'+filter,1000,Infinity,'p2'),
   fetchPagedTableRows('work_hour_ot_cost','select=work_date,department,total_ot_hour'+filter,1000,Infinity,'p2')]);
  return {plans,actuals};
 }

@@ -62,3 +62,12 @@ The p2 permission grants read-only, date-restricted dependency projections of
 plan quantities and OT hours, without employee names, IDs or salary fields.
 Full p1/p4 data access remains separate. Scoped p7 reads and writes retain their
 existing guards. p2 totals, charts and CSV all use the current date and filters.
+
+
+## Department EOT calculations (Book1.csv reference)
+
+The report reads saved User Interface plans and OT Cost records by date and normalized department. Total TM sums Present Manpower; Plan Work Hour takes the maximum Asking Hour; each Plan TM sums its corresponding 5 PM–1 AM field. Rounded OT hours use half-up rounding. Punch Out at 6 PM–1 AM counts employees in exclusive 1–8 hour buckets; 5 PM Punch Out is Total TM minus every later OT bucket, including employees beyond the displayed range. Utilized TM at each later hour is remaining manpower before that hour's Punch Out. 5 PM Short/Excess is Plan TM minus Total TM; later Short/Excess is Utilized minus Plan. Missing sources remain unavailable; a negative 5 PM residual is flagged as a source mismatch.
+
+The full report, filtered summaries, charts and CSV use all nine slots. Total OT TM remains blank because the supplied reference CSV did not populate this measure; the final Total retains Total TM. The reference CSV's static Plan Work Hour summary (10.2) conflicts with its detail rows, so the existing maximum rule is retained (13 for 03-Oct-26).
+
+The p2 dependency projection includes the additional three plan quantities, retains the old six-slot projection for cached clients, and still excludes employee identities, salary and writes. No reference CSV rows are imported into production.
