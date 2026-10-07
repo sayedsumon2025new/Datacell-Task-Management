@@ -71,3 +71,14 @@ The report reads saved User Interface plans and OT Cost records by date and norm
 The full report, filtered summaries, charts and CSV use all nine slots. Total OT TM remains blank because the supplied reference CSV did not populate this measure; the final Total retains Total TM. The reference CSV's static Plan Work Hour summary (10.2) conflicts with its detail rows, so the existing maximum rule is retained (13 for 03-Oct-26).
 
 The p2 dependency projection includes the additional three plan quantities, retains the old six-slot projection for cached clients, and still excludes employee identities, salary and writes. No reference CSV rows are imported into production.
+
+
+## User Interface deletion, uniqueness and deadline
+
+The toolbar selects one required date; the row Date column is omitted from the entry/export grid. Each row has Delete. Saved-row deletions are staged until Save Changes, with Undo Delete before saving; unsaved blank drafts are simply removed. Delete permission and the existing entry scope still apply. Saved deletion + entry changes share a revision-checked atomic RPC per batch (up to 200 changes), with archived deleted row data. A failed batch preserves drafts and rolls back its database changes.
+
+`work_hour_entry_guards.sql` installs normalized, date-specific uniqueness across Department / Section / Level / Line. Whitespace/case and numeric line/level aliases are canonicalized. Same combinations on different dates remain valid. Duplicate protection also applies to Admins and concurrent writes. The four redundant historical copies were archived in the unexposed, service-only `work_hour_private.entry_archive`; retained rows preserve all nonblank values. The cleanup aborts on conflicting nonblank values.
+
+Regular users can add/edit/delete/save only today's entries before 17:00 Asia/Dhaka. Existing row dates and target dates are checked, so moving old rows to today cannot bypass the guard. At 17:00 the server denies changes. Admins bypass the date/time gate, while active-account checks, revisions and uniqueness remain enforced. SQL uses the live stored account and `clock_timestamp()`; UI follows a monotonic server clock supplied by the authenticated profile endpoint and updates the visible lock automatically. Cached single-row writes and the older batch RPC route through the same SQL rules.
+
+The combined RPC and helper functions revoke PUBLIC/anon/authenticated EXECUTE, retaining service-role access through the authenticated Edge Function. Archives are not part of the Data API. No user-controlled account/time fields authorize writes.

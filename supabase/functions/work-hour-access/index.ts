@@ -6,7 +6,7 @@ const tabs=['p1','p2','p3','p4','p5','p6','p7'];
 const fail=(message:string,status=400)=>{throw Object.assign(new Error(message),{status})};
 async function rest(path:string,method='GET',body?:unknown,prefer='return=representation'){
  const r=await fetch(url+'/rest/v1/'+path,{method,headers:{apikey:key,Authorization:'Bearer '+key,'Content-Type':'application/json',Prefer:prefer},body:body===undefined?undefined:JSON.stringify(body)});
- const d=await r.json().catch(()=>null);if(!r.ok)fail(d?.message||'Database request failed',r.status);return d;
+ const d=await r.json().catch(()=>null);if(!r.ok)fail(d?.message?.includes('work_hour_entry_unique_identity')?'Duplicate row: this Date / Department / Section / Level / Line already exists.':d?.message||'Database request failed',r.status);return d;
 }
 async function auth(path:string,method:string,body?:unknown,token=key){
  const r=await fetch(url+'/auth/v1/'+path,{method,headers:{apikey:key,Authorization:'Bearer '+token,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});
@@ -105,20 +105,35 @@ Deno.serve(async req=>{
   const user=await auth('user','GET',undefined,token);
   const rows=await rest('work_hour_accounts?id=eq.'+encodeURIComponent(user.id));const profile=rows?.[0];
   if(!profile?.active)fail('This account is inactive or has no Work Hour access',403);
-  if(b.op==='me')return new Response(JSON.stringify(profile),{headers:cors});
+  if(b.op==='me')return new Response(JSON.stringify({...profile,server_now:new Date().toISOString()}),{headers:cors});
   if(b.op==='save-entries'){
    if(!can(profile,'p7','edit'))fail('User Interface edit access required',403);
    if(!Array.isArray(b.entries)||!b.entries.length||b.entries.length>200)fail('Send 1 to 200 entries');
    return new Response(JSON.stringify(await rest('rpc/work_hour_save_entries','POST',{actor_id:user.id,entries:b.entries})),{headers:cors});
   }
+  if(b.op==='apply-entries'){
+   const entries=b.entries||[],deletions=b.deletions||[];
+   if(!Array.isArray(entries)||!Array.isArray(deletions)||entries.length+deletions.length<1||entries.length+deletions.length>200)fail('Send 1 to 200 changes');
+   if(entries.length&&!can(profile,'p7','edit'))fail('User Interface edit access required',403);
+   if(deletions.length&&!can(profile,'p7','delete'))fail('User Interface delete access required',403);
+   return new Response(JSON.stringify(await rest('rpc/work_hour_apply_entries','POST',{actor_id:user.id,entries,deletions})),{headers:cors});
+  }
   if(b.op==='data'){
    const q=authorizeData(profile,b);let payload=b.body,existingEntry:any=null;
-   if(b.table==='work_hour_user_interface'&&b.method!=='GET'){
+   if(b.table==='work_hour_user_interface'&&(b.method||'GET')!=='GET'){
     if(q.has('on_conflict')||b.prefer?.includes('merge-duplicates'))fail('Entry upserts are not allowed');
-    if(b.method==='PATCH'||b.method==='DELETE'){
-     existingEntry=(await rest('work_hour_user_interface?id='+encodeURIComponent(q.get('id')||'')+'&select=department,section,level'))?.[0];
-     if(!existingEntry||!entryAllowed(profile,existingEntry))fail('This existing row is outside your data-entry scope',403);
+    const method=b.method,id=q.get('id')?.slice(3),revision=q.get('updated_at');
+    const previous=method==='POST'?null:(await rest('work_hour_user_interface?id=eq.'+encodeURIComponent(id||'')))?.[0];
+    if(method!=='POST'&&(!previous||!entryAllowed(profile,previous)))fail('This existing row is outside your data-entry scope',403);
+    const expected=revision?.startsWith('eq.')?revision.slice(3):null;
+    if(method==='DELETE'){
+     await rest('rpc/work_hour_apply_entries','POST',{actor_id:user.id,entries:[],deletions:[{id,expected_updated_at:expected}]});
+     return new Response(JSON.stringify([previous]),{headers:cors});
     }
+    if(!payload||Array.isArray(payload)||typeof payload!=='object')fail('One entry is required');
+    const row={...previous,...payload,id:method==='POST'?payload.id:id};
+    const saved=await rest('rpc/work_hour_save_entries','POST',{actor_id:user.id,entries:[{row,expected_updated_at:method==='POST'?null:expected}]});
+    return new Response(JSON.stringify(saved),{headers:cors});
    }
    if(b.table==='work_hour_user_interface'&&(b.method||'GET')==='GET'&&!eotDependency(profile,b,q)&&(b.context==='p7'||!can(profile,'p1'))){
     if(!can(profile,'p7'))fail('User Interface access required',403);scopeQuery(profile,q);

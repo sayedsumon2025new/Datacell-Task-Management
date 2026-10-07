@@ -184,3 +184,13 @@ async function workHourEotSources(workDate){
 }
 window.workHourEotDates=workHourEotDates;
 window.workHourEotSources=workHourEotSources;
+
+async function workHourUserInterfaceApply(rows,deletions){
+ const entries=rows.map(row=>{const payload={id:row.id};for(const key of WH_UI_FIELDS){const value=row[key];payload[key]=WH_UI_NUMBERS.has(key)?value==null||value===''?null:Number(value):key==='work_date'?(value||null):String(value??'').trim();}return {row:payload,expected_updated_at:row.updated_at||null};});
+ const removed=deletions.map(row=>({id:row.id,expected_updated_at:row.updated_at||null}));
+ if(!entries.length&&!removed.length||entries.length+removed.length>200)throw new Error('Send 1 to 200 changes.');
+ const result=await api({op:'apply-entries',entries,deletions:removed});
+ if(!Array.isArray(result?.rows)||!Array.isArray(result?.deleted)||result.rows.length!==rows.length||result.deleted.length!==deletions.length||new Set(result.rows.map(r=>r.id)).size!==rows.length||new Set(result.deleted).size!==deletions.length||rows.some(r=>!result.rows.some(s=>s.id===r.id&&s.updated_at))||deletions.some(r=>!result.deleted.includes(r.id)))throw new Error('Save/delete was not confirmed. Reload before retrying.');
+ return result;
+}
+window.workHourUserInterfaceApply=workHourUserInterfaceApply;

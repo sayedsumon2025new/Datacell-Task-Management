@@ -26,6 +26,9 @@ begin
    if not exists(select 1 from jsonb_array_elements(coalesce(scope->'rules','[]'))r where r->>'department'=nextrow.department and (r->>'section'='*' or r->>'section'=coalesce(nextrow.section,'')) and (r->>'level'='*' or r->>'level'=coalesce(nextrow.level,''))) then raise exception 'Entry is outside your assigned Department / Section / Level';end if;
    if old_exists and not exists(select 1 from jsonb_array_elements(coalesce(scope->'rules','[]'))r where r->>'department'=oldrow.department and (r->>'section'='*' or r->>'section'=coalesce(oldrow.section,'')) and (r->>'level'='*' or r->>'level'=coalesce(oldrow.level,''))) then raise exception 'Existing entry is outside your assigned scope';end if;
   end if;
+  if nextrow.work_date is null or public.work_hour_entry_norm(nextrow.department)='' or public.work_hour_entry_norm(nextrow.section)='' then raise exception 'Date, Department and Section are required';end if;
+  if public.work_hour_entry_norm(nextrow.department) in ('sewing','quality assurance') and public.work_hour_entry_norm(nextrow.section)='sewing' and (public.work_hour_entry_level(nextrow.level)='' or public.work_hour_entry_line(nextrow.line_no)='') then raise exception 'Sewing entries require Level and Line';end if;
+  if not public.work_hour_entry_time_allowed(account.is_admin,nextrow.work_date,clock_timestamp()) or (old_exists and not public.work_hour_entry_time_allowed(account.is_admin,oldrow.work_date,clock_timestamp())) then raise exception 'Locked: regular users may change only today before 5:00 PM Bangladesh time';end if;
   nextrow.iron_man:=case when old_exists then oldrow.iron_man else null end;
   nextrow.ot_5_pm:=nextrow.asking_manpower;
   foreach field in array array['present_manpower','asking_manpower','asking_hour','ot_5_pm','ot_6_pm','ot_7_pm','ot_8_pm','ot_9_pm','ot_10_pm','ot_11_pm','ot_12_am','ot_1_am','iron_man','staff'] loop
