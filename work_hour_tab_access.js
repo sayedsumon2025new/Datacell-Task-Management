@@ -1,7 +1,7 @@
 // The server enforces data access; these controls mirror current account permissions.
 (()=>{
- const permitted=(tab,action='view')=>{const p=parent.workHourAccess;return p?.active===true&&(p.is_admin===true||p.permissions?.[tab]?.[action]===true)};
- const actionIds={exp:'export',pr1:'export',x2:'export',pr2:'export',uiExcel:'export',uiPdf:'export',uiAdd:'edit',uiSave:'edit',dsSave:'edit',otcUpload:'edit',dprUpload:'edit',llSave:'edit'};
+ const permitted=(tab,action='view')=>{if(action==='change')return permitted(tab,'edit')||permitted(tab,'delete');const p=parent.workHourAccess;return p?.active===true&&(p.is_admin===true||p.permissions?.[tab]?.[action]===true)};
+ const actionIds={exp:'export',pr1:'export',x2:'export',pr2:'export',uiExcel:'export',uiPdf:'export',uiAdd:'edit',uiSave:'change',uiUndoDelete:'delete',dsSave:'edit',otcUpload:'edit',dprUpload:'edit',llSave:'edit'};
  let pending=false,lastEntryScope='';
  window.whApplyAccess=()=>{
   pending=false;
@@ -15,9 +15,10 @@
     const action=actionIds[b.id]||(b.matches('.del,[data-ll-delete]')?'delete':b.matches('.edit,[data-ll-edit]')?'edit':null);
     if(action){const hide=!permitted(panel.id,action);if(b.hidden!==hide)b.hidden=hide;}
    });
-   if(panel.id==='p7')panel.querySelectorAll('#uiBody input').forEach(input=>{const read=!permitted('p7','edit')||['present_manpower','total_manpower','ot_5_pm'].includes(input.dataset.key);if(input.readOnly!==read)input.readOnly=read;});
+   if(panel.id==='p7')panel.querySelectorAll('#uiBody input').forEach(input=>{const row=window.UI_ROWS?.[Number(input.dataset.row)];const read=!permitted('p7','edit')||!window.uiCanEditRow?.(row||window.uiRowAt?.(Number(input.dataset.row)))||['present_manpower','total_manpower','ot_5_pm'].includes(input.dataset.key);if(input.readOnly!==read)input.readOnly=read;});
    if(panel.id==='p3')panel.querySelectorAll('#dsDept,#dsSection').forEach(i=>i.readOnly=!permitted('p3','edit'));
   });
+  window.uiControls?.();
   const active=document.querySelector('.tab.on');
   if(!active||!permitted(active.dataset.t)){
    const first=Array.from(document.querySelectorAll('.tab')).find(b=>permitted(b.dataset.t));
