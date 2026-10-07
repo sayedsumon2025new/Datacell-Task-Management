@@ -56,7 +56,7 @@ export function eotDependency(p:any,b:any,q:URLSearchParams){
  if((b.method||'GET')!=='GET'||b.context!=='p2'||!can(p,'p2'))return false;
  const projection=q.get('select'),dated=/^eq\.\d{4}-\d{2}-\d{2}$/.test(q.get('work_date')||'');
  const dates=projection==='work_date'&&(!q.has('work_date')||/^lt\.\d{4}-\d{2}-\d{2}$/.test(q.get('work_date')||''));
- return b.table==='work_hour_user_interface'&&(dates||dated&&projection==='work_date,department,present_manpower,asking_hour,ot_5_pm,ot_6_pm,ot_7_pm,ot_8_pm,ot_9_pm,ot_10_pm')||b.table==='work_hour_ot_cost'&&(dates||dated&&projection==='work_date,department,total_ot_hour');
+ return b.table==='work_hour_user_interface'&&(dates||dated&&['work_date,department,present_manpower,asking_hour,ot_5_pm,ot_6_pm,ot_7_pm,ot_8_pm,ot_9_pm,ot_10_pm','work_date,department,present_manpower,asking_hour,ot_5_pm,ot_6_pm,ot_7_pm,ot_8_pm,ot_9_pm,ot_10_pm,ot_11_pm,ot_12_am,ot_1_am'].includes(projection||''))||b.table==='work_hour_ot_cost'&&(dates||dated&&projection==='work_date,department,total_ot_hour');
 }
 export function authorizeData(p:any,b:any){
  const {table,method='GET'}=b;if(!tables.includes(table)||!['GET','POST','PATCH','DELETE'].includes(method))fail('Unsupported request');

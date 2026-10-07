@@ -41,15 +41,15 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 #t2 td,#t2 th{border:1px solid #8c8c8c;font-size:11px;text-align:center;padding:0 2px;overflow:hidden;white-space:nowrap;box-sizing:border-box;font-weight:400}
 #t2 .lc{background:#F2F2F2}#t2 .dt,#t2 .dn{font-weight:700;font-style:italic}#t2 .dn{text-align:left;padding-left:4px}
 #t2 .ttl{background:#fff;color:#f00;font-size:17px;font-weight:700;text-decoration:underline;white-space:normal}
-#t2 .rg,#t2 .ex{background:#DAE3F3;font-size:16px;font-weight:700}#t2 .rg{color:#1F4E79}#t2 .ex{color:#f00}
-#t2 .wh{background:#fff}#t2 .tm{background:#C0C0C0;color:#333;font-weight:700}#t2 .hr{background:#4F81BD;color:#fff;font-weight:700}
+#t2 .rg,#t2 .ex{background:#fff;font-size:16px;font-weight:700;text-decoration:underline}#t2 .rg{color:#425976}#t2 .ex{color:#f00}
+#t2 .wh{background:#fff}#t2 .tm{background:#A6A6A6;color:#fff;font-weight:700}#t2 .hr{background:#4F81BD;color:#fff;font-weight:700}
 #t2 .sm td{background:#F8CBAD;font-weight:700}#t2 .sm td.pu{background:#fff;color:#7030A0;font-size:10px}#t2 .sm td.l{text-align:left}
 #t2 .cm{position:relative}#t2 .cm:before{content:"";position:absolute;left:0;top:0;border:3px solid transparent;border-top-color:#f00;border-left-color:#f00}
 #t2 .eh th{background:#FFF2CC;font-size:11.5px;font-weight:700;white-space:normal;overflow-wrap:anywhere;line-height:1.1;position:relative;padding:0 3px 0 1px;border-color:#7f7f7f}
 #t2 .eh th:last-child{background:#F2F2F2;color:#8c8c8c}
 #t2 .eh th i{position:absolute;right:1px;bottom:1px;width:11px;height:12px;border:1px solid #888;background:#f4f4f4}
 #t2 .eh th i:after{content:"";position:absolute;left:2px;top:4px;border:3px solid transparent;border-top:4px solid #444;border-bottom:0}
-#t2 .tt{background:#F8CBAD;color:#808080;font-weight:700}
+#t2 .tt{background:#A6A6A6;color:#fff;font-weight:700}
 .ch-h{display:flex;align-items:center;gap:16px;padding:16px 14px 0}.ch-h h2{font:700 20px Arial;margin:0}
 .cc{display:grid;grid-template-columns:repeat(auto-fit,minmax(480px,1fr));gap:14px;padding:12px 14px;max-width:1600px;box-sizing:border-box}
 .card{border:1px solid #d1d5db;border-radius:8px;padding:10px;background:#fff}.card svg{width:100%;height:auto;display:block;font-family:Arial,Helvetica,sans-serif}
@@ -137,7 +137,7 @@ html,body{min-height:100%}
  .table-scroll{overflow:visible!important;max-height:none!important;height:auto!important;scrollbar-gutter:auto}
  .table-scroll thead{position:static!important}
 }
-</style><script src="work_hour_eot_model.js?build=20261007_6"></script></head><body>
+</style><script src="work_hour_eot_model.js?build=20261007_7"></script></head><body>
 <div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button><button class="tab" data-t="p3">Department &amp; Section Setup</button><button class="tab" data-t="p4">OT Cost Data</button><button class="tab" data-t="p5">Daily Punch Report</button><button class="tab" data-t="p6">Line &amp; Level Settings</button><button class="tab" data-t="p7">User Interface</button></div>
 <div id="p1">
 <div class="bar">
@@ -541,7 +541,7 @@ async function eotLoad(){
  try{
   const source=await parent.workHourEotSources(selected);if(request!==eotRequest)return;
   const report=WorkHourEotModel.derive(source.plans,source.actuals,selected);D2=report.rows;eotActualLoaded=report.available;
-  $('eotMsg').textContent=D2.length+' department(s) · '+report.rounded+' fractional OT hour value(s) rounded to nearest hour (.5 rounds up).'+(!report.available?' No OT Cost uploaded for this date; actuals are unavailable.':'')+(report.outside?' '+report.outside+' employee(s) beyond the displayed 0–5 OT-hour slots.':'')+(report.invalid?' '+report.invalid+' invalid OT row(s) excluded.':'')+' Punch Out has no assigned source.';refresh();
+  $('eotMsg').textContent=D2.length+' department(s) · '+report.rounded+' fractional OT hour value(s) rounded to nearest hour (.5 rounds up).'+(!report.available?' No OT Cost uploaded for this date; actuals are unavailable.':'')+(report.outside?' '+report.outside+' employee(s) beyond the displayed 0–8 OT-hour slots.':'')+(report.invalid?' '+report.invalid+' invalid OT row(s) excluded.':'')+(report.mismatches.length?' Source mismatch: later Punch Out exceeds Total TM for '+report.mismatches.join(', ')+'.':'');refresh();
  }catch(e){if(request!==eotRequest)return;D2=[];eotActualLoaded=false;refresh();$('eotMsg').textContent='Report load failed: '+e.message;}
 }
 async function eotInit(){
@@ -551,28 +551,30 @@ $('eotDate').onchange=eotLoad;
 $('eotReload').onclick=async()=>{try{await eotDates();await eotLoad();}catch(e){$('eotMsg').textContent='Reload failed: '+e.message}};
 function eotSummary(rows){
  const known=rows.filter(d=>d[1]!=null),total=known.length?known.reduce((n,d)=>n+d[1],0):rows.length?null:0,hours=rows.filter(d=>d[2]!=null).map(d=>d[2]);
- const sums=Array.from({length:6},(_,i)=>Array.from({length:i?4:3},(_,j)=>{const values=rows.map(d=>d[3+i][j]).filter(v=>v!=null);return values.length?values.reduce((n,v)=>n+v,0):null;}));
+ const sums=Array.from({length:WorkHourEotModel.slots.length},(_,i)=>Array.from({length:i?4:3},(_,j)=>{const values=rows.map(d=>d[3+i][j]).filter(v=>v!=null);return values.length?values.reduce((n,v)=>n+v,0):null;}));
  return [total,hours.length?Math.max(...hours):null,...sums,total];
 }
 const TOL=()=>Math.max(0,+$('tol').value||0);
 function FD(){const q=$('q2').value.trim().toLowerCase(),sf=$('sf').value,k=+$('ots').value||0,t=TOL();return D2.filter(d=>d[0].toLowerCase().includes(q)&&(!sf||(d[3+k][2]!=null&&(sf=='o'?d[3+k][2]>t:d[3+k][2]<=t))))}
-function r2(){const P='#F8CBAD',G='#A9D08E',T=['5:00 PM','6:00 PM','7:00 PM','8:00 PM','9:00 PM','10:00 PM'];
- const W2=[76,224,55,55,50,50,45,47,53,50,50,47,53,50,45,45,55,50,47,48,55,50,50,50,50,50,57,43];
+const EOT_TIMES=['5:00 PM','6:00 PM','7:00 PM','8:00 PM','9:00 PM','10:00 PM','11:00 PM','12:00 PM','1:00 AM'];
+function r2(){const P='#F8CBAD',G='#A9D08E',count=EOT_TIMES.length;
+ const W2=[76,224,55,55,50,50,45,...Array.from({length:(count-1)*4},(_,i)=>[50,53,50,50][i%4]),55,43];
  let h='<colgroup>'+W2.map(w=>`<col style="width:${w}px">`).join('')+'</colgroup><thead>';
- h+='<tr style="height:28px"><th class="ttl" colspan="4" rowspan="3">Department-wise EOT &amp; OT Status Report</th><th class="rg" colspan="11">Regular OT Status</th><th class="ex" colspan="12">Extra OT Status</th><th class="wh" rowspan="3"></th></tr>';
- h+='<tr style="height:17px">'+T.map((t,i)=>`<th class="tm" colspan="${i?4:3}">${t}</th>`).join('')+'</tr>';
- h+='<tr style="height:20px">'+T.map((t,i)=>`<th class="hr" colspan="${i?4:3}">${i} Hour OT</th>`).join('')+'</tr>';
+ h+=`<tr style="height:28px"><th class="ttl" colspan="4" rowspan="3">Department-wise EOT &amp; OT Status Report</th><th class="rg" colspan="11">Regular OT Status</th><th class="ex" colspan="${(count-3)*4}">Extra OT Status</th><th class="wh" rowspan="3">Total<br>OT TM</th><th class="wh" rowspan="3"></th></tr>`;
+ h+='<tr style="height:17px">'+EOT_TIMES.map((t,i)=>`<th class="tm" colspan="${i?4:3}">${t}</th>`).join('')+'</tr>';
+ h+='<tr style="height:20px">'+EOT_TIMES.map((t,i)=>`<th class="hr" colspan="${i?4:3}">${i} Hour OT</th>`).join('')+'</tr>';
  const s=eotSummary(FD());
- h+=`<tr class="sm" style="height:18px"><td class="pu">${E(fd(eotDate))}</td><td class="pu l">Saved Approval &amp; OT Cost Report</td><td>${s[0]??'—'}</td><td class="cm">${s[1]??'—'}</td>`+s.slice(2,8).flat().map(v=>`<td>${v??'—'}</td>`).join('')+`<td>${s[8]??'—'}</td></tr>`;
+ h+=`<tr class="sm" style="height:18px"><td class="pu">${E(fd(eotDate))}</td><td class="pu l">Saved Approval &amp; OT Cost Report</td><td>${s[0]??'—'}</td><td class="cm">${s[1]??'—'}</td>`+s.slice(2,2+count).flat().map(v=>`<td>${v??'—'}</td>`).join('')+`<td></td><td>${s[s.length-1]??'—'}</td></tr>`;
  const H4=['Plan TM','Utilized TM','Short/Excess','Punch Out'];
- const hs=['Date','Department','Total TM','Plan Work Hour','Plan TM','Punch Out','Short/Excess',...H4,...H4,...H4,...H4,...H4,'Total'];
- h+='<tr class="eh" style="height:40px">'+hs.map((x,i)=>`<th>${x}${i==27?'':'<i></i>'}</th>`).join('')+'</tr></thead><tbody>';
+ const hs=['Date','Department','Total TM','Plan Work Hour','Plan TM','Punch Out','Short/Excess',...Array.from({length:count-1},()=>H4).flat(),'Total OT TM','Total'];
+ h+='<tr class="eh" style="height:40px">'+hs.map((x,i)=>`<th>${x}${i>=hs.length-2?'':'<i></i>'}</th>`).join('')+'</tr></thead><tbody>';
+ const excessStyle=v=>v==null?'background:#eee;color:#777':v>TOL()?'background:#f00;color:#fff;font-weight:700':'background:#00B050';
  FD().forEach(d=>{h+=`<tr style="height:17.5px"><td class="dt lc">${E(fd(eotDate))}</td><td class="dn lc">${E(d[0])}</td><td class="lc">${d[1]??'—'}</td><td class="lc">${d[2]??'—'}</td>`;
-  d[3].forEach((v,j)=>h+=`<td style="background:${j==2&&v==0?'#C6E0B4':P}">${v??'—'}</td>`);
-  for(let g=4;g<9;g++){const a=d[g];
-   h+=`<td style="background:${P}">${a[0]==null?'':a[0]}</td><td style="background:${G}">${a[1]??'—'}</td><td style="${a[2]>TOL()?'background:#f00;color:#fff;font-weight:700':'background:#92D050'}">${a[2]??'—'}</td><td style="background:${P}">${a[3]??'—'}</td>`}
-  h+=`<td class="tt">${d[1]??'—'}</td></tr>`});
- $('t2').innerHTML=h+'</tbody>'}
+  d[3].forEach((v,j)=>h+=`<td style="${j===2?excessStyle(v):'background:'+P}">${v??'—'}</td>`);
+  for(let g=4;g<3+count;g++){const a=d[g];
+   h+=`<td style="background:${P}">${a[0]==null?'':a[0]}</td><td style="background:${G}">${a[1]??'—'}</td><td style="${excessStyle(a[2])}">${a[2]??'—'}</td><td style="background:${P}">${a[3]??'—'}</td>`}
+  h+=`<td title="No populated Total OT TM measure was supplied in Book1.csv"></td><td class="tt">${d[1]??'—'}</td></tr>`});
+ $('t2').innerHTML=h+'</tbody>';$('t2').style.width=W2.reduce((n,w)=>n+w,0)+'px';}
 document.querySelectorAll('.tab').forEach(b=>b.onclick=async()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x==b));['p1','p2','p3','p4','p5','p6','p7'].forEach(p=>$(p).classList.toggle('hide',p!=b.dataset.t));if(b.dataset.t==='p1')await approvalLoad();if(b.dataset.t==='p2')await eotInit();if(b.dataset.t==='p3')await dsLoad();if(b.dataset.t==='p4')await otcInit();if(b.dataset.t==='p5')await dprInit();if(b.dataset.t==='p7'){if(!uiLoaded)await uiLoad();}if(b.dataset.t==='p6'){llDraw();if(!dbReady&&!whBusy)await load()}});
 r2();
 
@@ -1048,7 +1050,7 @@ const PAL=['#0072B2','#E69F00','#009E73','#CC79A7','#56B4E9','#D55E00','#8c8c8c'
 const nice=m=>{const p=Math.pow(10,Math.floor(Math.log10(m||1))),f=m/p;return(f<=1?1:f<=2?2:f<=5?5:10)*p};
 const tx=(x,y,s,o)=>`<text x="${x}" y="${y}" ${o||''}>${E(s)}</text>`;
 const ttl=(s,w)=>tx(w/2,24,s,'text-anchor="middle" font-size="15" font-weight="700" fill="#222"');
-let SEL=null;const HID={},SL=['5 PM','6 PM','7 PM','8 PM','9 PM','10 PM'],I6=[0,1,2,3,4,5];
+let SEL=null;const HID={},SL=['5 PM','6 PM','7 PM','8 PM','9 PM','10 PM','11 PM','12 PM','1 AM'],I6=Array.from({length:9},(_,i)=>i);
 const W_=el=>Math.max(280,el.clientWidth||600),cut=(s,n)=>s.length>n?s.slice(0,n-1)+'…':s;
 const T=(x,y,s,o)=>`<text x="${x}" y="${y}" font-size="12" fill="#333" ${o||''}>${E(s)}</text>`;
 const svg=(w,h,b)=>`<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" font-family="Arial,Helvetica,sans-serif">${b}</svg>`;
@@ -1061,8 +1063,8 @@ function vBar(F,k){const el=$('v1'),w=W_(el),t=TOL(),rows=F.map(d=>({n:d[0],v:d[
   s+=`<g data-d="${E(r.n)}" data-tt="<b>${E(r.n)}</b><br>Short/Excess: <b>${sgn(r.v)}</b><br>${k} Hour OT" style="cursor:pointer"${dm(r.n)}><rect x="0" y="${y}" width="${w}" height="${rh}" fill="${r.n==SEL?'#eaf3ff':'transparent'}"/>`+T(L-8,y+rh/2+4,cut(r.n,Math.floor(L/6.6)),'text-anchor="end"')+`<rect class="an" style="transform-origin:${r.v>=0?'left':'right'}" x="${Math.min(x0,x1)}" y="${y+4}" width="${Math.max(Math.abs(x1-x0),2)}" height="${rh-8}" rx="2" fill="${r.v>t?RED:GRN}"/>`+T(r.v>=0?x1+5:x1-5,y+rh/2+4,r.v,`text-anchor="${r.v>=0?'start':'end'}" font-weight="700"`)+'</g>'});
  el.innerHTML=svg(w,h,s+T((L+w-R)/2,h-6,'Short / Excess (manpower; + = over plan)','text-anchor="middle" fill="#555" font-size="11"'))}
 function vLine(F2,k){const el=$('v2'),w=W_(el),h=340,L=56,R=18,Tp=14,B=64,ss=(i,j)=>F2.reduce((a,d)=>a+(d[3+i][j]||0),0);
- const S=[['Plan TM',I6.map(i=>ss(i,0))],['Utilized TM',I6.map(i=>i?ss(i,1):null)]],vis=S.filter(x=>!HID[x[0]]);
- const mx=Math.max(1,...vis.flatMap(x=>x[1].filter(v=>v!=null))),st=nice(mx/5),hi=Math.ceil(mx/st)*st,bw=(w-L-R)/6,sx=i=>L+(i+.5)*bw,sy=v=>Tp+(1-v/hi)*(h-Tp-B);
+ const S=[['Plan TM',I6.map(i=>ss(i,0))],['Utilized TM',I6.map(i=>i?ss(i,1):null)],['Punch Out',I6.map(i=>ss(i,i?3:1))]],vis=S.filter(x=>!HID[x[0]]);
+ const mx=Math.max(1,...vis.flatMap(x=>x[1].filter(v=>v!=null))),st=nice(mx/5),hi=Math.ceil(mx/st)*st,bw=(w-L-R)/I6.length,sx=i=>L+(i+.5)*bw,sy=v=>Tp+(1-v/hi)*(h-Tp-B);
  let s=`<rect x="${L+k*bw}" y="${Tp}" width="${bw}" height="${h-Tp-B}" fill="#FFD966" opacity=".35"/>`;
  for(let v=0;v<=hi;v+=st)s+=`<line x1="${L}" x2="${w-R}" y1="${sy(v)}" y2="${sy(v)}" stroke="${v?'#e6e6e6':'#444'}"/>`+T(L-8,sy(v)+4,v,'text-anchor="end" fill="#666" font-size="11"');
  I6.forEach(i=>s+=T(sx(i),h-B+18,SL[i],'text-anchor="middle" font-size="11"')+T(sx(i),h-B+32,i+'H OT','text-anchor="middle" font-size="10" fill="#777"'));
@@ -1073,7 +1075,7 @@ function vLine(F2,k){const el=$('v2'),w=W_(el),h=340,L=56,R=18,Tp=14,B=64,ss=(i,
  I6.forEach(i=>s+=`<rect class="hv" x="${L+i*bw}" y="${Tp}" width="${bw}" height="${h-Tp-B}" fill="transparent" style="cursor:pointer" data-k="${i}" data-tt="<b>${SL[i]} · ${i} Hour OT</b>${S.map((x,j)=>`<br><span style='color:${PAL[j]}'>●</span> ${x[0]}: <b>${x[1][i]==null?'–':x[1][i]}</b>`).join('')}<br>Short/Excess: <b>${sgn(ss(i,2))}</b>"/>`);
  S.forEach(([n],j)=>{const x=w/2-170+j*118;s+=`<g data-l="${n}" style="cursor:pointer"${HID[n]?' opacity=".35"':''}><rect x="${x-4}" y="${h-24}" width="112" height="20" fill="transparent"/><line x1="${x}" x2="${x+20}" y1="${h-14}" y2="${h-14}" stroke="${PAL[j]}" stroke-width="3"/>`+T(x+26,h-10,n,'font-size="12"')+'</g>'});
  el.innerHTML=svg(w,h,s)}
-function vHeat(F,k){const el=$('v3'),w=W_(el),t=TOL(),L=Math.min(190,Math.round(w*.34)),cw=(w-L-6)/6,rh=26,Tp=40,rows=[...F].sort((a,b)=>b[3+k][2]-a[3+k][2]),h=Tp+rows.length*rh+8,all=rows.flatMap(d=>I6.map(i=>d[3+i][2])),mp=Math.max(1,...all),mm=Math.max(1,-Math.min(0,...all));let s='';
+function vHeat(F,k){const el=$('v3'),w=W_(el),t=TOL(),L=Math.min(190,Math.round(w*.34)),cw=(w-L-6)/I6.length,rh=26,Tp=40,rows=[...F].sort((a,b)=>b[3+k][2]-a[3+k][2]),h=Tp+rows.length*rh+8,all=rows.flatMap(d=>I6.map(i=>d[3+i][2])),mp=Math.max(1,...all),mm=Math.max(1,-Math.min(0,...all));let s='';
  I6.forEach(i=>s+=T(L+i*cw+cw/2,16,i+'H OT',`text-anchor="middle" font-weight="700"${i==k?' fill="#0072B2"':''}`)+T(L+i*cw+cw/2,31,SL[i],'text-anchor="middle" font-size="10" fill="#777"'));
  rows.forEach((d,r)=>{const y=Tp+r*rh;s+=T(L-8,y+rh/2+4,cut(d[0],Math.floor(L/6.6)),`text-anchor="end"${d[0]==SEL?' font-weight="700"':''}`);
   I6.forEach(i=>{const v=d[3+i][2],a=v>t?.25+.75*Math.min(1,v/mp):.18+.6*Math.min(1,-v/mm);
@@ -1086,14 +1088,14 @@ function donut(el,items,o){const w=W_(el),side=w>=470,R=Math.min(side?w*.27:w/2-
  items.forEach((it,i)=>{const y=ly+i*lh;s+=`<g ${atr(it)}${op(it)}><rect x="${lx-4}" y="${y-14}" width="${w-lx-2}" height="${lh-2}" fill="transparent"/><rect x="${lx}" y="${y-11}" width="13" height="13" rx="2" fill="${it.c}"/>`+T(lx+20,y,cut(it.n,Math.floor((w-lx-110)/6.6)),'font-size="12"')+T(w-8,y,`${it.v} ${o.u} · ${(it.v/tot*100).toFixed(0)}%`,'text-anchor="end" font-size="12" font-weight="700"')+'</g>'});
  el.innerHTML=svg(w,h,s)}
 const kc=(l,v,sub,c,x)=>`<div class="kc" style="--c:${c}"><span>${l}</span><b>${v}</b><em>${sub}</em>${x||''}</div>`,
- spark=(a,c)=>{const mx=Math.max(...a,1),p=a.map((v,i)=>`${i*20},${26-v/mx*24}`).join(' ');return `<svg viewBox="0 0 100 28" width="100%" height="28" preserveAspectRatio="none"><polyline points="${p}" fill="none" stroke="${c}" stroke-width="2"/></svg>`},
+ spark=(a,c)=>{const mx=Math.max(...a,1),p=a.map((v,i)=>`${i*100/Math.max(1,a.length-1)},${26-v/mx*24}`).join(' ');return `<svg viewBox="0 0 100 28" width="100%" height="28" preserveAspectRatio="none"><polyline points="${p}" fill="none" stroke="${c}" stroke-width="2"/></svg>`},
  pb=(p,c)=>`<div class="pb"><i style="width:${Math.max(0,Math.min(100,p))}%;background:${c}"></i></div>`;
 function charts(){const F=FD(),k=+$('ots').value||0,t=TOL();
  if(SEL&&!F.some(d=>d[0]==SEL))SEL=null;
  const F2=SEL?F.filter(d=>d[0]==SEL):F,ss=(i,j)=>F2.reduce((a,d)=>a+(d[3+i][j]||0),0),pl=ss(k,0),ut=ss(k,1),net=ss(k,2),tm=F2.reduce((a,d)=>a+d[1],0),ov0=F2.filter(d=>d[3+k][2]>t).length,up=pl?ut/pl*100:0;
  const chips=I6.map(i=>`<i class="chip${i==k?' on':''}" data-c="${i}">${i}H · ${SL[i]}</i>`).join('')+(SEL||$('sf').value||$('q2').value?'<i class="chip x" data-c="x">✕ Clear filters</i>':'');
  $('kpi').innerHTML=`<div class="kc ttl"><span>Report dashboard · ${E(fd(eotDate))}</span><b>Department-wise EOT &amp; OT Status</b><em>${F2.length} department${F2.length==1?'':'s'}${SEL?' · '+E(SEL):''} · ${k} Hour OT</em><div>${chips}</div></div>`+
-  kc('Total TM',F2.some(d=>d[1]!=null)?tm:'—',SEL?E(SEL):'selected departments','#0072B2')+kc('Plan TM',F2.some(d=>d[3+k][0]!=null)?pl:'—',`${k} Hour OT`,'#0072B2',spark(I6.map(i=>ss(i,0)),'#0072B2'))+kc(k?'Utilized TM':'Punch Out',k&&eotActualLoaded?ut:'—','actual manpower','#E69F00',spark(I6.map(i=>ss(i,1)),'#E69F00'))+
+  kc('Total TM',F2.some(d=>d[1]!=null)?tm:'—',SEL?E(SEL):'selected departments','#0072B2')+kc('Plan TM',F2.some(d=>d[3+k][0]!=null)?pl:'—',`${k} Hour OT`,'#0072B2',spark(I6.map(i=>ss(i,0)),'#0072B2'))+kc(k?'Utilized TM':'Punch Out',eotActualLoaded&&F2.some(d=>d[3+k][1]!=null)?ut:'—','actual manpower','#E69F00',spark(I6.map(i=>ss(i,1)),'#E69F00'))+
   kc('Utilization',k&&eotActualLoaded?up.toFixed(1)+'%':'—',up>100+t/Math.max(pl,1)*100?'above plan':'vs plan','#009E73',pb(up,up>100?RED:'#009E73'))+kc('Net Short/Excess',eotActualLoaded?sgn(net):'—',net>t?'over plan':'within plan',net>t?RED:GRN)+kc('Over plan',ov0+' / '+F2.length,'departments',ov0?RED:GRN,pb(F2.length?ov0/F2.length*100:0,RED));
  if(!eotActualLoaded&&F.length){$('ins').innerHTML='';$('cc').innerHTML='<div class="card c6">No OT Cost uploaded for this date. Utilized TM is unavailable.</div>';return}if(!F.length){$('ins').innerHTML='';$('cc').innerHTML='<div class="card c6">No departments match the current date and filters.</div>';return}
  const hi=[...F].sort((a,b)=>b[3+k][2]-a[3+k][2]),lo=hi[hi.length-1],dt=[...F].sort((a,b)=>b[1]-a[1]),I=[];
@@ -1107,7 +1109,7 @@ function charts(){const F=FD(),k=+$('ots').value||0,t=TOL();
  donut($('v4'),top,{u:'TM',c:[F.reduce((a,d)=>a+d[1],0),'Total TM']});
  const ov=F.filter(d=>d[3+k][2]>t).length,st=[{n:'Over plan (> '+t+')',v:ov,c:RED,s:'o'},{n:'Within plan (≤ '+t+')',v:F.filter(d=>d[3+k][2]!=null&&d[3+k][2]<=t).length,c:GRN,s:'w'},{n:'Plan unavailable',v:F.filter(d=>d[3+k][2]==null).length,c:'#999'}].filter(x=>x.v);
  donut($('v5'),st,{u:'depts',c:[F.length,'departments'],st:1})}
-$('ots').innerHTML=['5:00 PM','6:00 PM','7:00 PM','8:00 PM','9:00 PM','10:00 PM'].map((t,i)=>`<option value="${i}" ${i==1?'selected':''}>${i} Hour OT (${t})</option>`).join('');
+$('ots').innerHTML=EOT_TIMES.map((t,i)=>`<option value="${i}" ${i==1?'selected':''}>${i} Hour OT (${t})</option>`).join('');
 const tip=document.createElement('div');tip.id='tt';document.body.appendChild(tip);
 document.addEventListener('mousemove',e=>{const x=e.target.closest&&e.target.closest('[data-tt]');if(!x){tip.style.display='none';return}tip.innerHTML=x.dataset.tt;tip.style.display='block';tip.style.left=Math.min(e.clientX+14,innerWidth-tip.offsetWidth-8)+'px';tip.style.top=(e.clientY+16)+'px'});
 $('cc').addEventListener('click',e=>{const d=e.target.closest('[data-d]'),k=e.target.closest('[data-k]'),s=e.target.closest('[data-s]'),l=e.target.closest('[data-l]');
@@ -1123,9 +1125,9 @@ function flt(){if(whBusy)return;if(cellEdit)cancelCellEdit(cellEdit);render()}
 $('q1').addEventListener('input',flt);$('lf').addEventListener('change',flt);
 $('whDept').addEventListener('change',()=>{$('whSection').value='';flt()});$('whSection').addEventListener('change',flt);
 function dl(rows,name){const csv='\ufeff'+rows.map(a=>a.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(',')).join('\r\n'),l=document.createElement('a');l.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));l.download=name;l.click()}
-$('x2').onclick=()=>{const T=['5:00 PM','6:00 PM','7:00 PM','8:00 PM','9:00 PM','10:00 PM'],g=['Plan TM','Punch Out','Short/Excess'],h4=['Plan TM','Utilized TM','Short/Excess','Punch Out'],hd=['Date','Department','Total TM','Plan Work Hour'];
- T.forEach((t,i)=>(i?h4:g).forEach(x=>hd.push(t+' '+x)));hd.push('Total');
- dl([hd,...FD().map(d=>[fd(eotDate),d[0],d[1]??'',d[2]??'',...d.slice(3).flat().map(v=>v==null?'':v),d[1]??''])],'department_wise_eot_ot_status.csv')};
+$('x2').onclick=()=>{const T=EOT_TIMES,g=['Plan TM','Punch Out','Short/Excess'],h4=['Plan TM','Utilized TM','Short/Excess','Punch Out'],hd=['Date','Department','Total TM','Plan Work Hour'];
+ T.forEach((t,i)=>(i?h4:g).forEach(x=>hd.push(t+' '+x)));hd.push('Total OT TM','Total');
+ dl([hd,...FD().map(d=>[fd(eotDate),d[0],d[1]??'',d[2]??'',...d.slice(3).flat().map(v=>v==null?'':v),'',d[1]??''])],'department_wise_eot_ot_status.csv')};
 $('cc').addEventListener('click',e=>{const b=e.target.closest('.png');if(!b)return;const sv=b.parentNode.querySelector('svg').cloneNode(true),vb=sv.viewBox.baseVal,w=vb.width*2,h=vb.height*2;
  sv.setAttribute('font-family','Arial');sv.setAttribute('width',w);sv.setAttribute('height',h);
  const im=new Image();im.onload=()=>{const c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,w,h);x.drawImage(im,0,0);const a=document.createElement('a');a.href=c.toDataURL('image/png');a.download='chart.png';a.click()};
