@@ -147,3 +147,17 @@ window.workHourDailyPunchDates=workHourDailyPunchDates;
 window.workHourDailyPunchRows=workHourDailyPunchRows;
 window.workHourDailyPunchUpsert=workHourDailyPunchUpsert;
 
+
+async function workHourUserInterfaceSaveBatch(rows){
+ if(!Array.isArray(rows)||!rows.length||rows.length>200)throw new Error('Send 1 to 200 entries.');
+ const entries=rows.map(row=>{
+  const payload={id:row.id};
+  for(const key of WH_UI_FIELDS){const value=row[key];payload[key]=WH_UI_NUMBERS.has(key)?value==null||value===''?null:Number(value):key==='work_date'?(value||null):String(value??'').trim();}
+  return {row:payload,expected_updated_at:row.updated_at||null};
+ });
+ const saved=await api({op:'save-entries',entries});
+ const ids=new Set(rows.map(r=>r.id));
+ if(!Array.isArray(saved)||saved.length!==rows.length||new Set(saved.map(r=>r.id)).size!==rows.length||saved.some(r=>!ids.has(r.id)||!r.updated_at))throw new Error('Batch save was not confirmed. Reload before retrying.');
+ return saved;
+}
+window.workHourUserInterfaceSaveBatch=workHourUserInterfaceSaveBatch;
