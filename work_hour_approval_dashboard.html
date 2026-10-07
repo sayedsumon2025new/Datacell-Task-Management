@@ -137,7 +137,7 @@ html,body{min-height:100%}
  .table-scroll{overflow:visible!important;max-height:none!important;height:auto!important;scrollbar-gutter:auto}
  .table-scroll thead{position:static!important}
 }
-</style><script src="work_hour_eot_model.js?build=20261007_5"></script></head><body>
+</style><script src="work_hour_eot_model.js?build=20261007_6"></script></head><body>
 <div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button><button class="tab" data-t="p3">Department &amp; Section Setup</button><button class="tab" data-t="p4">OT Cost Data</button><button class="tab" data-t="p5">Daily Punch Report</button><button class="tab" data-t="p6">Line &amp; Level Settings</button><button class="tab" data-t="p7">User Interface</button></div>
 <div id="p1">
 <div class="bar">
@@ -284,8 +284,10 @@ Quick fill: asking manpower from 5.00 PM until <select id="fe" style="width:110p
 const $=id=>document.getElementById(id);
 const E=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const KEY='ekwl_wh_approval_v1',MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const HDR=["Date","Department","Section","Level","Line No","Buyer","EWO","Present Manpower","Asking manpowar","Asking Hour","5.00 PM","6.00 PM","7.00 PM","8.00 PM","9.00 PM","10.00 PM","11.00 PM","12.00 PM","1.00 AM","Input man","Iron man","pack","Quality","Staff","Total Manpower","Reason EOT","Responsible department"];
-const W=[75,75,119,90,90,82,54,54,72,54,54,54,55,56,66,74,74,76,81,35,35,36,51,36,59,169,118];
+// Keep persisted row indexes stable while omitting retired approval columns.
+const APPROVAL_COLS=Array.from({length:27},(_,i)=>i).filter(i=>i<19||i>22);
+const HDR=["Date","Department","Section","Level","Line No","Buyer","EWO","Present Manpower","Asking manpowar","Asking Hour","5.00 PM","6.00 PM","7.00 PM","8.00 PM","9.00 PM","10.00 PM","11.00 PM","12.00 PM","1.00 AM","Input man","Iron man","pack","Quality","Staff","Total Manpower","Reason EOT","Responsible department"].filter((_,i)=>APPROVAL_COLS.includes(i));
+const W=[75,75,119,90,90,82,54,54,72,54,54,54,55,56,66,74,74,76,81,35,35,36,51,36,59,169,118].filter((_,i)=>APPROVAL_COLS.includes(i));
 const COL={Spot:'#E2EFDA',Repoter:'#9DC3E6',Recone:'#F8CBAD','Management Staff':'#D9E1F2'};
 const NUM=[3,4,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20], LVS=['Level-03','Level-04','Level-06'];
 // field spec: index in v, label, group (L = sewing line only), grid, type
@@ -349,8 +351,8 @@ function row(r,dt){if(r.sourceId)dt=fd(r.work_date);const v=r.v;let c;
  const labels=reportRowLabels(r);
  if(r.k=='L'||r.k=='S')c=[dt,labels.department,labels.section,r.lv,...v];else c=[dt,labels.department,labels.section,'','',...v.slice(1)];
  let bg=r.k=='S'?(COL[v[0]]||''):'';if(r.lv=='Level-06'&&v[0]=='Recone')bg='#9DC3E6';
- return `<tr data-i="${r.id}" style="height:${ht(r)}px">`+c.map((x,i)=>{
-  const field=cellField(r,i);
+ return `<tr data-i="${r.id}" style="height:${ht(r)}px">`+APPROVAL_COLS.map((originalCol,i)=>{
+  const x=c[originalCol],field=cellField(r,originalCol);
   return `<td data-col="${i}" class="${i==0?'d':i==1?'dp':(i==2||i==3||(i==5&&r.k=='L'))?'l':''}${field?' cell-editable':''}"${field?` data-field="${field}" tabindex="0" title="Click to edit · Enter/Tab saves · Esc cancels"`:''}${bg&&i>=2?` style="background:${bg}"`:''}>${E(x)}</td>`
  }).join('')+'</tr>'}
 function cellField(r,col){
@@ -363,9 +365,9 @@ function cellField(r,col){
  if(!spec||r.k==='D'&&index===0||spec[2]==='L'&&r.k!=='L')return '';
  return 'v'+index
 }
-function vals(s,sd,grand){ // 20 cells for columns 6..25
+function vals(s,sd,grand){ // Visible numeric and trailing cells after EWO
  const g=i=>sd?s[i]+sd[i]:s[i];
- return [s[3],grand?s[4]:s[4],'',...[6,7,8,9,10,11,12,13,14,15,16,17,18,19].map(g),g(20),'',''] }
+ return [s[3],grand?s[4]:s[4],'',...[6,7,8,9,10,11,12,13,14,19].map(g),g(20),'',''] }
 function totRow(lv,s){const big=lv=='Level-03'?'15px':'15px',sm=lv=='Level-06';
  const h={'Level-03':34,'Level-04':30,'Level-06':40}[lv]||30;
  return `<tr class="lt" style="height:${h}px"><td></td><td></td><td class="c"></td><td class="c"></td><td class="c"></td><td class="c" colspan="2" style="font-size:17px">${E(lv.replace('-0','-'))} Total=</td>`+
@@ -519,7 +521,7 @@ $('exp').onclick=()=>{const rows=[HDR];document.querySelectorAll('#tb tr').forEa
  const csv='\ufeff'+rows.map(a=>a.map(x=>'"'+x.replace(/"/g,'""')+'"').join(',')).join('\r\n');
  const l=document.createElement('a');l.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));l.download='work_appval_report.csv';l.click()};
 // header
-$('th').innerHTML=`<tr class="title"><th colspan="${HDR.length}">Work Hour Approval Request</th></tr><tr class="ot"><th colspan="10"></th><th colspan="9" class="y">OT Hour</th><th colspan="8" class="y"></th></tr><tr class="h">`+
+$('th').innerHTML=`<tr class="title"><th colspan="${HDR.length}">Work Hour Approval Request</th></tr><tr class="ot"><th colspan="10"></th><th colspan="9" class="y">OT Hour</th><th colspan="${HDR.length-19}" class="y"></th></tr><tr class="h">`+
  HDR.map((h,i)=>`<th style="width:${W[i]}px">${h}${[4,8,18].includes(i)?'':'<i></i>'}</th>`).join('')+'</tr>';
 $('cg').innerHTML=W.map(w=>`<col style="width:${w}px">`).join('');
 $('cg').parentElement.style.width=W.reduce((sum,w)=>sum+w,0)+'px';
