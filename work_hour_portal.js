@@ -3,17 +3,45 @@ const SB_URL='https://hqlowjnbugaehpxrqtzc.supabase.co',SB_KEY='sb_publishable_C
 const tabNames={p1:'Work Hour Approval Request',p2:'Department-wise EOT & OT Status',p3:'Department & Section Setup',p4:'OT Cost Data',p5:'Daily Punch Report',p6:'Line & Level Settings',p7:'User Interface'};
 let session=null,currentUser='',profile=null,users=[],editId=null,sessionVersion=0;
 window.workHourAccess={};
+let publication=null;const reportCache=new PublicationCache();
 let serverClock=null;window.workHourServerNow=()=>serverClock?new Date(serverClock.at+performance.now()-serverClock.tick):new Date();
 const el=id=>document.getElementById(id);
 const setupToken=new URLSearchParams(location.hash.slice(1)).get('setup');
 if(setupToken){history.replaceState(null,'',location.pathname);el('setupFields').hidden=false;el('loginTitle').textContent='Set up Administrator';el('loginHint').textContent='Create the first administrator account. This private setup link can be used once.';el('signIn').textContent='Create Administrator';el('password').minLength=10;el('password').autocomplete='new-password';for(const id of ['setupName','setupDepartment','setupDesignation','setupOffice'])el(id).required=true;}
 async function request(path,body,token){const r=await fetch(SB_URL+path,{method:'POST',headers:{apikey:SB_KEY,'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Object.assign(new Error(d.error_description||d.error||d.msg||d.message||'Request failed'),{status:r.status});return d;}
 async function api(body){if(!session)throw Error('Please log in');if(Date.now()>session.expires_at-30000){const d=await request('/auth/v1/token?grant_type=refresh_token',{refresh_token:session.refresh_token});session={...d,expires_at:Date.now()+d.expires_in*1000};}try{return await request('/functions/v1/work-hour-access',body,session.access_token)}catch(e){if(e.status===401){logout();}throw e;}}
-async function dbRequest(table,method,query='',body,prefer,context){return api({op:'data',table,method,query,body,prefer,context});}
+async function dbRequest(table,method,query='',body,prefer,context){
+ const args={op:'data',table,method,query,body,prefer,context};
+ if(method!=='GET')return api(args);
+ const cacheKey=JSON.stringify([currentUser,table,query,context,publication?.version]);
+ const cached=await reportCache.get('wh-published:'+cacheKey);
+ const result=await api({...args,publication:true,version:publication?.version,knownVersion:cached?.cacheKey});
+ if(result&&Object.hasOwn(result,'unchanged')){
+  if(result.unchanged){if(!cached)throw Error('Published report cache unavailable');return cached.data;}
+  await reportCache.set('wh-published:'+cacheKey,result);
+  return result.data;
+ }
+ return result;
+}
+window.workHourPrepareReports=async()=>{publication=await api({op:'publication-head'});if(!publication)throw Error('Admin must publish the first report');showPublication();};
+function showPublication(){el('publicationStatus').textContent=publication?'Published: '+new Date(publication.publishedAt).toLocaleString():'Waiting for Admin to publish reports';el('publishReports').hidden=profile?.is_admin!==true;}
+el('publishReports').onclick=async()=>{
+ if(profile?.is_admin!==true||el('publishReports').disabled)return;
+ el('publishReports').disabled=true;
+ try{
+  const head=await api({op:'publication-head'});
+  publication=await api({op:'publish-reports',expectedVersion:head?.version??null});reportCache.clear();showPublication();
+  await el('dashboard').contentWindow.whPublishedChanged?.();
+ }catch(e){el('publicationStatus').textContent='Publish failed: '+e.message;}
+ finally{el('publishReports').disabled=false;}
+};
+
 async function notifySaved(){}
-function applyProfile(p){if(p.server_now&&Number.isFinite(Date.parse(p.server_now)))serverClock={at:Date.parse(p.server_now),tick:performance.now()};profile=p;currentUser=p.user_name;window.workHourAccess=p;el('who').textContent=p.user_name+' · '+p.department+(!p.is_admin&&!Object.values(p.permissions||{}).some(x=>x.view)?' · No tabs assigned — contact Administrator':'');el('openUsers').hidden=!p.is_admin;try{el('dashboard').contentWindow.whApplyAccess?.()}catch(e){}}
-async function login(){sessionVersion++;const d=await request('/auth/v1/token?grant_type=password',{email:el('email').value.trim(),password:el('password').value});session={...d,expires_at:Date.now()+d.expires_in*1000};try{applyProfile(await api({op:'me'}));}catch(e){session=null;throw e;}el('password').value='';el('login').style.display='none';el('app').style.display='block';el('manage').style.display='none';el('dashboard').style.display='block';el('logout').hidden=false;await bridgeReady;el('dashboard').src='work_hour_approval_dashboard.html?build=20261008_6';}
-function logout(){sessionVersion++;if(session)fetch(SB_URL+'/auth/v1/logout',{method:'POST',headers:{apikey:SB_KEY,Authorization:'Bearer '+session.access_token}}).catch(()=>{});session=null;profile=null;window.workHourAccess={};currentUser='';el('dashboard').src='about:blank';el('app').style.display='none';el('login').style.display='block';el('logout').hidden=true;el('who').textContent='';el('loginMessage').textContent='';}
+function applyProfile(p){if(p.server_now&&Number.isFinite(Date.parse(p.server_now)))serverClock={at:Date.parse(p.server_now),tick:performance.now()};profile=p;currentUser=p.user_name;reportCache.setSecret(p.cacheSecret);publication=p.publication??publication;showPublication();window.workHourAccess=p;el('who').textContent=p.user_name+' · '+p.department+(!p.is_admin&&!Object.values(p.permissions||{}).some(x=>x.view)?' · No tabs assigned — contact Administrator':'');el('openUsers').hidden=!p.is_admin;try{el('dashboard').contentWindow.whApplyAccess?.()}catch(e){}}
+async function login(){sessionVersion++;const d=await request('/auth/v1/token?grant_type=password',{email:el('email').value.trim(),password:el('password').value});session={...d,expires_at:Date.now()+d.expires_in*1000};try{applyProfile(await api({op:'me'}));}catch(e){session=null;throw e;}el('password').value='';el('login').style.display='none';el('app').style.display='block';el('manage').style.display='none';el('dashboard').style.display='block';el('logout').hidden=false;await bridgeReady;el('dashboard').src='work_hour_approval_dashboard.html?build=20261008_publish1';}
+function logout(){sessionVersion++;
+ reportCache.forget();try{for(const k of Object.keys(localStorage))if(k.startsWith('wh-published:'+JSON.stringify([currentUser]).slice(0,-1)))localStorage.removeItem(k);}catch(e){}
+ publication=null;if(session)fetch(SB_URL+'/auth/v1/logout',{method:'POST',headers:{apikey:SB_KEY,Authorization:'Bearer '+session.access_token}}).catch(()=>{});session=null;profile=null;window.workHourAccess={};currentUser='';el('dashboard').src='about:blank';el('app').style.display='none';el('login').style.display='block';el('logout').hidden=true;el('who').textContent='';el('loginMessage').textContent='';}
 el('logout').onclick=logout;
 el('refreshAccess').onclick=async()=>{
  if(!session||el('refreshAccess').disabled)return;const version=sessionVersion;
@@ -32,7 +60,7 @@ function editUser(u){editId=u.id;el('userForm').reset();for(const k of ['email',
 el('newUser').onclick=newUser;
 el('userForm').onsubmit=async e=>{e.preventDefault();el('saveUser').disabled=true;el('userMessage').textContent='';try{const b=Object.fromEntries(new FormData(e.target));b.id=editId;b.active=e.target.elements.active.checked;b.permissions={};el('permissionRows').querySelectorAll('input').forEach(c=>{(b.permissions[c.dataset.tab]??={})[c.dataset.action]=c.checked&&!c.disabled;});b.entry_scope=readEntryScope();const user=await api({op:'save-user',...b});await listUsers();editUser(user);el('userMessage').textContent='User and tab access saved.';}catch(e){el('userMessage').textContent=e.message;}finally{el('saveUser').disabled=false;}};
 // Load the same SQL-backed report bridge after these authenticated helpers exist.
-const bridge=document.createElement('script');const bridgeReady=new Promise((resolve,reject)=>{bridge.onload=resolve;bridge.onerror=()=>reject(Error('Report bridge could not load. Refresh and retry.'));});bridge.src='work_hour_bridge.js?build=20261008_6';document.head.append(bridge);
+const bridge=document.createElement('script');const bridgeReady=new Promise((resolve,reject)=>{bridge.onload=resolve;bridge.onerror=()=>reject(Error('Report bridge could not load. Refresh and retry.'));});bridge.src='work_hour_bridge.js?build=20261008_publish1';document.head.append(bridge);
 
 let scopeOptions=[],scopeLevels=[];
 function option(value,label=value){const o=document.createElement('option');o.value=value;o.textContent=label;return o;}
@@ -53,3 +81,4 @@ function drawEntryScope(scope){el('scopeAll').checked=scope.mode==='all';el('sco
 function scopeControls(){const all=el('scopeAll').checked;el('scopeRules').hidden=all;el('addScope').hidden=all;}
 function readEntryScope(){return {mode:el('scopeAll').checked?'all':'selected',rules:Array.from(el('scopeRules').children).map(div=>Object.fromEntries(Array.from(div.querySelectorAll('select')).map(s=>[s.dataset.scope,s.value])))};}
 el('scopeAll').onchange=scopeControls;el('addScope').onclick=()=>addEntryScope();
+

@@ -1,0 +1,16 @@
+import fs from 'node:fs/promises';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const storage=new Map();
+const sandbox={crypto,TextEncoder,TextDecoder,fetch,btoa,atob,localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)}};
+vm.createContext(sandbox);
+vm.runInContext(await fs.readFile(new URL('../../publication_client.js',import.meta.url),'utf8'),sandbox);
+const cache=new sandbox.PublicationCache();
+cache.setSecret('a'.repeat(64));
+await cache.set('report',{data:[{task:'Private task'}]});
+assert(!storage.get('report').includes('Private task'));
+cache.clear();assert.equal((await cache.get('report')).data[0].task,'Private task');
+cache.setSecret('b'.repeat(64));assert.equal(await cache.get('report'),null);
+cache.setSecret('a'.repeat(64));assert.equal((await cache.get('report')).data[0].task,'Private task');
+cache.forget();assert.equal(await cache.get('report'),null);
+console.log('PASS: persistent reports encrypted, same authorized key restores cache, different account key cannot decrypt, logout forgets key.');

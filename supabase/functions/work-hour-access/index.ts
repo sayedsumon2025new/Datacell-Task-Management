@@ -105,7 +105,19 @@ Deno.serve(async req=>{
   const user=await auth('user','GET',undefined,token);
   const rows=await rest('work_hour_accounts?id=eq.'+encodeURIComponent(user.id));const profile=rows?.[0];
   if(!profile?.active)fail('This account is inactive or has no Work Hour access',403);
-  if(b.op==='me')return new Response(JSON.stringify({...profile,server_now:new Date().toISOString()}),{headers:cors});
+  const publicationHead=()=>rest('rpc/datacell_publication_head','POST',{});
+  if(b.op==='publication-head')return new Response(JSON.stringify(await publicationHead()),{headers:cors});
+  if(b.op==='publish-reports'){
+   if(profile.is_admin!==true)fail('Administrator access required',403);
+   const published=await rest('rpc/datacell_publish','POST',{p_actor_kind:'work-hour',p_actor_id:user.id,p_expected_version:b.expectedVersion??null});
+   return new Response(JSON.stringify(published),{headers:cors});
+  }
+  if(b.op==='me'){
+   const cacheKey=await crypto.subtle.importKey('raw',new TextEncoder().encode(key),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+   const cacheSecret=Array.from(new Uint8Array(await crypto.subtle.sign('HMAC',cacheKey,new TextEncoder().encode(JSON.stringify(['work-hour-report-cache',user.id,profile.permissions,profile.is_admin]))))).map(x=>x.toString(16).padStart(2,'0')).join('');
+   return new Response(JSON.stringify({...profile,server_now:new Date().toISOString(),publication:await publicationHead(),cacheSecret}),{headers:cors});
+  }
+
   if(b.op==='save-entries'){
    if(!can(profile,'p7','edit'))fail('User Interface edit access required',403);
    if(!Array.isArray(b.entries)||!b.entries.length||b.entries.length>200)fail('Send 1 to 200 entries');
@@ -154,6 +166,21 @@ Deno.serve(async req=>{
      if(payload.rows.length<(previous?.rows?.length||0)&&!can(profile,'p6','delete'))fail('Delete permission required',403);payload=stamp(payload);
     }else if(['work_hour_ot_cost','work_hour_daily_punch'].includes(b.table))payload=(Array.isArray(payload)?payload:[payload]).map((r:any)=>({...r,uploaded_by:profile.user_name}));
    }
+   if((b.method||'GET')==='GET'){
+    const editor=(b.table==='work_hour_user_interface'&&b.context==='p7')||
+     (b.table==='work_hour_daily_punch'&&b.context==='p7'&&q.get('select')==='work_date,employee_id,department,section,line')||
+     (b.table==='work_hour_approval_state'&&b.context==='p6'&&can(profile,'p6','edit'))||
+     (b.table==='work_hour_department_sections'&&b.context==='p3'&&can(profile,'p3','edit'));
+    if(!editor){
+     const head=await publicationHead();if(!head)fail('Admin must publish the first report',409);
+     const version=b.version||head.version;
+     if(!/^[a-f0-9-]{36}$/.test(version))fail('Invalid report version');
+     const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify([user.id,profile.permissions,profile.is_admin,version,b.table,q.toString()]))))).map(x=>x.toString(16).padStart(2,'0')).join('');
+     if(b.publication&&b.knownVersion===digest)return new Response(JSON.stringify({unchanged:true,cacheKey:digest,version}),{headers:cors});
+     const data=await rest('rpc/datacell_read_published','POST',{p_source:b.table,p_query:Object.fromEntries(q),p_version:version});
+     return new Response(JSON.stringify(b.publication?{unchanged:false,cacheKey:digest,version,publishedAt:head.publishedAt,data}:data),{headers:cors});
+    }
+   }
    const prefer=b.prefer==='resolution=merge-duplicates,return=representation'?b.prefer:'return=representation';
    return new Response(JSON.stringify(await rest(b.table+'?'+q.toString(),b.method||'GET',payload,prefer)),{headers:cors});
   }
@@ -185,3 +212,4 @@ Deno.serve(async req=>{
   fail('Unknown action');
  }catch(e:any){return new Response(JSON.stringify({error:e.message||'Request failed'}),{status:e.status||400,headers:cors});}
 });
+

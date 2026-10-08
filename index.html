@@ -995,6 +995,7 @@ html[data-theme="light"] .leave-recon-sub{
 }
 
 </style>
+<style>#refreshDataBtn{font-size:11px}#syncLabel{max-width:240px;white-space:normal}</style>
 </head>
 <body>
 
@@ -1043,7 +1044,7 @@ html[data-theme="light"] .leave-recon-sub{
     </div>
     <span class="admin-badge" id="adminBadge" style="display:none">ADMIN</span>
     <div class="topbar-right">
-      <div class="sync-wrap" id="syncWrap" style="display:none"><div class="sync-dot offline" id="syncDot"></div><span class="sync-label" id="syncLabel" style="color:var(--muted)">OFFLINE</span><button type="button" class="logout-btn" id="refreshDataBtn" onclick="pollSheets()">REFRESH DATA</button></div>
+      <div class="sync-wrap" id="syncWrap" style="display:none"><div class="sync-dot offline" id="syncDot"></div><span class="sync-label" id="syncLabel" style="color:var(--muted)">OFFLINE</span><button type="button" class="logout-btn" id="refreshDataBtn" onclick="pollSheets()">PUBLISH REPORTS</button></div>
       <button class="logout-btn" id="logoutBtn">
         <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>LOGOUT
       </button>
@@ -1081,6 +1082,7 @@ html[data-theme="light"] .leave-recon-sub{
   </div>
 </div>
 
+<script src="publication_client.js?build=20261008_publish1"></script>
 <script>
 window.DATACELL_BUILD='DATACELL_BUILD_2026_10_05_DAILY_PUNCH_PAGED';
 console.info(window.DATACELL_BUILD);
@@ -1130,6 +1132,40 @@ const SB_KEY  = 'sb_publishable_CyiA3Ls1wbctt1VCc3DOAA_NeOfPCfx';
 let _isSyncing = false;
 let _syncDebounce = null;
 let _lastVersion = null;
+const publicationClient=new PublicationClient(SB_URL,SB_KEY);
+let _publishedData=null,_publicationRendering=false;
+function fetch(input,options){return publicationClient.route(input,options);}
+async function sbFetchAll(){
+  const viewer=currentUser,epoch=publicationClient.epoch;
+  await publicationClient.prepareReports();
+  const data=await sbFetchAllSource();
+  if(currentUser!==viewer||publicationClient.epoch!==epoch)return null;
+  if(data)_publishedData=structuredClone(data);
+  return data;
+}
+function publicationIsReportView(){
+  return ['overview','kpi','all','personal','calendar'].includes(adminTab)||
+    (adminTab==='leave'&&!['application','status','balancing','approval'].includes(leaveSubTab));
+}
+function publicationView(draw){
+  if(_publicationRendering||!_publishedData||!publicationIsReportView())return draw();
+  const saved={tasks,done:doneStateToObj(),taskCompletionHistory,taskRemarks,leaveApplications,multiSkillMap,dailyWorkingHours,workingHours};
+  const data=structuredClone(_publishedData);
+  tasks=data.tasks;taskCompletionHistory=data.taskCompletionHistory||{};taskRemarks=data.taskRemarks||{};
+  leaveApplications=data.leaveApplications||[];multiSkillMap=data.multiSkillMap||{};
+  dailyWorkingHours=data.dailyWorkingHours||{};workingHours=data.workingHours||{};
+  Object.keys(doneState).forEach(k=>delete doneState[k]);
+  Object.entries(data.doneState||{}).forEach(([k,v])=>doneState[k]=new Set(v));
+  _publicationRendering=true;
+  try{return draw()}finally{
+    tasks=saved.tasks;taskCompletionHistory=saved.taskCompletionHistory;taskRemarks=saved.taskRemarks;
+    leaveApplications=saved.leaveApplications;multiSkillMap=saved.multiSkillMap;
+    dailyWorkingHours=saved.dailyWorkingHours;workingHours=saved.workingHours;
+    Object.keys(doneState).forEach(k=>delete doneState[k]);Object.entries(saved.done).forEach(([k,v])=>doneState[k]=new Set(v));
+    _publicationRendering=false;
+  }
+}
+
 const SQL_TABLES={
   app_state:false,
   task_completions:false,
@@ -1289,6 +1325,10 @@ function setSyncStatus(status) {
   lbl.textContent = map[status] || status.toUpperCase();
   lbl.style.color = col[status] || 'var(--muted)';
   if (wrap) wrap.style.display = (!currentUser || status === 'offline') ? 'none' : 'flex';
+  const publish=document.getElementById('refreshDataBtn');if(publish){publish.hidden=currentUser!=='admin';publish.style.display=currentUser==='admin'?'':'none';}
+  const version=publicationClient.head;
+  if(lbl&&version&&status==='live')lbl.textContent='Published '+new Date(version.publishedAt).toLocaleString();
+
 }
 
 function doneStateToObj() {
@@ -1334,7 +1374,7 @@ async function dbRequest(table,method,query='',body,prefer='return=representatio
   if(!sbConfigured())throw new Error('Supabase is not configured');
   const req=sbFetchOptions(method,{headers:sbHeaders({'Content-Type':'application/json','Prefer':prefer}),...(body===undefined?{}:{body:JSON.stringify(body)})});
   try{
-    const res=await fetch(SB_URL+'/rest/v1/'+table+(query?'?'+query:''),req.options);
+    const res=await fetch(SB_URL+'/rest/v1/'+table+(query?'?'+query:''),{...req.options,publicationEditor:method==='GET'&&(currentUser==='admin'||table==='done_state')});
     if(!res.ok){
       let detail={};try{detail=await res.json();}catch(e){}
       const error=new Error(detail.message||('Database returned HTTP '+res.status));
@@ -1495,7 +1535,7 @@ function applyRemoteData(data) {
 }
 
 // ── READ: fetch all data from Supabase ──────────────────────────
-async function sbFetchAll() {
+async function sbFetchAllSource() {
   if (!sbConfigured()) return null;
   const corePromise=Promise.all([
     sbGet('tasks'), sbGet('done_state'), sbGet('users'), sbGet('module_access'), sbGet('meta')
@@ -1895,8 +1935,8 @@ async function syncUsers() {
     {name:'admin',password:CREDS.admin||'',color:'#f5c842'},
     ...userRegistry.filter(u=>u.name!=='admin').map(u => ({ name: u.name, password: u.password || '', color: u.color || '#60a5fa' }))
   ];
-  if (!await sbDeleteAll('users')) return false;
-  if (rows.length && !await sbUpsert('users', rows)) return false;
+  try{await publicationClient.request({op:'save-users',rows});}
+  catch(e){toast('User settings not saved: '+e.message,'error');return false;}
   await sbBumpVersion();
   refreshLoginDropdown();
   return true;
@@ -1993,6 +2033,8 @@ function preserveWorkHourApprovalDuringSync(){
 
 // ── Manual refresh ───────────────────────────────────────────────
 async function pollSheets() {
+  if(currentUser!=='admin'){toast('Only Admin can publish new report data','error');return;}
+
   if (!currentUser || _isSyncing || _taskWritesPending || _syncDebounce || !sbConfigured()) return;
   _isSyncing = true;
   const refreshButton = document.getElementById('refreshDataBtn');
@@ -2001,18 +2043,17 @@ async function pollSheets() {
   const pollingUser = currentUser;
   const writeRevision = _taskWriteRevision;
   try {
-    // Read full records on explicit refresh so missed version notifications
-    // and concurrent clients publishing the same version remain safe.
+    await publicationClient.publish();
     const data = await sbFetchAll();
     if (!data) { setSyncStatus('error'); return; }
     if (currentUser !== pollingUser || _taskWritesPending || _syncDebounce ||
         writeRevision !== _taskWriteRevision) return;
     const changed = applyRemoteData(data);
     _lastVersion = data.version;
-    if (changed && !preserveWorkHourApprovalDuringSync() && !masterFormDirty && !document.querySelector('#mainContent input:focus, #mainContent select:focus')) renderContent();
+    if (publicationIsReportView() && !preserveWorkHourApprovalDuringSync() && !masterFormDirty) renderContent();
     setSyncStatus('live');
   } catch (e) {
-    console.error('Refresh error:', e);
+    console.error('Refresh error:', e);toast('Publish failed: '+e.message,'error');
     setSyncStatus('error');
   } finally {
     _isSyncing = false;
@@ -2027,6 +2068,7 @@ async function initFromSheets() {
   const data = await sbFetchAll();
   if (data) {
     applyRemoteData(data); _lastVersion = data.version || '0';
+    setSyncStatus('live');
     if(currentUser)setTimeout(showPendingMultiSkillPopup,120);
     if (data.users && data.users.length > 0) {
       PERSONS = data.users.filter(u => u.name !== 'admin').map(u => u.name);
@@ -2342,21 +2384,17 @@ async function refreshLoginCredentials(){
 }
 
 document.getElementById('loginBtn').onclick=async()=>{
-  const btn=document.getElementById('loginBtn');
-  const err=document.getElementById('loginErr');
-  const selected=document.getElementById('loginUser').value;
-  if(!selected){doLogin();return;}
-  btn.textContent='VERIFYING...';btn.disabled=true;
-  const connected=await refreshLoginCredentials();
-  btn.textContent='LOGIN →';btn.disabled=false;
-  if(!connected){
-    err.textContent='⚠ Server connection failed. Please check internet and try again.';
-    err.style.display='block';return;
-  }
-  doLogin();
-  if(currentUser){
-    initFromSheets().then(()=>{if(currentUser)renderContent();});
-  }
+  const btn=document.getElementById('loginBtn'),err=document.getElementById('loginErr');
+  const name=document.getElementById('loginUser').value,password=document.getElementById('loginPass').value.trim();
+  if(!name){err.textContent='Please select your name';err.style.display='block';return;}
+  btn.disabled=true;btn.textContent='VERIFYING...';
+  try{
+    await publicationClient.login(name,password);currentUser=name;_publishedData=null;
+    err.style.display='none';openApp();
+    try{await initFromSheets();if(currentUser===name)renderContent();}
+    catch(e){document.getElementById('mainContent').textContent=e.message;}
+  }catch(e){err.textContent=e.message;err.style.display='block';}
+  finally{btn.disabled=false;btn.textContent='LOGIN →';}
 };
 
 // ── Page load: populate dropdown from Sheets immediately ──
@@ -2412,18 +2450,7 @@ function refreshLoginDropdown() {
   await populateLoginDropdown();
 })();
 document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('loginBtn').click();});
-function doLogin(){
-  const u=document.getElementById('loginUser').value;
-  const p=document.getElementById('loginPass').value.trim();
-  const err=document.getElementById('loginErr');
-  if(!u){err.textContent='⚠ Please select your name from the list.';err.style.display='block';return;}
-  if(CREDS[u]!==p){err.textContent='⚠ Incorrect password.';err.style.display='block';document.getElementById('loginPass').value='';return;}
-  err.style.display='none';
-  currentUser=u;
-  // Do not persist authentication in browser storage.
-  try { localStorage.removeItem('fts_session'); } catch(e){}
-  openApp();
-}
+function doLogin(){document.getElementById('loginBtn').click();}
 function openApp(){setSyncStatus(sbConfigured()?'live':'offline');
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('appScreen').style.display='block';
@@ -2437,9 +2464,10 @@ function openApp(){setSyncStatus(sbConfigured()?'live':'offline');
   taskFilter='all';searchQ='';adminTab=currentUser==='admin'?'overview':'personal';userView='list';personalActualDate=localISODate();kpiDate=localISODate();kpiMonth='';
   calYear=new Date().getFullYear();calMonth=new Date().getMonth();calSelectedDate='';
   ovCalYear=new Date().getFullYear();ovCalMonth=new Date().getMonth();ovCalSelected='';
-  renderContent();
+  document.getElementById('mainContent').textContent='Loading the Admin-published reports...';
 }
 document.getElementById('logoutBtn').onclick=()=>{
+  void publicationClient.logout();_publishedData=null;
   closeSidebar();
   currentUser=null;
   try { localStorage.removeItem('fts_session'); } catch(e){}
@@ -2539,7 +2567,8 @@ document.getElementById('sidebarOverlay')?.addEventListener('click',closeSidebar
 window.addEventListener('resize',()=>{if(window.innerWidth>900)closeSidebar();});
 
 // ─── MAIN RENDER ───
-function renderContent(){
+function renderContent(){return publicationView(renderContentLive);}
+function renderContentLive(){
   document.querySelectorAll('.kpi-late-modal-overlay').forEach(el=>el.remove());
   if(typeof Chart!=='undefined')Object.values(Chart.instances||{}).forEach(chart=>chart.destroy());
   document.getElementById('mainContent').innerHTML='';
@@ -2565,7 +2594,8 @@ function renderContent(){
 // ═══════════════════════════════════════════
 //  PERSONAL VIEW
 // ═══════════════════════════════════════════
-function renderPersonal(){
+function renderPersonal(){return publicationView(renderPersonalLive);}
+function renderPersonalLive(){
   const c=document.getElementById('mainContent');
   const t=th(currentUser);
   const myTasks=tasks.filter(k=>{
@@ -4147,7 +4177,7 @@ function buildWorkHourApproval(c){
   frame.title='Work Hour Approval';
   frame.allow='clipboard-write';
   frame.dataset.workHourApproval='true';
-  frame.src='work_hour_login.html?build=20261008_manual1';
+  frame.src='work_hour_login.html?build=20261008_publish1';
   frame.style.cssText='display:block;width:100%;height:calc(100vh - 110px);min-height:760px;border:1px solid var(--border);border-radius:12px;background:#fff;box-shadow:var(--card-shadow);';
   c.appendChild(frame);
 }
@@ -4189,7 +4219,7 @@ function buildOverview(c){
   const filterNote=document.createElement('p');
   filterNote.className='filter-note';filterNote.style.cssText='font-size:.75rem;color:var(--muted);margin-bottom:16px';
   filterNote.textContent=overviewDate
-    ? 'Status for '+formatDateDisplay(overviewDate)+' · Based on saved actual completion dates. Pending = current tasks without completion on this date. Use REFRESH DATA for the latest updates.'
+    ? 'Status for '+formatDateDisplay(overviewDate)+' · Based on saved actual completion dates. Pending = current tasks without completion on this date. Admin publishes reports with PUBLISH REPORTS for the latest updates.'
     : 'All saved completion dates · Use REFRESH DATA for the latest updates.';
   c.appendChild(filterNote);
 
@@ -5911,3 +5941,4 @@ function renderSettingsLeadTime(body){
 </script>
 </body>
 </html>
+
