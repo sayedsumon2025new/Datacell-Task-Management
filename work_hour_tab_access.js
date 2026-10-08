@@ -1,7 +1,7 @@
 // The server enforces data access; these controls mirror current account permissions.
 (()=>{
  const permitted=(tab,action='view')=>{if(action==='change')return permitted(tab,'edit')||permitted(tab,'delete');const p=parent.workHourAccess;return p?.active===true&&(p.is_admin===true||p.permissions?.[tab]?.[action]===true)};
- const actionIds={exp:'export',pr1:'export',x2:'export',pr2:'export',uiExcel:'export',uiPdf:'export',uiAdd:'edit',uiSave:'change',uiUndoDelete:'delete',dsSave:'edit',otcUpload:'edit',dprUpload:'edit',llSave:'edit'};
+ const actionIds={exp:'export',pr1:'export',x2:'export',pr2:'export',copy2:'export',uiExcel:'export',uiPdf:'export',uiAdd:'edit',uiSave:'change',uiUndoDelete:'delete',dsSave:'edit',otcUpload:'edit',dprUpload:'edit',llSave:'edit'};
  let pending=false,lastEntryScope='';
  window.whApplyAccess=()=>{
   pending=false;
