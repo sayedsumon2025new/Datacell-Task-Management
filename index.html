@@ -4170,8 +4170,9 @@ window.workHourDailyPunchUpsert=workHourDailyPunchUpsert;
 function buildWorkHourApproval(c){
   const frame=document.createElement('iframe');
   frame.title='Work Hour Approval';
+  frame.allow='clipboard-write';
   frame.dataset.workHourApproval='true';
-  frame.src='work_hour_login.html?build=20261007_8';
+  frame.src='work_hour_login.html?build=20261008_1';
   frame.style.cssText='display:block;width:100%;height:calc(100vh - 110px);min-height:760px;border:1px solid var(--border);border-radius:12px;background:#fff;box-shadow:var(--card-shadow);';
   c.appendChild(frame);
 }
