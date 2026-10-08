@@ -305,13 +305,13 @@ function whSetBusy(busy){
  for(const id of ['whReload','rd','whSave','del','llSave','llCancel','llReload','llLine','llLevel','whDept','whSection','lf','q1'])$(id).disabled=busy||!dbReady;
  document.querySelectorAll('#llBody button').forEach(b=>b.disabled=busy||!dbReady)
 }
-async function load(){
+async function load(editor=false){
  if(whBusy)return false;
  if(cellEdit)cancelCellEdit(cellEdit);
  whSetBusy(true);whSetMsg('Loading saved report…');
  try{
   if(!parent||typeof parent.workHourApprovalLoadState!=='function')throw new Error('Open this dashboard from Datacell Task Management.');
-  const s=await parent.workHourApprovalLoadState();
+  const s=await parent.workHourApprovalLoadState(editor?'p6':undefined);
   if(!s||!Array.isArray(s.R)||!s.updatedAt)throw new Error('Saved report is unavailable.');
   R=s.R;dbRevision=s.updatedAt;
   nid=0;R.forEach(r=>r.id=nid++);$('rd').value=date;dbReady=true;
@@ -582,7 +582,16 @@ function r2(){const P='#F8CBAD',G='#A9D08E',visible=eotVisibleHours(),count=visi
    h+=`<td style="background:${P}">${a[0]==null?'':a[0]}</td><td style="background:${G}">${a[1]??'—'}</td><td style="${excessStyle(a[2])}">${a[2]??'—'}</td><td style="background:${P}">${a[3]??'—'}</td>`}
   h+=`<td title="No populated Total OT TM measure was supplied in Book1.csv"></td><td class="tt">${d[1]??'—'}</td></tr>`});
  $('t2').innerHTML=h+'</tbody>';$('t2').style.width=W2.reduce((n,w)=>n+w,0)+'px';}
-document.querySelectorAll('.tab').forEach(b=>b.onclick=async()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x==b));['p1','p2','p3','p4','p5','p6','p7'].forEach(p=>$(p).classList.toggle('hide',p!=b.dataset.t));if(b.dataset.t==='p1')await approvalLoad();if(b.dataset.t==='p2')await eotInit();if(b.dataset.t==='p3')await dsLoad();if(b.dataset.t==='p4')await otcInit();if(b.dataset.t==='p5')await dprInit();if(b.dataset.t==='p7'){if(!uiLoaded)await uiLoad();}if(b.dataset.t==='p6'){llDraw();if(!dbReady&&!whBusy)await load()}});
+window.whPublishedChanged=async()=>{
+ const active=document.querySelector('.tab.on')?.dataset.t;
+ if(active==='p1')await load();
+ if(active==='p2'){eotInitPromise=null;await eotInit();}
+ if(active==='p4'){await otcDates(false);await otcLoadRows();}
+ if(active==='p5'){await dprDates(false);await dprLoadRows();}
+};
+document.querySelectorAll('.tab').forEach(b=>b.onclick=async()=>{
+ if(['p1','p2','p4','p5'].includes(b.dataset.t)){try{await parent.workHourPrepareReports()}catch(e){alert(e.message);return;}}
+document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x==b));['p1','p2','p3','p4','p5','p6','p7'].forEach(p=>$(p).classList.toggle('hide',p!=b.dataset.t));if(b.dataset.t==='p1')await approvalLoad();if(b.dataset.t==='p2')await eotInit();if(b.dataset.t==='p3')await dsLoad();if(b.dataset.t==='p4')await otcInit();if(b.dataset.t==='p5')await dprInit();if(b.dataset.t==='p7'){if(!uiLoaded)await uiLoad();}if(b.dataset.t==='p6'){llDraw();if(!whBusy)await load(true)}});
 r2();
 
 // ---------- Line & Level Settings (shared SQL report rows) ----------
@@ -597,7 +606,7 @@ function llDraw(){
   '<tr><td colspan="3" style="text-align:center;padding:18px;color:#666">'+(dbReady?'No sewing lines match this filter.':'Reload to load saved lines.')+'</td></tr>';
  document.querySelectorAll('#llBody button').forEach(b=>b.disabled=whBusy||!dbReady)
 }
-$('llSearch').oninput=llDraw;$('llFilter').onchange=llDraw;$('llReload').onclick=load;$('llCancel').onclick=llResetForm;
+$('llSearch').oninput=llDraw;$('llFilter').onchange=llDraw;$('llReload').onclick=()=>load(true);$('llCancel').onclick=llResetForm;
 $('llSave').onclick=async()=>{
  if(whBusy||!dbReady||llEditId===null)return;
  const line=$('llLine').value.trim(),level=$('llLevel').value.trim(),lineNo=Number(line);
@@ -853,11 +862,11 @@ $('uiSave').onclick=async()=>{
    const batch=changes.slice(offset,offset+200),saveRows=batch.filter(x=>!x.delete).map(x=>x.row),deleteRows=batch.filter(x=>x.delete).map(x=>x.row);
    uiMessage('Saving changes '+(offset+1)+'–'+(offset+batch.length)+' / '+changes.length+'…');
    const result=await parent.workHourUserInterfaceApply(saveRows,deleteRows);
-   for(const row of saveRows){const confirmed=result.rows.find(r=>r.id===row.id);Object.assign(row,confirmed);row._scopeOrigin={department:confirmed.department,section:confirmed.section,level:confirmed.level};approvalUpsert(confirmed);uiDirty.delete(row.id);saved++;}
-   for(const row of deleteRows){uiDeleted.delete(row.id);uiDirty.delete(row.id);APPROVAL_ROWS=APPROVAL_ROWS.filter(r=>r.sourceId!==row.id);removed++;}
-   if(deleteRows.length){approvalRevision++;render();}
+   for(const row of saveRows){const confirmed=result.rows.find(r=>r.id===row.id);Object.assign(row,confirmed);row._scopeOrigin={department:confirmed.department,section:confirmed.section,level:confirmed.level};uiDirty.delete(row.id);saved++;}
+   for(const row of deleteRows){uiDeleted.delete(row.id);uiDirty.delete(row.id);/* Published approval rows stay unchanged until Admin publishes. */removed++;}
+   if(deleteRows.length){/* Report stays on its published version. */}
   }
-  uiMessage(saved+' entry(s) saved; '+removed+' row(s) deleted.');
+  uiMessage(saved+' entry(s) saved; '+removed+' row(s) deleted. Reports update after Admin publishes.');
  }catch(err){uiMessage('Save failed'+(saved||removed?' after '+saved+' saved / '+removed+' deleted':'')+': '+err.message+'. Unsaved changes remain.',true)}
  finally{uiBusy=false;uiDraw()}
 };
@@ -884,7 +893,7 @@ function dsDraw(){
 async function dsLoad(){
  dsSetMsg('Loading...');
  try{
-  DS=parent&&typeof parent.workHourDepartmentSectionsList==='function'?await parent.workHourDepartmentSectionsList():[];
+  DS=parent&&typeof parent.workHourDepartmentSectionsList==='function'?await parent.workHourDepartmentSectionsList('p3'):[];
   dsDraw();syncReportFilters();dsSetMsg(DS.length+' mapping(s) loaded');
  }catch(e){console.error(e);dsSetMsg('Load failed: '+e.message,true)}
 }
@@ -1232,6 +1241,7 @@ $('cc').addEventListener('click',e=>{const b=e.target.closest('.png');if(!b)retu
  document.querySelectorAll('.tabs,.bar,.ds-head,.ds-toolbar,.otc-head,.dpr-head').forEach(el=>observer.observe(el));
  schedule();
 })();
-</script><script src="work_hour_tab_access.js?build=20261008_6"></script><script src="vendor/html2canvas-1.4.1.min.js"></script>
+</script><script src="work_hour_tab_access.js?build=20261008_publish1"></script><script src="vendor/html2canvas-1.4.1.min.js"></script>
 <script src="work_hour_table_image.js?build=20261008_6"></script>
 </body></html>
+

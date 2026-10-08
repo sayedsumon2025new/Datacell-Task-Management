@@ -1,6 +1,6 @@
 // Existing report validation and pagination shared with the secure portal.
-async function workHourApprovalLoadState(){
-  const rows=await dbRequest('work_hour_approval_state','GET','id=eq.main&select=report_date,rows,updated_at');
+async function workHourApprovalLoadState(context){
+  const rows=await dbRequest('work_hour_approval_state','GET','id=eq.main&select=report_date,rows,updated_at',undefined,undefined,context);
   const r=Array.isArray(rows)?rows[0]:null;
   if(!r||!Array.isArray(r.rows)||!r.updated_at)throw new Error('Work Hour Approval data is unavailable. Reload before editing.');
   return {date:r.report_date||'',R:r.rows,updatedAt:r.updated_at};
@@ -23,9 +23,9 @@ async function workHourApprovalSaveState(state){
 window.workHourApprovalLoadState=workHourApprovalLoadState;
 window.workHourApprovalSaveState=workHourApprovalSaveState;
 
-async function workHourDepartmentSectionsList(){
+async function workHourDepartmentSectionsList(context){
   return await dbRequest('work_hour_department_sections','GET',
-    'select=id,department,section,sort_order&order=sort_order.asc,id.asc');
+    'select=id,department,section,sort_order&order=sort_order.asc,id.asc',undefined,undefined,context);
 }
 async function workHourDepartmentSectionsSave(item){
   const department=String(item?.department||'').trim(),section=String(item?.section||'').trim();
@@ -62,7 +62,7 @@ async function workHourUserInterfaceList(context='p1'){
 async function workHourUserInterfacePunchRows(workDate){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(workDate))throw new Error('A valid punch date is required.');
   return await fetchPagedTableRows('work_hour_daily_punch',
-    'select=work_date,employee_id,department,section,line&work_date=eq.'+encodeURIComponent(workDate)+'&order=employee_id.asc');
+    'select=work_date,employee_id,department,section,line&work_date=eq.'+encodeURIComponent(workDate)+'&order=employee_id.asc',1000,Infinity,'p7');
 }
 window.workHourUserInterfacePunchRows=workHourUserInterfacePunchRows;
 async function workHourUserInterfaceSave(row){
@@ -194,3 +194,4 @@ async function workHourUserInterfaceApply(rows,deletions){
  return result;
 }
 window.workHourUserInterfaceApply=workHourUserInterfaceApply;
+
