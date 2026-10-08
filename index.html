@@ -1043,7 +1043,7 @@ html[data-theme="light"] .leave-recon-sub{
     </div>
     <span class="admin-badge" id="adminBadge" style="display:none">ADMIN</span>
     <div class="topbar-right">
-      <div class="sync-wrap" id="syncWrap" style="display:none"><div class="sync-dot offline" id="syncDot"></div><span class="sync-label" id="syncLabel" style="color:var(--muted)">OFFLINE</span></div>
+      <div class="sync-wrap" id="syncWrap" style="display:none"><div class="sync-dot offline" id="syncDot"></div><span class="sync-label" id="syncLabel" style="color:var(--muted)">OFFLINE</span><button type="button" class="logout-btn" id="refreshDataBtn" onclick="pollSheets()">REFRESH DATA</button></div>
       <button class="logout-btn" id="logoutBtn">
         <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>LOGOUT
       </button>
@@ -1127,9 +1127,6 @@ let nextSl=1;
 
 const SB_URL  = 'https://hqlowjnbugaehpxrqtzc.supabase.co';
 const SB_KEY  = 'sb_publishable_CyiA3Ls1wbctt1VCc3DOAA_NeOfPCfx';
-const POLL_INTERVAL_MS = 30 * 1000;
-
-let _pollTimer = null;
 let _isSyncing = false;
 let _syncDebounce = null;
 let _lastVersion = null;
@@ -1287,7 +1284,7 @@ function setSyncStatus(status) {
   const wrap = document.getElementById('syncWrap');
   if (!dot || !lbl) return;
   dot.className = 'sync-dot ' + status;
-  const map = {live:'LIVE', syncing:'SYNCING...', error:'RETRY', offline:'OFFLINE'};
+  const map = {live:'SAVED', syncing:'SYNCING...', error:'RETRY', offline:'OFFLINE'};
   const col = {live:'#3ef0b0', syncing:'#f5c842', error:'#f87171', offline:'var(--muted)'};
   lbl.textContent = map[status] || status.toUpperCase();
   lbl.style.color = col[status] || 'var(--muted)';
@@ -1994,15 +1991,18 @@ function preserveWorkHourApprovalDuringSync(){
     !!document.querySelector('#mainContent iframe[data-work-hour-approval]');
 }
 
-// ── Polling ──────────────────────────────────────────────────────
+// ── Manual refresh ───────────────────────────────────────────────
 async function pollSheets() {
   if (!currentUser || _isSyncing || _taskWritesPending || _syncDebounce || !sbConfigured()) return;
   _isSyncing = true;
+  const refreshButton = document.getElementById('refreshDataBtn');
+  if(refreshButton)refreshButton.disabled=true;
+  setSyncStatus('syncing');
   const pollingUser = currentUser;
   const writeRevision = _taskWriteRevision;
   try {
-    // Read the records on every poll: a successful write can outlive a failed
-    // version notification, and concurrent clients can publish the same version.
+    // Read full records on explicit refresh so missed version notifications
+    // and concurrent clients publishing the same version remain safe.
     const data = await sbFetchAll();
     if (!data) { setSyncStatus('error'); return; }
     if (currentUser !== pollingUser || _taskWritesPending || _syncDebounce ||
@@ -2012,27 +2012,13 @@ async function pollSheets() {
     if (changed && !preserveWorkHourApprovalDuringSync() && !masterFormDirty && !document.querySelector('#mainContent input:focus, #mainContent select:focus')) renderContent();
     setSyncStatus('live');
   } catch (e) {
-    console.error('Polling error:', e);
+    console.error('Refresh error:', e);
     setSyncStatus('error');
   } finally {
     _isSyncing = false;
+    if(refreshButton)refreshButton.disabled=false;
   }
 }
-
-function startPolling() {
-  stopPolling();
-  if (!sbConfigured()) return;
-  setSyncStatus('syncing'); pollSheets();
-  _pollTimer = setInterval(pollSheets, POLL_INTERVAL_MS);
-}
-function stopPolling() { clearInterval(_pollTimer); _pollTimer = null; }
-
-// Near-live cross-user refresh: poll every 30 seconds and refresh immediately
-// when the user returns to the tab/window.
-window.addEventListener('focus',()=>{ if(currentUser) pollSheets(); });
-document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='visible'&&currentUser)pollSheets();
-});
 
 // ── Initial load on login ────────────────────────────────────────
 async function initFromSheets() {
@@ -2441,7 +2427,7 @@ function doLogin(){
   try { localStorage.removeItem('fts_session'); } catch(e){}
   openApp();
 }
-function openApp(){startPolling();
+function openApp(){setSyncStatus(sbConfigured()?'live':'offline');
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('appScreen').style.display='block';
   document.getElementById('loginPass').value='';
@@ -2458,7 +2444,7 @@ function openApp(){startPolling();
 }
 document.getElementById('logoutBtn').onclick=()=>{
   closeSidebar();
-  stopPolling();currentUser=null;
+  currentUser=null;
   try { localStorage.removeItem('fts_session'); } catch(e){}
   document.getElementById('appScreen').style.display='none';
   document.getElementById('loginScreen').style.display='flex';
@@ -4214,8 +4200,8 @@ function buildOverview(c){
   const filterNote=document.createElement('p');
   filterNote.className='filter-note';filterNote.style.cssText='font-size:.75rem;color:var(--muted);margin-bottom:16px';
   filterNote.textContent=overviewDate
-    ? 'Status for '+formatDateDisplay(overviewDate)+' · Based on saved actual completion dates. Pending = current tasks without completion on this date. Auto-refresh every 5 minutes.'
-    : 'All saved completion dates · Auto-refresh every 5 minutes.';
+    ? 'Status for '+formatDateDisplay(overviewDate)+' · Based on saved actual completion dates. Pending = current tasks without completion on this date. Use REFRESH DATA for the latest updates.'
+    : 'All saved completion dates · Use REFRESH DATA for the latest updates.';
   c.appendChild(filterNote);
 
   // Global stats strip
