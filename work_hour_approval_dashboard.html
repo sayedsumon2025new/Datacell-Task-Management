@@ -136,7 +136,7 @@ html,body{min-height:100%}
  .table-scroll thead{position:static!important}
 }
 #uiTable .ui-action{position:sticky;left:0;background:#fff;z-index:1;width:66px}#uiTable thead .ui-action{background:#fff2cc;z-index:3}#uiTable .ui-action button{font-size:11px;padding:3px 6px;color:#b42318;border:1px solid #d99191;background:#fff}#uiBody input[readonly]{background:#f4f4f4}
-</style><script src="work_hour_eot_model.js?build=20261008_2"></script><script src="work_hour_entry_rules.js?build=20261008_2"></script></head><body>
+</style><script src="work_hour_eot_model.js?build=20261008_3"></script><script src="work_hour_entry_rules.js?build=20261008_3"></script></head><body>
 <div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button><button class="tab" data-t="p3">Department &amp; Section Setup</button><button class="tab" data-t="p4">OT Cost Data</button><button class="tab" data-t="p5">Daily Punch Report</button><button class="tab" data-t="p6">Line &amp; Level Settings</button><button class="tab" data-t="p7">User Interface</button></div>
 <div id="p1">
 <div class="bar">
@@ -555,7 +555,7 @@ function eotSummary(rows){
  return [total,hours.length?Math.max(...hours):null,...sums,total];
 }
 const TOL=()=>Math.max(0,+$('tol').value||0);
-function FD(){const q=$('q2').value.trim().toLowerCase(),sf=$('sf').value,k=+$('ots').value||0,t=TOL();return D2.filter(d=>d[0].toLowerCase().includes(q)&&(!sf||(d[3+k][2]!=null&&(sf=='o'?d[3+k][2]>t:d[3+k][2]<=t))))}
+function FD(){const q=$('q2').value.trim().toLowerCase(),sf=$('sf').value,k=+$('ots').value||0,t=TOL();return D2.filter(d=>{const values=(k<0?Array.from({length:9},(_,i)=>d[3+i][2]):[d[3+k][2]]).filter(v=>v!=null);return d[0].toLowerCase().includes(q)&&(!sf||(values.length>0&&(sf==='o'?values.some(v=>v>t):values.every(v=>v<=t))))})}
 const EOT_TIMES=['5:00 PM','6:00 PM','7:00 PM','8:00 PM','9:00 PM','10:00 PM','11:00 PM','12:00 PM','1:00 AM'];
 function r2(){const P='#F8CBAD',G='#A9D08E',count=EOT_TIMES.length;
  const W2=[76,224,55,55,50,50,45,...Array.from({length:(count-1)*4},(_,i)=>[50,53,50,50][i%4]),55,43];
@@ -1108,7 +1108,7 @@ function vBar(F,k){const el=$('v1'),w=W_(el),t=TOL(),rows=F.map(d=>({n:d[0],v:d[
 function vLine(F2,k){const el=$('v2'),w=W_(el),h=340,L=56,R=18,Tp=14,B=64,ss=(i,j)=>F2.reduce((a,d)=>a+(d[3+i][j]||0),0);
  const S=[['Plan TM',I6.map(i=>ss(i,0))],['Utilized TM',I6.map(i=>i?ss(i,1):null)],['Punch Out',I6.map(i=>ss(i,i?3:1))]],vis=S.filter(x=>!HID[x[0]]);
  const mx=Math.max(1,...vis.flatMap(x=>x[1].filter(v=>v!=null))),st=nice(mx/5),hi=Math.ceil(mx/st)*st,bw=(w-L-R)/I6.length,sx=i=>L+(i+.5)*bw,sy=v=>Tp+(1-v/hi)*(h-Tp-B);
- let s=`<rect x="${L+k*bw}" y="${Tp}" width="${bw}" height="${h-Tp-B}" fill="#FFD966" opacity=".35"/>`;
+ let s=k<0?'':`<rect x="${L+k*bw}" y="${Tp}" width="${bw}" height="${h-Tp-B}" fill="#FFD966" opacity=".35"/>`;
  for(let v=0;v<=hi;v+=st)s+=`<line x1="${L}" x2="${w-R}" y1="${sy(v)}" y2="${sy(v)}" stroke="${v?'#e6e6e6':'#444'}"/>`+T(L-8,sy(v)+4,v,'text-anchor="end" fill="#666" font-size="11"');
  I6.forEach(i=>s+=T(sx(i),h-B+18,SL[i],'text-anchor="middle" font-size="11"')+T(sx(i),h-B+32,i+'H OT','text-anchor="middle" font-size="10" fill="#777"'));
  s+=T(14,(Tp+h-B)/2,'Manpower (TM)',`text-anchor="middle" font-size="11" fill="#555" transform="rotate(-90 14 ${(Tp+h-B)/2})"`);
@@ -1118,7 +1118,7 @@ function vLine(F2,k){const el=$('v2'),w=W_(el),h=340,L=56,R=18,Tp=14,B=64,ss=(i,
  I6.forEach(i=>s+=`<rect class="hv" x="${L+i*bw}" y="${Tp}" width="${bw}" height="${h-Tp-B}" fill="transparent" style="cursor:pointer" data-k="${i}" data-tt="<b>${SL[i]} · ${i} Hour OT</b>${S.map((x,j)=>`<br><span style='color:${PAL[j]}'>●</span> ${x[0]}: <b>${x[1][i]==null?'–':x[1][i]}</b>`).join('')}<br>Short/Excess: <b>${sgn(ss(i,2))}</b>"/>`);
  S.forEach(([n],j)=>{const x=w/2-170+j*118;s+=`<g data-l="${n}" style="cursor:pointer"${HID[n]?' opacity=".35"':''}><rect x="${x-4}" y="${h-24}" width="112" height="20" fill="transparent"/><line x1="${x}" x2="${x+20}" y1="${h-14}" y2="${h-14}" stroke="${PAL[j]}" stroke-width="3"/>`+T(x+26,h-10,n,'font-size="12"')+'</g>'});
  el.innerHTML=svg(w,h,s)}
-function vHeat(F,k){const el=$('v3'),w=W_(el),t=TOL(),L=Math.min(190,Math.round(w*.34)),cw=(w-L-6)/I6.length,rh=26,Tp=40,rows=[...F].sort((a,b)=>b[3+k][2]-a[3+k][2]),h=Tp+rows.length*rh+8,all=rows.flatMap(d=>I6.map(i=>d[3+i][2])),mp=Math.max(1,...all),mm=Math.max(1,-Math.min(0,...all));let s='';
+function vHeat(F,k){const el=$('v3'),w=W_(el),t=TOL(),L=Math.min(190,Math.round(w*.34)),cw=(w-L-6)/I6.length,rh=26,Tp=40,rows=k<0?[...F]:[...F].sort((a,b)=>b[3+k][2]-a[3+k][2]),h=Tp+rows.length*rh+8,all=rows.flatMap(d=>I6.map(i=>d[3+i][2])),mp=Math.max(1,...all),mm=Math.max(1,-Math.min(0,...all));let s='';
  I6.forEach(i=>s+=T(L+i*cw+cw/2,16,i+'H OT',`text-anchor="middle" font-weight="700"${i==k?' fill="#0072B2"':''}`)+T(L+i*cw+cw/2,31,SL[i],'text-anchor="middle" font-size="10" fill="#777"'));
  rows.forEach((d,r)=>{const y=Tp+r*rh;s+=T(L-8,y+rh/2+4,cut(d[0],Math.floor(L/6.6)),`text-anchor="end"${d[0]==SEL?' font-weight="700"':''}`);
   I6.forEach(i=>{const v=d[3+i][2],a=v>t?.25+.75*Math.min(1,v/mp):.18+.6*Math.min(1,-v/mm);
@@ -1133,8 +1133,27 @@ function donut(el,items,o){const w=W_(el),side=w>=470,R=Math.min(side?w*.27:w/2-
 const kc=(l,v,sub,c,x)=>`<div class="kc" style="--c:${c}"><span>${l}</span><b>${v}</b><em>${sub}</em>${x||''}</div>`,
  spark=(a,c)=>{const mx=Math.max(...a,1),p=a.map((v,i)=>`${i*100/Math.max(1,a.length-1)},${26-v/mx*24}`).join(' ');return `<svg viewBox="0 0 100 28" width="100%" height="28" preserveAspectRatio="none"><polyline points="${p}" fill="none" stroke="${c}" stroke-width="2"/></svg>`},
  pb=(p,c)=>`<div class="pb"><i style="width:${Math.max(0,Math.min(100,p))}%;background:${c}"></i></div>`;
+function eotAllHours(F){
+ const rows=SEL?F.filter(d=>d[0]===SEL):F;
+ const sum=(i,j)=>{const values=rows.map(d=>d[3+i][j]).filter(v=>v!=null);return values.length?values.reduce((a,b)=>a+b,0):null;};
+ const show=v=>v==null?'—':v;
+ const chips=I6.map(i=>`<i class="chip" data-c="${i}">${i}H · ${SL[i]}</i>`).join('')+'<button type="button" class="chip x" data-c="x">✕ Clear Filters</button>';
+ $('kpi').innerHTML=`<div class="kc ttl"><span>Report dashboard · ${E(fd(eotDate))}</span><b>Department-wise EOT &amp; OT Status</b><em>${rows.length} departments${SEL?' · '+E(SEL):''} · All hours</em><div>${chips}</div></div>`+
+ kc('Total TM',rows.some(d=>d[1]!=null)?rows.reduce((a,d)=>a+(d[1]||0),0):'—',SEL?E(SEL):'all selected departments','#0072B2')+
+ I6.map(i=>kc(`${i}H · ${SL[i]} · Plan TM`,show(sum(i,0)),(i?`Utilized TM: ${show(sum(i,1))} · `:'')+`Punch Out: ${show(sum(i,i?3:1))}`,i<3?'#0072B2':'#E69F00',`<em>Short/Excess: ${sum(i,2)==null?'—':sgn(sum(i,2))}</em>`)).join('');
+ $('ins').innerHTML='<li>All hours shown. Select an OT hour for its utilization and department comparison.</li>';
+ if(!F.length){$('cc').innerHTML='<div class="card c6">No departments match the current date and filters.</div>';return;}
+ if(!eotActualLoaded){$('cc').innerHTML='<div class="card c6">No OT Cost uploaded for this date. Actuals are unavailable.</div>';return;}
+ const card=(i,title)=>`<div class="card c6"><button class="g png">PNG</button><h3>${title}</h3><div class="cv" id="v${i}"></div></div>`;
+ $('cc').innerHTML=card(2,'Plan vs Utilized — All hours')+card(3,'Short / Excess — All hours')+card(4,'Total TM Share by Department');
+ vLine(rows,-1);vHeat(F,-1);
+ const total=F.reduce((a,d)=>a+(d[1]||0),0),parts=F.filter(d=>d[1]>0).map((d,i)=>({n:d[0],v:d[1],c:PAL[i%PAL.length],d:d[0]}));
+ donut($('v4'),parts,{u:'TM',c:[total,'Total TM']});
+}
 function charts(){const F=FD(),k=+$('ots').value||0,t=TOL();
+ $('sf').options[1].textContent=k<0?'Over plan (any OT slot)':'Over plan (selected OT slot)';$('sf').options[2].textContent=k<0?'Within plan (all OT slots)':'Within plan (selected OT slot)';
  if(SEL&&!F.some(d=>d[0]==SEL))SEL=null;
+ if(k<0){eotAllHours(F);return;}
  const F2=SEL?F.filter(d=>d[0]==SEL):F,ss=(i,j)=>F2.reduce((a,d)=>a+(d[3+i][j]||0),0),pl=ss(k,0),ut=ss(k,1),net=ss(k,2),tm=F2.reduce((a,d)=>a+d[1],0),ov0=F2.filter(d=>d[3+k][2]>t).length,up=pl?ut/pl*100:0;
  const chips=I6.map(i=>`<i class="chip${i==k?' on':''}" data-c="${i}">${i}H · ${SL[i]}</i>`).join('')+'<button type="button" class="chip x" data-c="x" title="Clear search, status, department selection and chart filters; keep Work Date">✕ Clear Filters</button>';
  $('kpi').innerHTML=`<div class="kc ttl"><span>Report dashboard · ${E(fd(eotDate))}</span><b>Department-wise EOT &amp; OT Status</b><em>${F2.length} department${F2.length==1?'':'s'}${SEL?' · '+E(SEL):''} · ${k} Hour OT</em><div>${chips}</div></div>`+
@@ -1152,14 +1171,14 @@ function charts(){const F=FD(),k=+$('ots').value||0,t=TOL();
  donut($('v4'),top,{u:'TM',c:[F.reduce((a,d)=>a+d[1],0),'Total TM']});
  const ov=F.filter(d=>d[3+k][2]>t).length,st=[{n:'Over plan (> '+t+')',v:ov,c:RED,s:'o'},{n:'Within plan (≤ '+t+')',v:F.filter(d=>d[3+k][2]!=null&&d[3+k][2]<=t).length,c:GRN,s:'w'},{n:'Plan unavailable',v:F.filter(d=>d[3+k][2]==null).length,c:'#999'}].filter(x=>x.v);
  donut($('v5'),st,{u:'depts',c:[F.length,'departments'],st:1})}
-$('ots').innerHTML=EOT_TIMES.map((t,i)=>`<option value="${i}" ${i==1?'selected':''}>${i} Hour OT (${t})</option>`).join('');
+$('ots').innerHTML='<option value="-1">All hours</option>'+EOT_TIMES.map((t,i)=>`<option value="${i}" ${i==1?'selected':''}>${i} Hour OT (${t})</option>`).join('');
 const tip=document.createElement('div');tip.id='tt';document.body.appendChild(tip);
 document.addEventListener('mousemove',e=>{const x=e.target.closest&&e.target.closest('[data-tt]');if(!x){tip.style.display='none';return}tip.innerHTML=x.dataset.tt;tip.style.display='block';tip.style.left=Math.min(e.clientX+14,innerWidth-tip.offsetWidth-8)+'px';tip.style.top=(e.clientY+16)+'px'});
 $('cc').addEventListener('click',e=>{const d=e.target.closest('[data-d]'),k=e.target.closest('[data-k]'),s=e.target.closest('[data-s]'),l=e.target.closest('[data-l]');
  if(l){HID[l.dataset.l]=!HID[l.dataset.l];charts();return}
  if(s){$('sf').value=$('sf').value==s.dataset.s?'':s.dataset.s;refresh();return}
  if(k)$('ots').value=k.dataset.k;if(d)SEL=(SEL==d.dataset.d&&!k)?null:d.dataset.d;if(d||k)refresh()});
-$('kpi').addEventListener('click',e=>{const c=e.target.closest('[data-c]');if(!c)return;if(c.dataset.c=='x'){SEL=null;$('sf').value='';$('q2').value='';$('tol').value='0';$('ots').value='1';Object.keys(HID).forEach(key=>delete HID[key]);tip.style.display='none'}else $('ots').value=c.dataset.c;refresh()});
+$('kpi').addEventListener('click',e=>{const c=e.target.closest('[data-c]');if(!c)return;if(c.dataset.c=='x'){SEL=null;$('sf').value='';$('q2').value='';$('tol').value='0';$('ots').value='-1';Object.keys(HID).forEach(key=>delete HID[key]);tip.style.display='none'}else $('ots').value=c.dataset.c;refresh()});
 let lw=0;new ResizeObserver(()=>{const w=$('cc').clientWidth;if(w>0&&Math.abs(w-lw)>8){lw=w;charts()}}).observe($('cc'));
 function refresh(){r2();charts()}
 ['q2','sf','tol','ots'].forEach(i=>{$(i).addEventListener('input',refresh);$(i).addEventListener('change',refresh)});refresh();
@@ -1206,6 +1225,6 @@ $('cc').addEventListener('click',e=>{const b=e.target.closest('.png');if(!b)retu
  document.querySelectorAll('.tabs,.bar,.ds-head,.ds-toolbar,.otc-head,.dpr-head').forEach(el=>observer.observe(el));
  schedule();
 })();
-</script><script src="work_hour_tab_access.js?build=20261008_2"></script><script src="vendor/html2canvas-1.4.1.min.js"></script>
-<script src="work_hour_table_image.js?build=20261008_2"></script>
+</script><script src="work_hour_tab_access.js?build=20261008_3"></script><script src="vendor/html2canvas-1.4.1.min.js"></script>
+<script src="work_hour_table_image.js?build=20261008_3"></script>
 </body></html>
