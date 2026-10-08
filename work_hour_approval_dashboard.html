@@ -61,7 +61,7 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 .kc{flex:1 1 170px;border:1px solid #d9dee5;border-top:4px solid var(--c,#0072B2);border-radius:8px;padding:10px 14px;background:#fff;display:flex;flex-direction:column;gap:2px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
 .kc span{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#667}.kc b{font-size:30px;line-height:1.15}.kc em{font-style:normal;font-size:12px;color:#555}
 .kc.ttl{flex:2.2 1 330px;background:#1F3A5F;color:#fff}.kc.ttl span,.kc.ttl em{color:#cfd9e8}.kc.ttl b{font-size:21px}
-.chip{font-style:normal;display:inline-block;font-size:11px;font-weight:700;padding:4px 9px;margin:6px 5px 0 0;border:1px solid #8fa6c4;border-radius:14px;cursor:pointer;color:#e6eefb}.chip.on{background:#FFD966;border-color:#FFD966;color:#1F3A5F}.chip.x{border-color:#ff9c9c;color:#ffd3d3}
+.chip{font-style:normal;display:inline-block;font-size:11px;font-weight:700;padding:4px 9px;margin:6px 5px 0 0;border:1px solid #8fa6c4;border-radius:14px;cursor:pointer;color:#e6eefb}.chip.on{background:#FFD966;border-color:#FFD966;color:#1F3A5F}.chip.x{background:transparent;border-color:#ff9c9c;color:#ffd3d3}
 .pb{height:6px;border-radius:3px;background:#e5e7eb;margin-top:6px;overflow:hidden}.pb i{display:block;height:100%}
 .ins{max-width:none;margin:0 14px}
 .cc{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:14px;padding:14px;max-width:none}
@@ -136,7 +136,7 @@ html,body{min-height:100%}
  .table-scroll thead{position:static!important}
 }
 #uiTable .ui-action{position:sticky;left:0;background:#fff;z-index:1;width:66px}#uiTable thead .ui-action{background:#fff2cc;z-index:3}#uiTable .ui-action button{font-size:11px;padding:3px 6px;color:#b42318;border:1px solid #d99191;background:#fff}#uiBody input[readonly]{background:#f4f4f4}
-</style><script src="work_hour_eot_model.js?build=20261008_1"></script><script src="work_hour_entry_rules.js?build=20261008_1"></script></head><body>
+</style><script src="work_hour_eot_model.js?build=20261008_2"></script><script src="work_hour_entry_rules.js?build=20261008_2"></script></head><body>
 <div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button><button class="tab" data-t="p3">Department &amp; Section Setup</button><button class="tab" data-t="p4">OT Cost Data</button><button class="tab" data-t="p5">Daily Punch Report</button><button class="tab" data-t="p6">Line &amp; Level Settings</button><button class="tab" data-t="p7">User Interface</button></div>
 <div id="p1">
 <div class="bar">
@@ -1136,7 +1136,7 @@ const kc=(l,v,sub,c,x)=>`<div class="kc" style="--c:${c}"><span>${l}</span><b>${
 function charts(){const F=FD(),k=+$('ots').value||0,t=TOL();
  if(SEL&&!F.some(d=>d[0]==SEL))SEL=null;
  const F2=SEL?F.filter(d=>d[0]==SEL):F,ss=(i,j)=>F2.reduce((a,d)=>a+(d[3+i][j]||0),0),pl=ss(k,0),ut=ss(k,1),net=ss(k,2),tm=F2.reduce((a,d)=>a+d[1],0),ov0=F2.filter(d=>d[3+k][2]>t).length,up=pl?ut/pl*100:0;
- const chips=I6.map(i=>`<i class="chip${i==k?' on':''}" data-c="${i}">${i}H · ${SL[i]}</i>`).join('')+(SEL||$('sf').value||$('q2').value?'<i class="chip x" data-c="x">✕ Clear filters</i>':'');
+ const chips=I6.map(i=>`<i class="chip${i==k?' on':''}" data-c="${i}">${i}H · ${SL[i]}</i>`).join('')+'<button type="button" class="chip x" data-c="x" title="Clear search, status, department selection and chart filters; keep Work Date">✕ Clear Filters</button>';
  $('kpi').innerHTML=`<div class="kc ttl"><span>Report dashboard · ${E(fd(eotDate))}</span><b>Department-wise EOT &amp; OT Status</b><em>${F2.length} department${F2.length==1?'':'s'}${SEL?' · '+E(SEL):''} · ${k} Hour OT</em><div>${chips}</div></div>`+
   kc('Total TM',F2.some(d=>d[1]!=null)?tm:'—',SEL?E(SEL):'selected departments','#0072B2')+kc('Plan TM',F2.some(d=>d[3+k][0]!=null)?pl:'—',`${k} Hour OT`,'#0072B2',spark(I6.map(i=>ss(i,0)),'#0072B2'))+kc(k?'Utilized TM':'Punch Out',eotActualLoaded&&F2.some(d=>d[3+k][1]!=null)?ut:'—','actual manpower','#E69F00',spark(I6.map(i=>ss(i,1)),'#E69F00'))+
   kc('Utilization',k&&eotActualLoaded?up.toFixed(1)+'%':'—',up>100+t/Math.max(pl,1)*100?'above plan':'vs plan','#009E73',pb(up,up>100?RED:'#009E73'))+kc('Net Short/Excess',eotActualLoaded?sgn(net):'—',net>t?'over plan':'within plan',net>t?RED:GRN)+kc('Over plan',ov0+' / '+F2.length,'departments',ov0?RED:GRN,pb(F2.length?ov0/F2.length*100:0,RED));
@@ -1159,7 +1159,7 @@ $('cc').addEventListener('click',e=>{const d=e.target.closest('[data-d]'),k=e.ta
  if(l){HID[l.dataset.l]=!HID[l.dataset.l];charts();return}
  if(s){$('sf').value=$('sf').value==s.dataset.s?'':s.dataset.s;refresh();return}
  if(k)$('ots').value=k.dataset.k;if(d)SEL=(SEL==d.dataset.d&&!k)?null:d.dataset.d;if(d||k)refresh()});
-$('kpi').addEventListener('click',e=>{const c=e.target.closest('[data-c]');if(!c)return;if(c.dataset.c=='x'){SEL=null;$('sf').value='';$('q2').value=''}else $('ots').value=c.dataset.c;refresh()});
+$('kpi').addEventListener('click',e=>{const c=e.target.closest('[data-c]');if(!c)return;if(c.dataset.c=='x'){SEL=null;$('sf').value='';$('q2').value='';$('tol').value='0';$('ots').value='1';Object.keys(HID).forEach(key=>delete HID[key]);tip.style.display='none'}else $('ots').value=c.dataset.c;refresh()});
 let lw=0;new ResizeObserver(()=>{const w=$('cc').clientWidth;if(w>0&&Math.abs(w-lw)>8){lw=w;charts()}}).observe($('cc'));
 function refresh(){r2();charts()}
 ['q2','sf','tol','ots'].forEach(i=>{$(i).addEventListener('input',refresh);$(i).addEventListener('change',refresh)});refresh();
@@ -1206,6 +1206,6 @@ $('cc').addEventListener('click',e=>{const b=e.target.closest('.png');if(!b)retu
  document.querySelectorAll('.tabs,.bar,.ds-head,.ds-toolbar,.otc-head,.dpr-head').forEach(el=>observer.observe(el));
  schedule();
 })();
-</script><script src="work_hour_tab_access.js?build=20261008_1"></script><script src="vendor/html2canvas-1.4.1.min.js"></script>
-<script src="work_hour_table_image.js?build=20261008_1"></script>
+</script><script src="work_hour_tab_access.js?build=20261008_2"></script><script src="vendor/html2canvas-1.4.1.min.js"></script>
+<script src="work_hour_table_image.js?build=20261008_2"></script>
 </body></html>
