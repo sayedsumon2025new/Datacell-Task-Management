@@ -136,7 +136,7 @@ html,body{min-height:100%}
  .table-scroll thead{position:static!important}
 }
 #uiTable .ui-action{position:sticky;left:0;background:#fff;z-index:1;width:66px}#uiTable thead .ui-action{background:#fff2cc;z-index:3}#uiTable .ui-action button{font-size:11px;padding:3px 6px;color:#b42318;border:1px solid #d99191;background:#fff}#uiBody input[readonly]{background:#f4f4f4}
-</style><script src="work_hour_eot_model.js?build=20261008_5"></script><script src="work_hour_entry_rules.js?build=20261008_5"></script></head><body>
+</style><script src="work_hour_eot_model.js?build=20261008_6"></script><script src="work_hour_entry_rules.js?build=20261008_6"></script></head><body>
 <div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button><button class="tab" data-t="p3">Department &amp; Section Setup</button><button class="tab" data-t="p4">OT Cost Data</button><button class="tab" data-t="p5">Daily Punch Report</button><button class="tab" data-t="p6">Line &amp; Level Settings</button><button class="tab" data-t="p7">User Interface</button></div>
 <div id="p1">
 <div class="bar">
@@ -152,7 +152,7 @@ html,body{min-height:100%}
 </div>
 <div class="wrap"><table><colgroup id="cg"></colgroup><thead id="th"></thead><tbody id="tb"></tbody></table></div>
 </div>
-<div id="p2" class="hide"><div class="bar" id="bar2"><label>Work Date <select id="eotDate"><option value="">Select date</option></select></label><button class="g" id="eotReload">Reload</button><label>Search <input id="q2" placeholder="Department…" style="width:180px"></label><label>Status <select id="sf" style="width:200px"><option value="">All departments</option><option value="o">Over plan (selected OT slot)</option><option value="w">Within plan (selected OT slot)</option></select></label><label>Tolerance ± <input id="tol" type="number" min="0" value="0" style="width:70px"></label><button class="g" id="x2">Export CSV</button><button class="g" id="pr2">Print / PDF</button><button class="g" id="copy2" title="Copy the complete table as a high-resolution PNG">Copy Image</button><span id="copy2Msg" role="status" aria-live="polite" style="font-size:12px"></span><span class="hint" id="eotMsg">Select a date to load saved plans and OT Cost.</span></div><div class="wrap"><table id="t2"></table></div>
+<div id="p2" class="hide"><div class="bar" id="bar2"><label>Work Date <select id="eotDate"><option value="">Select date</option></select></label><button class="g" id="eotReload">Reload</button><label>Search <input id="q2" placeholder="Department…" style="width:180px"></label><label>Status <select id="sf" style="width:200px"><option value="">All departments</option><option value="o">Over plan (selected OT slot)</option><option value="w">Within plan (selected OT slot)</option></select></label><label>Tolerance ± <input id="tol" type="number" min="0" value="0" style="width:70px"></label><button class="g" id="x2">Export CSV</button><button class="g" id="pr2">Print / PDF</button><button class="g" id="copy2" title="Copy the complete table as a high-resolution PNG">Copy Image</button><div id="eotHourVisibility" role="group" aria-label="Show late-hour table columns" style="display:flex;align-items:center;gap:10px;font-size:12px"><strong>Show hours:</strong><label style="white-space:nowrap"><input type="checkbox" data-eot-hour="6" checked style="width:auto;padding:0"> 11 PM</label><label style="white-space:nowrap"><input type="checkbox" data-eot-hour="7" checked style="width:auto;padding:0"> 12 PM</label><label style="white-space:nowrap"><input type="checkbox" data-eot-hour="8" checked style="width:auto;padding:0"> 1 AM</label></div><span id="copy2Msg" role="status" aria-live="polite" style="font-size:12px"></span><span class="hint" id="eotMsg">Select a date to load saved plans and OT Cost.</span></div><div class="wrap"><table id="t2"></table></div>
 <div id="kpi" class="kp"></div>
 <ul id="ins" class="ins"></ul>
 <select id="ots" class="hide"></select>
@@ -557,21 +557,28 @@ function eotSummary(rows){
 const TOL=()=>Math.max(0,+$('tol').value||0);
 function FD(){const q=$('q2').value.trim().toLowerCase(),sf=$('sf').value,k=+$('ots').value||0,t=TOL();return D2.filter(d=>{const values=(k<0?Array.from({length:9},(_,i)=>d[3+i][2]):[d[3+k][2]]).filter(v=>v!=null);return d[0].toLowerCase().includes(q)&&(!sf||(values.length>0&&(sf==='o'?values.some(v=>v>t):values.every(v=>v<=t))))})}
 const EOT_TIMES=['5:00 PM','6:00 PM','7:00 PM','8:00 PM','9:00 PM','10:00 PM','11:00 PM','12:00 PM','1:00 AM'];
-function r2(){const P='#F8CBAD',G='#A9D08E',count=EOT_TIMES.length;
+const EOT_HIDDEN_HOURS=new Set();
+try{const saved=JSON.parse(localStorage.getItem('datacell.eot.hiddenHours')||'[]');if(Array.isArray(saved))saved.filter(i=>[6,7,8].includes(i)).forEach(i=>EOT_HIDDEN_HOURS.add(i));}catch(e){}
+const eotVisibleHours=()=>Array.from({length:EOT_TIMES.length},(_,i)=>i).filter(i=>!EOT_HIDDEN_HOURS.has(i));
+$('eotHourVisibility').querySelectorAll('input').forEach(input=>{
+ const slot=Number(input.dataset.eotHour);input.checked=!EOT_HIDDEN_HOURS.has(slot);
+ input.addEventListener('change',()=>{if(input.checked)EOT_HIDDEN_HOURS.delete(slot);else EOT_HIDDEN_HOURS.add(slot);try{localStorage.setItem('datacell.eot.hiddenHours',JSON.stringify([...EOT_HIDDEN_HOURS]));}catch(e){}r2();});
+});
+function r2(){const P='#F8CBAD',G='#A9D08E',visible=eotVisibleHours(),count=visible.length;
  const W2=[76,224,55,55,50,50,45,...Array.from({length:(count-1)*4},(_,i)=>[50,53,50,50][i%4]),55,43];
  let h='<colgroup>'+W2.map(w=>`<col style="width:${w}px">`).join('')+'</colgroup><thead>';
  h+=`<tr style="height:28px"><th class="ttl" colspan="4" rowspan="3">Department-wise EOT &amp; OT Status Report</th><th class="rg" colspan="11">Regular OT Status</th><th class="ex" colspan="${(count-3)*4}">Extra OT Status</th><th class="wh" rowspan="3">Total<br>OT TM</th><th class="wh" rowspan="3"></th></tr>`;
- h+='<tr style="height:17px">'+EOT_TIMES.map((t,i)=>`<th class="tm" colspan="${i?4:3}">${t}</th>`).join('')+'</tr>';
- h+='<tr style="height:20px">'+EOT_TIMES.map((t,i)=>`<th class="hr" colspan="${i?4:3}">${i} Hour OT</th>`).join('')+'</tr>';
+ h+='<tr style="height:17px">'+visible.map(i=>`<th class="tm" colspan="${i?4:3}">${EOT_TIMES[i]}</th>`).join('')+'</tr>';
+ h+='<tr style="height:20px">'+visible.map(i=>`<th class="hr" colspan="${i?4:3}">${i} Hour OT</th>`).join('')+'</tr>';
  const s=eotSummary(FD());
- h+=`<tr class="sm" style="height:18px"><td class="pu">${E(fd(eotDate))}</td><td class="pu l">Saved Approval &amp; OT Cost Report</td><td>${s[0]??'—'}</td><td class="cm">${s[1]??'—'}</td>`+s.slice(2,2+count).flat().map(v=>`<td>${v??'—'}</td>`).join('')+`<td></td><td>${s[s.length-1]??'—'}</td></tr>`;
+ h+=`<tr class="sm" style="height:18px"><td class="pu">${E(fd(eotDate))}</td><td class="pu l">Saved Approval &amp; OT Cost Report</td><td>${s[0]??'—'}</td><td class="cm">${s[1]??'—'}</td>`+visible.flatMap(i=>s[2+i]).map(v=>`<td>${v??'—'}</td>`).join('')+`<td></td><td>${s[s.length-1]??'—'}</td></tr>`;
  const H4=['Plan TM','Utilized TM','Short/Excess','Punch Out'];
  const hs=['Date','Department','Total TM','Plan Work Hour','Plan TM','Punch Out','Short/Excess',...Array.from({length:count-1},()=>H4).flat(),'Total OT TM','Total'];
  h+='<tr class="eh" style="height:40px">'+hs.map(x=>`<th>${x}</th>`).join('')+'</tr></thead><tbody>';
  const excessStyle=v=>v==null?'background:#eee;color:#777':v>TOL()?'background:#f00;color:#fff;font-weight:700':'background:#00B050';
  FD().forEach(d=>{h+=`<tr style="height:17.5px"><td class="dt lc">${E(fd(eotDate))}</td><td class="dn lc">${E(d[0])}</td><td class="lc">${d[1]??'—'}</td><td class="lc">${d[2]??'—'}</td>`;
   d[3].forEach((v,j)=>h+=`<td style="${j===2?excessStyle(v):'background:'+P}">${v??'—'}</td>`);
-  for(let g=4;g<3+count;g++){const a=d[g];
+  for(const i of visible.slice(1)){const a=d[3+i];
    h+=`<td style="background:${P}">${a[0]==null?'':a[0]}</td><td style="background:${G}">${a[1]??'—'}</td><td style="${excessStyle(a[2])}">${a[2]??'—'}</td><td style="background:${P}">${a[3]??'—'}</td>`}
   h+=`<td title="No populated Total OT TM measure was supplied in Book1.csv"></td><td class="tt">${d[1]??'—'}</td></tr>`});
  $('t2').innerHTML=h+'</tbody>';$('t2').style.width=W2.reduce((n,w)=>n+w,0)+'px';}
@@ -1188,8 +1195,8 @@ $('q1').addEventListener('input',flt);$('lf').addEventListener('change',flt);
 $('whDept').addEventListener('change',()=>{$('whSection').value='';flt()});$('whSection').addEventListener('change',flt);
 function dl(rows,name){const csv='\ufeff'+rows.map(a=>a.map(x=>'"'+String(x).replace(/"/g,'""')+'"').join(',')).join('\r\n'),l=document.createElement('a');l.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));l.download=name;l.click()}
 $('x2').onclick=()=>{const T=EOT_TIMES,g=['Plan TM','Punch Out','Short/Excess'],h4=['Plan TM','Utilized TM','Short/Excess','Punch Out'],hd=['Date','Department','Total TM','Plan Work Hour'];
- T.forEach((t,i)=>(i?h4:g).forEach(x=>hd.push(t+' '+x)));hd.push('Total OT TM','Total');
- dl([hd,...FD().map(d=>[fd(eotDate),d[0],d[1]??'',d[2]??'',...d.slice(3).flat().map(v=>v==null?'':v),'',d[1]??''])],'department_wise_eot_ot_status.csv')};
+ eotVisibleHours().forEach(i=>(i?h4:g).forEach(x=>hd.push(T[i]+' '+x)));hd.push('Total OT TM','Total');
+ dl([hd,...FD().map(d=>[fd(eotDate),d[0],d[1]??'',d[2]??'',...eotVisibleHours().flatMap(i=>d[3+i]).map(v=>v==null?'':v),'',d[1]??''])],'department_wise_eot_ot_status.csv')};
 $('cc').addEventListener('click',e=>{const b=e.target.closest('.png');if(!b)return;const sv=b.parentNode.querySelector('svg').cloneNode(true),vb=sv.viewBox.baseVal,w=vb.width*2,h=vb.height*2;
  sv.setAttribute('font-family','Arial');sv.setAttribute('width',w);sv.setAttribute('height',h);
  const im=new Image();im.onload=()=>{const c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,w,h);x.drawImage(im,0,0);const a=document.createElement('a');a.href=c.toDataURL('image/png');a.download='chart.png';a.click()};
@@ -1225,6 +1232,6 @@ $('cc').addEventListener('click',e=>{const b=e.target.closest('.png');if(!b)retu
  document.querySelectorAll('.tabs,.bar,.ds-head,.ds-toolbar,.otc-head,.dpr-head').forEach(el=>observer.observe(el));
  schedule();
 })();
-</script><script src="work_hour_tab_access.js?build=20261008_5"></script><script src="vendor/html2canvas-1.4.1.min.js"></script>
-<script src="work_hour_table_image.js?build=20261008_5"></script>
+</script><script src="work_hour_tab_access.js?build=20261008_6"></script><script src="vendor/html2canvas-1.4.1.min.js"></script>
+<script src="work_hour_table_image.js?build=20261008_6"></script>
 </body></html>
