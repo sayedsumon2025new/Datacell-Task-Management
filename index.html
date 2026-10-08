@@ -2027,10 +2027,7 @@ async function initFromSheets() {
   const data = await sbFetchAll();
   if (data) {
     applyRemoteData(data); _lastVersion = data.version || '0';
-    if(currentUser)setTimeout(async()=>{
-      await refreshLeaveCoverageRemote(true);
-      showPendingMultiSkillPopup();
-    },120);
+    if(currentUser)setTimeout(showPendingMultiSkillPopup,120);
     if (data.users && data.users.length > 0) {
       PERSONS = data.users.filter(u => u.name !== 'admin').map(u => u.name);
       const sel = document.getElementById('loginUser');
@@ -3964,16 +3961,8 @@ function showPendingMultiSkillPopup(){
 }
 
 function buildLeaveManagement(c){
-  // Always refresh leave + Multi Skill coverage when opening this module.
-  // The cooldown prevents a refresh/rerender loop.
-  setTimeout(async()=>{
-    const changed=await refreshLeaveCoverageRemote(false);
-    if(changed&&currentUser&&adminTab==='leave'){
-      renderContent();
-      return;
-    }
-    showPendingMultiSkillPopup();
-  },120);
+  // Use the loaded data; fetch new coverage only through the refresh action.
+  setTimeout(showPendingMultiSkillPopup,120);
   c.insertAdjacentHTML('beforeend',
     '<div style="font-family:Syne,sans-serif;font-size:1.5rem;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Leave <span style="color:#f5c842">Management</span></div>'
     +'<div style="font-size:.72rem;font-family:DM Mono,monospace;color:var(--muted);margin-bottom:18px">// APPLICATION · STATUS · BALANCING · APPROVAL</div>'
@@ -4158,7 +4147,7 @@ function buildWorkHourApproval(c){
   frame.title='Work Hour Approval';
   frame.allow='clipboard-write';
   frame.dataset.workHourApproval='true';
-  frame.src='work_hour_login.html?build=20261008_6';
+  frame.src='work_hour_login.html?build=20261008_manual1';
   frame.style.cssText='display:block;width:100%;height:calc(100vh - 110px);min-height:760px;border:1px solid var(--border);border-radius:12px;background:#fff;box-shadow:var(--card-shadow);';
   c.appendChild(frame);
 }
