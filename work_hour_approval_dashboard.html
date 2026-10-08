@@ -136,7 +136,7 @@ html,body{min-height:100%}
  .table-scroll thead{position:static!important}
 }
 #uiTable .ui-action{position:sticky;left:0;background:#fff;z-index:1;width:66px}#uiTable thead .ui-action{background:#fff2cc;z-index:3}#uiTable .ui-action button{font-size:11px;padding:3px 6px;color:#b42318;border:1px solid #d99191;background:#fff}#uiBody input[readonly]{background:#f4f4f4}
-</style><script src="work_hour_eot_model.js?build=20261008_3"></script><script src="work_hour_entry_rules.js?build=20261008_3"></script></head><body>
+</style><script src="work_hour_eot_model.js?build=20261008_4"></script><script src="work_hour_entry_rules.js?build=20261008_4"></script></head><body>
 <div class="tabs"><button class="tab on" data-t="p1">Work Hour Approval Request</button><button class="tab" data-t="p2">Department-wise EOT &amp; OT Status</button><button class="tab" data-t="p3">Department &amp; Section Setup</button><button class="tab" data-t="p4">OT Cost Data</button><button class="tab" data-t="p5">Daily Punch Report</button><button class="tab" data-t="p6">Line &amp; Level Settings</button><button class="tab" data-t="p7">User Interface</button></div>
 <div id="p1">
 <div class="bar">
@@ -1105,6 +1105,20 @@ function vBar(F,k){const el=$('v1'),w=W_(el),t=TOL(),rows=F.map(d=>({n:d[0],v:d[
  rows.forEach((r,i)=>{const y=Tp+i*rh,x0=sx(0),x1=sx(r.v);
   s+=`<g data-d="${E(r.n)}" data-tt="<b>${E(r.n)}</b><br>Short/Excess: <b>${sgn(r.v)}</b><br>${k} Hour OT" style="cursor:pointer"${dm(r.n)}><rect x="0" y="${y}" width="${w}" height="${rh}" fill="${r.n==SEL?'#eaf3ff':'transparent'}"/>`+T(L-8,y+rh/2+4,cut(r.n,Math.floor(L/6.6)),'text-anchor="end"')+`<rect class="an" style="transform-origin:${r.v>=0?'left':'right'}" x="${Math.min(x0,x1)}" y="${y+4}" width="${Math.max(Math.abs(x1-x0),2)}" height="${rh-8}" rx="2" fill="${r.v>t?RED:GRN}"/>`+T(r.v>=0?x1+5:x1-5,y+rh/2+4,r.v,`text-anchor="${r.v>=0?'start':'end'}" font-weight="700"`)+'</g>'});
  el.innerHTML=svg(w,h,s+T((L+w-R)/2,h-6,'Short / Excess (manpower; + = over plan)','text-anchor="middle" fill="#555" font-size="11"'))}
+// All-hours comparison keeps each hour separate rather than adding headcounts.
+function vBarAll(F){
+ const el=$('v1'),w=W_(el),t=TOL(),L=Math.min(180,Math.round(w*.38)),R=48,Tp=30,rh=116,bh=8,gap=10;
+ const values=F.flatMap(d=>I6.map(i=>d[3+i][2])).filter(v=>v!=null),mx=Math.max(0,...values),mn=Math.min(0,...values),step=nice((mx-mn)/5||1),hi=Math.max(step,Math.ceil(mx/step)*step),lo=Math.floor(mn/step)*step;
+ const h=Tp+F.length*rh+36,sx=v=>L+(v-lo)/(hi-lo)*(w-L-R);let s='';
+ for(let v=lo;v<=hi+1e-9;v+=step)s+=`<line x1="${sx(v)}" x2="${sx(v)}" y1="${Tp}" y2="${h-32}" stroke="${v===0?'#444':'#e6e6e6'}"/>`+T(sx(v),20,v,'text-anchor="middle" font-size="10"');
+ F.forEach((d,r)=>{const y=Tp+r*rh;s+=T(6,y+11,cut(d[0],Math.floor((w-12)/6.5)),'font-weight="700" font-size="11"')+`<line x1="0" x2="${w}" y1="${y+rh-3}" y2="${y+rh-3}" stroke="#e6e6e6"/>`;
+  I6.forEach(i=>{const v=d[3+i][2],by=y+20+i*gap;s+=T(L-7,by+7,SL[i],'text-anchor="end" font-size="9"');
+   if(v==null){s+=T(sx(0)+5,by+7,'—','font-size="9" fill="#777"');return;}
+   const end=sx(v),start=sx(0);s+=`<g data-d="${E(d[0])}" data-k="${i}" data-tt="<b>${E(d[0])}</b><br>${SL[i]} · ${i} Hour OT<br>Short/Excess: <b>${sgn(v)}</b>" style="cursor:pointer"${dm(d[0])}><rect x="0" y="${by-1}" width="${w}" height="${gap}" fill="transparent"/><rect x="${Math.min(start,end)}" y="${by}" width="${Math.max(Math.abs(end-start),2)}" height="${bh}" fill="${v>t?RED:GRN}"/>`+T(v>=0?end+4:Math.abs(end-start)>=30?end+4:end-4,by+7,v,`text-anchor="${v>=0||Math.abs(end-start)>=30?'start':'end'}" font-size="9"${v<0&&Math.abs(end-start)>=30?' fill="#fff"':''}`)+'</g>';
+  });
+ });
+ el.innerHTML=svg(w,h,s+T(w/2,h-4,'Short / Excess by hour (+ = over plan)','text-anchor="middle" font-size="11"'));el.style.maxHeight='560px';el.style.overflowY='auto';
+}
 function vLine(F2,k){const el=$('v2'),w=W_(el),h=340,L=56,R=18,Tp=14,B=64,ss=(i,j)=>F2.reduce((a,d)=>a+(d[3+i][j]||0),0);
  const S=[['Plan TM',I6.map(i=>ss(i,0))],['Utilized TM',I6.map(i=>i?ss(i,1):null)],['Punch Out',I6.map(i=>ss(i,i?3:1))]],vis=S.filter(x=>!HID[x[0]]);
  const mx=Math.max(1,...vis.flatMap(x=>x[1].filter(v=>v!=null))),st=nice(mx/5),hi=Math.ceil(mx/st)*st,bw=(w-L-R)/I6.length,sx=i=>L+(i+.5)*bw,sy=v=>Tp+(1-v/hi)*(h-Tp-B);
@@ -1145,8 +1159,8 @@ function eotAllHours(F){
  if(!F.length){$('cc').innerHTML='<div class="card c6">No departments match the current date and filters.</div>';return;}
  if(!eotActualLoaded){$('cc').innerHTML='<div class="card c6">No OT Cost uploaded for this date. Actuals are unavailable.</div>';return;}
  const card=(i,title)=>`<div class="card c6"><button class="g png">PNG</button><h3>${title}</h3><div class="cv" id="v${i}"></div></div>`;
- $('cc').innerHTML=card(2,'Plan vs Utilized — All hours')+card(3,'Short / Excess — All hours')+card(4,'Total TM Share by Department');
- vLine(rows,-1);vHeat(F,-1);
+ $('cc').innerHTML=card(1,'Short / Excess by Department — All hours')+card(2,'Plan vs Utilized — All hours')+card(3,'Short / Excess — All hours')+card(4,'Total TM Share by Department');
+ vBarAll(F);vLine(rows,-1);vHeat(F,-1);
  const total=F.reduce((a,d)=>a+(d[1]||0),0),parts=F.filter(d=>d[1]>0).map((d,i)=>({n:d[0],v:d[1],c:PAL[i%PAL.length],d:d[0]}));
  donut($('v4'),parts,{u:'TM',c:[total,'Total TM']});
 }
@@ -1225,6 +1239,6 @@ $('cc').addEventListener('click',e=>{const b=e.target.closest('.png');if(!b)retu
  document.querySelectorAll('.tabs,.bar,.ds-head,.ds-toolbar,.otc-head,.dpr-head').forEach(el=>observer.observe(el));
  schedule();
 })();
-</script><script src="work_hour_tab_access.js?build=20261008_3"></script><script src="vendor/html2canvas-1.4.1.min.js"></script>
-<script src="work_hour_table_image.js?build=20261008_3"></script>
+</script><script src="work_hour_tab_access.js?build=20261008_4"></script><script src="vendor/html2canvas-1.4.1.min.js"></script>
+<script src="work_hour_table_image.js?build=20261008_4"></script>
 </body></html>
