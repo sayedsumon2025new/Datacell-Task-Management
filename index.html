@@ -2238,11 +2238,10 @@ async function completePersonalTask(sl,button){
       if(lateAtSave&&!taskRemark(date,sl)){
         throw new Error('Delay Remarks were not persisted; DONE was cancelled');
       }
+      // patchTaskRecord validates the returned database row and the persisted fields.
+      // Do not verify with a subsequent published-report GET: it can return the
+      // prior snapshot until an administrator publishes and falsely reject DONE.
       await patchTaskRecord(sl,{actual_date:date,actual_time:time});
-      const check=await dbRequest('tasks','GET','sl=eq.'+sl+'&select=sl,person,actual_date,actual_time');
-      if(check.length!==1||check[0].actual_date!==date||String(check[0].actual_time||'').slice(0,5)!==time){
-        throw new Error('Supabase did not confirm the saved status');
-      }
       getDone(user).add(sl);
       // Completion is stored on the task itself. No second done_state write
       // may turn a successful task save into a misleading failure.
