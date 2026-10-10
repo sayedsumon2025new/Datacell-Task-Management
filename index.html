@@ -1144,6 +1144,8 @@ async function sbFetchAll(){
   return data;
 }
 function publicationIsReportView(){
+  // A user's private task status is live; shared/admin reports stay published-only.
+  if(currentUser!=='admin'&&adminTab==='personal')return false;
   return ['overview','kpi','all','personal','calendar'].includes(adminTab)||
     (adminTab==='leave'&&!['application','status','balancing','approval'].includes(leaveSubTab));
 }
@@ -2061,6 +2063,22 @@ async function pollSheets() {
   }
 }
 
+// Private live completion status is never inserted into the published snapshot.
+async function refreshOwnTaskStatus(){
+  const name=currentUser,epoch=publicationClient.epoch;
+  try{
+    const rows=await publicationClient.request({op:'own-status'});
+    if(currentUser!==name||publicationClient.epoch!==epoch||!Array.isArray(rows))return;
+    for(const row of rows){
+      const task=tasks.find(t=>Number(t.sl)===Number(row.sl));
+      if(!task||!(task.person===name||String(task.person).split('/').map(x=>x.trim()).includes(name)))continue;
+      task.actualDate=row.actual_date||'';
+      task.actualTime=row.actual_time||'';
+      rememberTask(task);
+    }
+  }catch(e){console.error('Private task status refresh failed:',e);toast('Could not refresh live task status','error');}
+}
+
 // ── Initial load on login ────────────────────────────────────────
 async function initFromSheets() {
   const loginBtn = document.getElementById('loginBtn');
@@ -2068,6 +2086,7 @@ async function initFromSheets() {
   const data = await sbFetchAll();
   if (data) {
     applyRemoteData(data); _lastVersion = data.version || '0';
+    if(currentUser&&currentUser!=='admin')await refreshOwnTaskStatus();
     setSyncStatus('live');
     if(currentUser)setTimeout(showPendingMultiSkillPopup,120);
     if (data.users && data.users.length > 0) {
