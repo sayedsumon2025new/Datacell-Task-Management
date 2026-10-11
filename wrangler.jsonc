@@ -21,7 +21,7 @@
     {
       "binding": "DB",
       "database_name": "datacell-task-db",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "b0d3c7ee-3dfc-4cdf-81a8-05312bb060df",
       "migrations_dir": "cloudflare/migrations"
     }
   ]
