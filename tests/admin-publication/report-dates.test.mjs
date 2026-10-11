@@ -1,0 +1,11 @@
+import fs from 'node:fs/promises';import vm from 'node:vm';import assert from 'node:assert/strict';
+const html=await fs.readFile(new URL('../../index.html',import.meta.url),'utf8');
+const a=html.indexOf('async function workHourReportDates('),b=html.indexOf('\nasync function workHourOtCostRows',a);
+const requests=[];const dates=['2026-10-10','2026-10-08','2026-10-01'];
+const c={dbRequest:async(t,m,q)=>{requests.push(q);const p=new URLSearchParams(q);assert.equal(p.get('limit'),'1');assert.equal(p.get('select'),'work_date');const d=dates.find(x=>!p.get('work_date')||x<p.get('work_date').slice(3));return d?[{work_date:d}]:[];}};
+vm.createContext(c);vm.runInContext(html.slice(a,b),c);assert.deepEqual(Array.from(await c.workHourOtCostDates()),dates);assert.equal(requests.length,4);
+c.dbRequest=async()=>[{work_date:'bad'}];await assert.rejects(c.workHourOtCostDates(),/Invalid/);
+c.dbRequest=async()=>null;await assert.rejects(c.workHourOtCostDates(),/not returned/);
+c.dbRequest=async()=>[{work_date:'2026-10-10'}];await assert.rejects(c.workHourOtCostDates(),/Invalid/);
+for(const m of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi))if(m[1].trim())new vm.Script(m[1]);
+console.log('PASS descending date seeks; one returned row per date; no full history read; invalid, failed and non-progress responses rejected; inline syntax parses');
