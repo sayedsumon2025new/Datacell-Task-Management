@@ -1,6 +1,15 @@
 // Deployment proposal. Custom memory-only sessions preserve existing usernames/passwords.
 const base=Deno.env.get('SUPABASE_URL'),secret=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-const cors={'Access-Control-Allow-Origin':'https://sayedsumon2025new.github.io','Access-Control-Allow-Headers':'authorization,apikey,content-type','Access-Control-Allow-Methods':'POST,OPTIONS','Content-Type':'application/json','Cache-Control':'no-store'};
+const allowedOrigins=new Set([
+ 'https://sayedsumon2025new.github.io',
+ 'https://datacell-task-management.sayedsumon2025new.workers.dev'
+]);
+function corsHeaders(req){
+ const headers={'Access-Control-Allow-Headers':'authorization,apikey,content-type','Access-Control-Allow-Methods':'POST,OPTIONS','Content-Type':'application/json','Cache-Control':'no-store','Vary':'Origin'};
+ const origin=req.headers.get('Origin');
+ if(allowedOrigins.has(origin))headers['Access-Control-Allow-Origin']=origin;
+ return headers;
+}
 const sources=['tasks','done_state','meta','app_state','task_completions','task_remarks','working_hours_defaults','working_hours_daily','multi_skill_assignments','user_roles','leave_applications','leave_report_coverage'];
 const metadata=['users','module_access'];
 const fail=(message,status=400)=>{throw Object.assign(new Error(message),{status})};
@@ -68,6 +77,7 @@ async function published(profile,b,q){
  return {unchanged:false,cacheKey,version,publishedAt:head.publishedAt,data};
 }
 export async function handle(req){
+ const cors=corsHeaders(req);
  if(req.method==='OPTIONS')return new Response('ok',{headers:cors});
  try{
   if(req.method!=='POST')fail('POST required',405);
