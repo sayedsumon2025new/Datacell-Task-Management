@@ -2427,7 +2427,16 @@ async function populateLoginDropdown() {
     sel.innerHTML = '<option value="">-- Select your name --</option>'
       + uOpts + '<option value="admin">Admin (All Access)</option>';
   } else {
-    const rows = await sbGet('users');
+    let rows;
+    try{
+      rows=await publicationClient.names();
+      sel.disabled=false;document.getElementById('loginBtn').disabled=false;
+    }catch(e){
+      sel.innerHTML='<option value="">User list unavailable</option>';sel.disabled=true;
+      document.getElementById('loginBtn').disabled=true;
+      const err=document.getElementById('loginErr');err.textContent=e.message;err.style.display='block';
+      return;
+    }
     const users = (rows || []).map(r => ({ name: r.name, password: r.password || '', color: r.color || '#60a5fa' }));
     if (users.length > 0) {
       userRegistry = users.filter(u=>u.name!=='admin');
