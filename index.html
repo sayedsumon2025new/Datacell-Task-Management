@@ -4146,10 +4146,20 @@ async function workHourUserInterfaceSave(row){
 window.workHourUserInterfaceList=workHourUserInterfaceList;
 window.workHourUserInterfaceSave=workHourUserInterfaceSave;
 
-async function workHourOtCostDates(){
-  const rows=await dbRequest('work_hour_ot_cost','GET','select=work_date&order=work_date.desc');
-  return [...new Set((Array.isArray(rows)?rows:[]).map(r=>r.work_date).filter(Boolean))];
+// Read one row per date instead of transferring every employee's historical date.
+async function workHourReportDates(table){
+  const dates=[];let before='';
+  for(;;){
+    const query='select=work_date&order=work_date.desc&limit=1'+(before?'&work_date=lt.'+encodeURIComponent(before):'');
+    const rows=await dbRequest(table,'GET',query);
+    if(!Array.isArray(rows))throw new Error('Report dates were not returned.');
+    if(!rows.length)return dates;
+    const date=rows[0].work_date;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||before&&date>=before)throw new Error('Invalid report date response.');
+    dates.push(date);before=date;
+  }
 }
+async function workHourOtCostDates(){return await workHourReportDates('work_hour_ot_cost');}
 async function workHourOtCostRows(workDate){
   const q='select=id,work_date,employee_id,employee_name,department,designation,section,line,gross_salary,ot_rate,total_ot_hour,regular_ot_hour,extra_ot_hour,regular_ot_cost,extra_ot_cost,total_ot_cost'
     +(workDate?'&work_date=eq.'+encodeURIComponent(workDate):'')
@@ -4178,10 +4188,7 @@ async function fetchPagedTableRows(table,baseQuery,pageSize=1000,maxPages=50){
   }
   return all;
 }
-async function workHourDailyPunchDates(){
-  const rows=await fetchPagedTableRows('work_hour_daily_punch','select=work_date&order=work_date.desc');
-  return [...new Set(rows.map(r=>r.work_date).filter(Boolean))];
-}
+async function workHourDailyPunchDates(){return await workHourReportDates('work_hour_daily_punch');}
 async function workHourDailyPunchRows(workDate){
   const q='select=id,work_date,employee_id,employee_name,designation,doj,department,section,line,log_in,log_out'
     +(workDate?'&work_date=eq.'+encodeURIComponent(workDate):'')
