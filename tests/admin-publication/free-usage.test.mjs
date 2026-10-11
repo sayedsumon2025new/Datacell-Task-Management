@@ -1,0 +1,20 @@
+import fs from 'node:fs/promises';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const source=await fs.readFile(new URL('../../publication_client.js',import.meta.url),'utf8');
+let calls=0,release;
+const gate=new Promise(r=>release=r);
+let handler=async()=>{calls++;await gate;return new Response('[]')};
+const sandbox={fetch:(...args)=>handler(...args),Response,crypto,TextEncoder,TextDecoder,btoa,atob};
+vm.createContext(sandbox);vm.runInContext(source,sandbox);
+const client=new sandbox.PublicationClient('https://example.invalid','test');
+const reads=[client.names(),client.names(),client.names()];assert.equal(calls,1);release();await Promise.all(reads);
+await client.names();assert.equal(calls,2); // no stale cross-request authorization cache
+await Promise.all([client.request({op:'data',method:'PATCH'}),client.request({op:'data',method:'PATCH'})]);assert.equal(calls,4);
+handler=async()=>{calls++;return new Response(JSON.stringify({message:'restricted: exceed_egress_quota'}),{status:402})};
+await assert.rejects(client.names(),/quota exceeded/);const before=calls;
+await assert.rejects(client.names(),/quota exceeded/);assert.equal(calls,before);
+const html=await fs.readFile(new URL('../../index.html',import.meta.url),'utf8');
+for(const m of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi))if(m[1].trim())new vm.Script(m[1]);
+assert(html.includes("sel.disabled=true"));assert(html.includes("err.textContent=e.message"));
+console.log('PASS duplicate reads coalesced; writes stay separate; fresh reads contact server; quota stops repeat requests; login failure shown; inline syntax parses');
