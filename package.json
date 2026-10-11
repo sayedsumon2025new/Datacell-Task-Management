@@ -1,0 +1,11 @@
+{
+  "name": "datacell-task-management",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-workers.mjs",
+    "test": "node --test --test-isolation=none cloudflare/tests/backend.test.mjs",
+    "deploy": "npx --yes wrangler@4.149.0 deploy"
+  },
+  "engines": { "node": ">=24" }
+}
