@@ -31,10 +31,27 @@
   }
  }
  class PublicationClient{
-  constructor(url,key){this.url=url;this.key=key;this.token=null;this.user=null;this.head=null;this.epoch=0;this.cache=new PublicationCache();this.receipts=new Map();}
+  constructor(url,key){this.url=url;this.key=key;this.token=null;this.user=null;this.head=null;this.epoch=0;this.cache=new PublicationCache();this.receipts=new Map();this.inflight=new Map();this.quotaError=null;}
   async request(body){
-   const r=await nativeFetch(this.url+'/functions/v1/datacell-access',{method:'POST',headers:{apikey:this.key,'Content-Type':'application/json',...(this.token?{Authorization:'Bearer '+this.token}:{})},body:JSON.stringify(body)});
-   const data=await r.json();if(!r.ok)throw Object.assign(new Error(data.error||'Request failed'),{status:r.status});return data;
+   if(this.quotaError)throw this.quotaError;
+   // Coalesce simultaneous identical reads only; writes and login always reach the server.
+   const read=body.op==='names'||body.op==='head'||body.op==='data'&&body.method==='GET';
+   const key=read?JSON.stringify([this.epoch,this.token,body]):null;
+   if(key&&this.inflight.has(key))return this.inflight.get(key);
+   const pending=(async()=>{
+    const r=await nativeFetch(this.url+'/functions/v1/datacell-access',{method:'POST',headers:{apikey:this.key,'Content-Type':'application/json',...(this.token?{Authorization:'Bearer '+this.token}:{})},body:JSON.stringify(body)});
+    const data=await r.json();
+    if(!r.ok){
+     const message=data.error||data.message||'Request failed';
+     const quota=r.status===402&&message.includes('exceed_egress_quota');
+     const error=Object.assign(new Error(quota?'Supabase Free data-transfer quota exceeded. Login is unavailable until the billing cycle resets. Contact Admin.':message),{status:r.status});
+     if(quota)this.quotaError=error;
+     throw error;
+    }
+    return data;
+   })();
+   if(key)this.inflight.set(key,pending);
+   try{return await pending}finally{if(key)this.inflight.delete(key)}
   }
   async names(){return this.request({op:'names'});}
   async login(name,password){const epoch=++this.epoch;const r=await this.request({op:'login',name,password});if(this.epoch!==epoch)throw new Error('Login cancelled');this.token=r.token;this.user=r.name;this.head=null;this.cache.setSecret(r.cacheSecret);this.receipts.clear();return r;}
