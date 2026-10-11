@@ -1,0 +1,1074 @@
+{
+  "app_state": {
+    "columns": {
+      "key": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "value": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "updated_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      }
+    },
+    "primary": [
+      "key"
+    ],
+    "unique": [],
+    "auto": false
+  },
+  "done_state": {
+    "columns": {
+      "id": {
+        "type": "integer",
+        "nullable": false,
+        "default": "nextval('done_state_id_seq'::regclass)"
+      },
+      "username": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "done_sls": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      }
+    },
+    "primary": [
+      "id"
+    ],
+    "unique": [
+      [
+        "username"
+      ]
+    ],
+    "auto": true
+  },
+  "leave_applications": {
+    "columns": {
+      "id": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "employee": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "employee_role": {
+        "type": "text",
+        "nullable": false,
+        "default": "'Team Member'::text"
+      },
+      "leave_type": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "duration": {
+        "type": "text",
+        "nullable": false,
+        "default": "'single'::text"
+      },
+      "from_date": {
+        "type": "date",
+        "nullable": false,
+        "default": null
+      },
+      "to_date": {
+        "type": "date",
+        "nullable": false,
+        "default": null
+      },
+      "days": {
+        "type": "integer",
+        "nullable": false,
+        "default": "0"
+      },
+      "short_start_time": {
+        "type": "time without time zone",
+        "nullable": true,
+        "default": null
+      },
+      "short_end_time": {
+        "type": "time without time zone",
+        "nullable": true,
+        "default": null
+      },
+      "short_minutes": {
+        "type": "integer",
+        "nullable": false,
+        "default": "0"
+      },
+      "reason": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "supervisor_status": {
+        "type": "text",
+        "nullable": false,
+        "default": "'Pending'::text"
+      },
+      "supervisor_by": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "supervisor_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null
+      },
+      "section_status": {
+        "type": "text",
+        "nullable": false,
+        "default": "'Pending'::text"
+      },
+      "section_by": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "section_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null
+      },
+      "rejected_stage": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "status": {
+        "type": "text",
+        "nullable": false,
+        "default": "'Pending'::text"
+      },
+      "balancing_complete": {
+        "type": "boolean",
+        "nullable": false,
+        "default": "false"
+      },
+      "applied_by": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "applied_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      },
+      "balanced_by": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "balanced_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null
+      },
+      "updated_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      }
+    },
+    "primary": [
+      "id"
+    ],
+    "unique": [],
+    "auto": false
+  },
+  "leave_report_coverage": {
+    "columns": {
+      "application_id": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "task_sl": {
+        "type": "bigint",
+        "nullable": false,
+        "default": null
+      },
+      "assignee": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "acceptance_status": {
+        "type": "text",
+        "nullable": false,
+        "default": "'Pending'::text"
+      },
+      "responded_at": {
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null
+      },
+      "responded_by": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "updated_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      }
+    },
+    "primary": [
+      "application_id",
+      "task_sl"
+    ],
+    "unique": [],
+    "auto": false
+  },
+  "meta": {
+    "columns": {
+      "id": {
+        "type": "integer",
+        "nullable": false,
+        "default": "nextval('meta_id_seq'::regclass)"
+      },
+      "key": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "value": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      }
+    },
+    "primary": [
+      "id"
+    ],
+    "unique": [
+      [
+        "key"
+      ]
+    ],
+    "auto": true
+  },
+  "module_access": {
+    "columns": {
+      "id": {
+        "type": "integer",
+        "nullable": false,
+        "default": "nextval('module_access_id_seq'::regclass)"
+      },
+      "username": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "modules": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      }
+    },
+    "primary": [
+      "id"
+    ],
+    "unique": [
+      [
+        "username"
+      ]
+    ],
+    "auto": true
+  },
+  "multi_skill_assignments": {
+    "columns": {
+      "task_sl": {
+        "type": "bigint",
+        "nullable": false,
+        "default": null
+      },
+      "backup_person": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "updated_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      }
+    },
+    "primary": [
+      "task_sl"
+    ],
+    "unique": [],
+    "auto": false
+  },
+  "task_completions": {
+    "columns": {
+      "task_sl": {
+        "type": "bigint",
+        "nullable": false,
+        "default": null
+      },
+      "actual_date": {
+        "type": "date",
+        "nullable": false,
+        "default": null
+      },
+      "task": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "person": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "priority": {
+        "type": "boolean",
+        "nullable": false,
+        "default": "false"
+      },
+      "plan_date": {
+        "type": "date",
+        "nullable": true,
+        "default": null
+      },
+      "plan_time": {
+        "type": "time without time zone",
+        "nullable": true,
+        "default": null
+      },
+      "actual_time": {
+        "type": "time without time zone",
+        "nullable": false,
+        "default": null
+      },
+      "lead_time": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "created_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      },
+      "updated_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      }
+    },
+    "primary": [
+      "task_sl",
+      "actual_date"
+    ],
+    "unique": [],
+    "auto": false
+  },
+  "task_remarks": {
+    "columns": {
+      "task_sl": {
+        "type": "bigint",
+        "nullable": false,
+        "default": null
+      },
+      "remark_date": {
+        "type": "date",
+        "nullable": false,
+        "default": null
+      },
+      "remark": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "updated_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      }
+    },
+    "primary": [
+      "task_sl",
+      "remark_date"
+    ],
+    "unique": [],
+    "auto": false
+  },
+  "tasks": {
+    "columns": {
+      "sl": {
+        "type": "integer",
+        "nullable": false,
+        "default": null
+      },
+      "task": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "person": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "priority": {
+        "type": "boolean",
+        "nullable": false,
+        "default": "false"
+      },
+      "plan_date": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "plan_time": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "actual_date": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "actual_time": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "lead_time": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      }
+    },
+    "primary": [
+      "sl"
+    ],
+    "unique": [],
+    "auto": false
+  },
+  "user_roles": {
+    "columns": {
+      "username": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "role": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "updated_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      }
+    },
+    "primary": [
+      "username"
+    ],
+    "unique": [],
+    "auto": false
+  },
+  "users": {
+    "columns": {
+      "id": {
+        "type": "integer",
+        "nullable": false,
+        "default": "nextval('users_id_seq'::regclass)"
+      },
+      "name": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "password": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "color": {
+        "type": "text",
+        "nullable": false,
+        "default": "'#60a5fa'::text"
+      }
+    },
+    "primary": [
+      "id"
+    ],
+    "unique": [
+      [
+        "name"
+      ]
+    ],
+    "auto": true
+  },
+  "work_hour_accounts": {
+    "columns": {
+      "id": {
+        "type": "uuid",
+        "nullable": false,
+        "default": null
+      },
+      "email": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "user_name": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "department": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "section": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "designation": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "office_id": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "active": {
+        "type": "boolean",
+        "nullable": false,
+        "default": "true"
+      },
+      "is_admin": {
+        "type": "boolean",
+        "nullable": false,
+        "default": "false"
+      },
+      "permissions": {
+        "type": "jsonb",
+        "nullable": false,
+        "default": "'{}'::jsonb"
+      },
+      "created_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      },
+      "updated_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      }
+    },
+    "primary": [
+      "id"
+    ],
+    "unique": [
+      [
+        "email"
+      ],
+      [
+        "office_id"
+      ]
+    ],
+    "auto": false
+  },
+  "work_hour_approval_state": {
+    "columns": {
+      "id": {
+        "type": "text",
+        "nullable": false,
+        "default": "'main'::text"
+      },
+      "report_date": {
+        "type": "date",
+        "nullable": true,
+        "default": null
+      },
+      "rows": {
+        "type": "jsonb",
+        "nullable": false,
+        "default": "'[]'::jsonb"
+      },
+      "updated_by": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "updated_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      }
+    },
+    "primary": [
+      "id"
+    ],
+    "unique": [],
+    "auto": false
+  },
+  "work_hour_daily_punch": {
+    "columns": {
+      "id": {
+        "type": "bigint",
+        "nullable": false,
+        "default": null
+      },
+      "work_date": {
+        "type": "date",
+        "nullable": false,
+        "default": null
+      },
+      "employee_id": {
+        "type": "bigint",
+        "nullable": false,
+        "default": null
+      },
+      "employee_name": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "designation": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "doj": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "department": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "section": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "line": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "log_in": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "log_out": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "uploaded_by": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "uploaded_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      },
+      "updated_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      }
+    },
+    "primary": [
+      "id"
+    ],
+    "unique": [
+      [
+        "work_date",
+        "employee_id"
+      ]
+    ],
+    "auto": true
+  },
+  "work_hour_department_sections": {
+    "columns": {
+      "id": {
+        "type": "bigint",
+        "nullable": false,
+        "default": null
+      },
+      "department": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "section": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "sort_order": {
+        "type": "integer",
+        "nullable": false,
+        "default": "0"
+      },
+      "created_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      },
+      "updated_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      }
+    },
+    "primary": [
+      "id"
+    ],
+    "unique": [
+      [
+        "department",
+        "section"
+      ]
+    ],
+    "auto": true
+  },
+  "work_hour_ot_cost": {
+    "columns": {
+      "id": {
+        "type": "bigint",
+        "nullable": false,
+        "default": null
+      },
+      "work_date": {
+        "type": "date",
+        "nullable": false,
+        "default": null
+      },
+      "employee_id": {
+        "type": "bigint",
+        "nullable": false,
+        "default": null
+      },
+      "employee_name": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "department": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "designation": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "section": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "line": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "gross_salary": {
+        "type": "numeric",
+        "nullable": true,
+        "default": null
+      },
+      "ot_rate": {
+        "type": "numeric",
+        "nullable": true,
+        "default": null
+      },
+      "total_ot_hour": {
+        "type": "numeric",
+        "nullable": true,
+        "default": null
+      },
+      "regular_ot_hour": {
+        "type": "numeric",
+        "nullable": true,
+        "default": null
+      },
+      "extra_ot_hour": {
+        "type": "numeric",
+        "nullable": true,
+        "default": null
+      },
+      "regular_ot_cost": {
+        "type": "numeric",
+        "nullable": true,
+        "default": null
+      },
+      "extra_ot_cost": {
+        "type": "numeric",
+        "nullable": true,
+        "default": null
+      },
+      "total_ot_cost": {
+        "type": "numeric",
+        "nullable": true,
+        "default": null
+      },
+      "uploaded_by": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "uploaded_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      },
+      "updated_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      }
+    },
+    "primary": [
+      "id"
+    ],
+    "unique": [
+      [
+        "work_date",
+        "employee_id"
+      ]
+    ],
+    "auto": true
+  },
+  "work_hour_user_interface": {
+    "columns": {
+      "id": {
+        "type": "uuid",
+        "nullable": false,
+        "default": "gen_random_uuid()"
+      },
+      "work_date": {
+        "type": "date",
+        "nullable": true,
+        "default": null
+      },
+      "department": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "section": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "level": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "line_no": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "buyer": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "ewo": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "present_manpower": {
+        "type": "integer",
+        "nullable": true,
+        "default": null
+      },
+      "asking_manpower": {
+        "type": "integer",
+        "nullable": true,
+        "default": null
+      },
+      "asking_hour": {
+        "type": "numeric",
+        "nullable": true,
+        "default": null
+      },
+      "ot_5_pm": {
+        "type": "integer",
+        "nullable": true,
+        "default": null
+      },
+      "ot_6_pm": {
+        "type": "integer",
+        "nullable": true,
+        "default": null
+      },
+      "ot_7_pm": {
+        "type": "integer",
+        "nullable": true,
+        "default": null
+      },
+      "ot_8_pm": {
+        "type": "integer",
+        "nullable": true,
+        "default": null
+      },
+      "ot_9_pm": {
+        "type": "integer",
+        "nullable": true,
+        "default": null
+      },
+      "ot_10_pm": {
+        "type": "integer",
+        "nullable": true,
+        "default": null
+      },
+      "ot_11_pm": {
+        "type": "integer",
+        "nullable": true,
+        "default": null
+      },
+      "ot_12_am": {
+        "type": "integer",
+        "nullable": true,
+        "default": null
+      },
+      "ot_1_am": {
+        "type": "integer",
+        "nullable": true,
+        "default": null
+      },
+      "iron_man": {
+        "type": "integer",
+        "nullable": true,
+        "default": null
+      },
+      "staff": {
+        "type": "integer",
+        "nullable": true,
+        "default": null
+      },
+      "total_manpower": {
+        "type": "integer",
+        "nullable": true,
+        "default": null
+      },
+      "reason_eot": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "responsible_department": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      },
+      "created_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      },
+      "updated_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      },
+      "updated_by": {
+        "type": "text",
+        "nullable": false,
+        "default": "''::text"
+      }
+    },
+    "primary": [
+      "id"
+    ],
+    "unique": [],
+    "auto": false
+  },
+  "working_hours_daily": {
+    "columns": {
+      "person": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "work_date": {
+        "type": "date",
+        "nullable": false,
+        "default": null
+      },
+      "minutes": {
+        "type": "integer",
+        "nullable": false,
+        "default": null
+      },
+      "updated_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      }
+    },
+    "primary": [
+      "person",
+      "work_date"
+    ],
+    "unique": [],
+    "auto": false
+  },
+  "working_hours_defaults": {
+    "columns": {
+      "person": {
+        "type": "text",
+        "nullable": false,
+        "default": null
+      },
+      "minutes": {
+        "type": "integer",
+        "nullable": false,
+        "default": "480"
+      },
+      "updated_at": {
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()"
+      }
+    },
+    "primary": [
+      "person"
+    ],
+    "unique": [],
+    "auto": false
+  }
+}

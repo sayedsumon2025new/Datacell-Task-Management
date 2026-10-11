@@ -1,0 +1,10 @@
+dist/
+.wrangler/
+node_modules/
+.dev.vars
+.env
+.env.*
+*-migration-private/
+d1-import.sql
+manifest.json
+
