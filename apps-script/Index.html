@@ -1,0 +1,135 @@
+<!DOCTYPE html><html><head><base target="_top"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:#f3f6fa;color:#183047;font:14px system-ui}header{background:#163d61;color:#fff;padding:18px 25px}header h2{margin:0 0 5px}main{max-width:1200px;margin:20px auto;padding:0 15px}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}button{background:#156cb2;color:#fff;border:0;border-radius:7px;padding:9px 14px;cursor:pointer}button:disabled{opacity:.4}button.alt{background:#dfe9f2;color:#17374f}.card{background:white;padding:18px;border-radius:10px;box-shadow:0 1px 9px #0001;margin:12px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}.metric{font-size:26px;font-weight:700}input,select,textarea{padding:9px;border:1px solid #cad5df;border-radius:6px;max-width:100%;box-sizing:border-box;width:100%;margin:5px 0 11px}label{font-size:12px;color:#546879}table{border-collapse:collapse;width:100%;min-width:700px}td,th{padding:9px;border-bottom:1px solid #dfe7ed;text-align:left}th{background:#f3f7fa}.scroll{overflow:auto}.error{color:#b42318}.muted{color:#6b7785}.hidden{display:none} .tag{background:#edf3f9;border-radius:4px;padding:4px 6px}</style></head><body><header><h2>DataCell Task Management</h2><span id="who">Loading…</span></header><main><div id="notice" class="muted">Loading database…</div><nav class="tabs" id="nav"></nav><section id="view"></section></main><script>
+let state = null, tab = 'Dashboard', busy = false;
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g,
+  x => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
+
+function notice(message, failed = false) {
+  $('#notice').className = failed ? 'error' : 'muted';
+  $('#notice').textContent = message;
+}
+function setBusy(value) {
+  busy = value;
+  document.querySelectorAll('button,input,select,textarea')
+    .forEach(el => { el.disabled = value; });
+}
+function showError(error) {
+  notice(error && error.message ? error.message : String(error || 'Request failed'), true);
+  if (!state) $('#who').textContent = 'Unable to load account';
+  let retry = document.getElementById('retryLoad');
+  if (!retry) {
+    retry = document.createElement('button');
+    retry.id = 'retryLoad';
+    retry.type = 'button';
+    retry.textContent = 'Reload data';
+    $('#notice').after(retry);
+  }
+  retry.disabled = busy;
+  retry.onclick = reload;
+}
+function call(fn, args, done) {
+  if (busy) return;
+  setBusy(true);
+  notice('Working…');
+  const retry = document.getElementById('retryLoad');
+  if (retry) retry.remove();
+  let finished = false;
+  const finish = () => {
+    if (finished) return false;
+    finished = true;
+    clearTimeout(timer);
+    setBusy(false);
+    return true;
+  };
+  const timer = setTimeout(() => {
+    if (finish()) {
+      showError(new Error(fn === 'bootstrap'
+        ? 'Loading timed out. Use Reload data.'
+        : 'Request timed out. Reload data to check whether the change was saved before submitting again.'));
+    }
+  }, 45000);
+  try {
+    if (!window.google || !google.script || !google.script.run) {
+      throw new Error('Open this page through the Apps Script Web App URL.');
+    }
+    const runner = google.script.run
+      .withSuccessHandler(result => {
+        if (!finish()) return;
+        try {
+          notice('');
+          done(result);
+        } catch (error) {
+          showError(error);
+        }
+      })
+      .withFailureHandler(error => {
+        if (finish()) showError(error);
+      });
+    runner[fn](...args);
+  } catch (error) {
+    if (finish()) showError(error);
+  }
+}
+function validateBootstrap(result) {
+  if (!result || typeof result !== 'object' || !result.user ||
+      typeof result.user.email !== 'string' || !result.user.email.trim() ||
+      !['admin','manager','user'].includes(result.user.role)) {
+    throw new Error('Invalid account response from bootstrap. Check Code.gs and the deployment version.');
+  }
+  for (const key of ['tasks','users','workHours','leave']) {
+    if (!Array.isArray(result[key]) ||
+        result[key].some(row => !row || typeof row !== 'object' || Array.isArray(row))) {
+      throw new Error('Invalid database response: ' + key);
+    }
+  }
+  return result;
+}
+function reload() {
+  if (busy) return;
+  state = null;
+  $('#nav').innerHTML = '';
+  $('#view').innerHTML = '';
+  $('#who').textContent = 'Loading…';
+  call('bootstrap', [], result => {
+    const next = validateBootstrap(result);
+    state = next;
+    $('#who').textContent = (next.user.name || next.user.email) +
+      ' · ' + next.user.email + ' · ' + next.user.role;
+    try { draw(); } catch (error) {
+      state = null;
+      $('#nav').innerHTML = '';
+      $('#view').innerHTML = '';
+      throw error;
+    }
+  });
+}
+function draw() {
+  if (!state || !state.user) return;
+  const tabs = ['Dashboard','Tasks','Work Hours','Leave'];
+  if (state.user.role === 'admin') tabs.push('Users');
+  if (!tabs.includes(tab)) tab = 'Dashboard';
+  $('#nav').innerHTML = tabs.map(x =>
+    `<button class="${x === tab ? '' : 'alt'}" data-tab="${x}">${x}</button>`).join('');
+  $('#nav').querySelectorAll('button').forEach(button => {
+    button.onclick = () => {
+      if (busy) return;
+      tab = button.dataset.tab;
+      try { draw(); } catch (error) { showError(error); }
+    };
+  });
+  $('#view').innerHTML = ({
+    Dashboard: dashboard, Tasks: tasks, 'Work Hours': hours, Leave: leave, Users: users
+  })[tab]();
+  wire();
+  setBusy(busy);
+}
+
+function dashboard(){const t=state.tasks,done=t.filter(x=>x.status==='Done').length;return `<div class="grid"><div class="card"><div class="muted">Total Tasks</div><div class="metric">${t.length}</div></div><div class="card"><div class="muted">Completed</div><div class="metric">${done}</div></div><div class="card"><div class="muted">Pending</div><div class="metric">${t.length-done}</div></div><div class="card"><div class="muted">Completion %</div><div class="metric">${t.length?Math.round(done/t.length*100):0}%</div></div></div><p class="muted">Fresh Google Sheets database · Live operational entries only</p>`}
+function formFields(spec){return spec.map(([name,label,type,defaultValue])=>`<label>${label}<${type==='textarea'?'textarea':'input'} name="${name}" ${type==='textarea'?'':`type="${type||'text'}"`} ${defaultValue?'value="'+esc(defaultValue)+'"':''} ${['title','email','assignee_email','minutes','work_date','from_date','to_date'].includes(name)?'required':''}>${type==='textarea'?'':' '}</${type==='textarea'?'textarea':'input'}></label>`).join('')}
+function tasks(){return `${state.user.role==='admin'?`<div class="card"><h3>Create Task</h3><form id="taskForm">${formFields([['title','Task title'],['description','Description','textarea'],['assignee_email','Assignee Google email','email'],['department','Department'],['plan_date','Plan date','date'],['plan_minutes','Plan minutes','number']])}<label>Priority<select name="priority"><option>Normal</option><option>High</option><option>Low</option></select></label><button>Create task</button></form></div>`:''}<div class="card"><h3>Task List</h3><div class="scroll"><table><thead><tr><th>Task</th><th>Assignee</th><th>Due</th><th>Status</th><th>Plan min</th><th>Actual min</th><th>Action</th></tr></thead><tbody>${state.tasks.map(t=>`<tr><td>${esc(t.title)}</td><td>${esc(t.assignee_email)}</td><td>${esc(t.plan_date)}</td><td>${esc(t.status)}</td><td>${esc(t.plan_minutes)}</td><td>${esc(t.actual_minutes)}</td><td>${state.user.role==='admin'?`<button class="alt" data-assign="${esc(t.id)}" data-v="${esc(t.version)}">Assign</button> `:''}${t.status==='Done'?'—':`<button data-complete="${esc(t.id)}" data-v="${esc(t.version)}">Done</button>`}</td></tr>`).join('')}</tbody></table></div></div>`}
+function hours(){return `<div class="card"><h3>Work Hour Request</h3><form id="hourForm">${formFields([['work_date','Work date','date'],['minutes','Minutes','number'],['note','Notes','textarea']])}<button>Submit</button></form></div>${requestTable('work_hours',state.workHours)}`}
+function leave(){return `<div class="card"><h3>Leave Request</h3><form id="leaveForm">${formFields([['from_date','From','date'],['to_date','To','date'],['type','Type'],['reason','Reason','textarea']])}<button>Submit</button></form></div>${requestTable('leave_requests',state.leave)}`}
+function requestTable(type,arr){return `<div class="card"><h3>${type==='work_hours'?'Work Hour':'Leave'} Requests</h3><div class="scroll"><table><tr><th>Employee</th><th>Date</th><th>Details</th><th>Status</th><th>Review</th></tr>${arr.map(r=>`<tr><td>${esc(r.employee_email)}</td><td>${esc(r.work_date||r.from_date)}</td><td>${esc(r.minutes||r.type)}</td><td>${esc(r.status)}</td><td>${state.user.role==='admin'&&r.status==='Pending'?`<button data-review="${type}" data-id="${esc(r.id)}" data-decision="Approved">Approve</button> <button class="alt" data-review="${type}" data-id="${esc(r.id)}" data-decision="Rejected">Reject</button>`:'—'}</td></tr>`).join('')}</table></div></div>`}
+function users(){return `<div class="card"><h3>Add Google Account</h3><form id="userForm">${formFields([['email','Email','email'],['name','Name'],['department','Department']])}<label>Role<select name="role"><option value="user">User</option><option value="manager">Manager</option><option value="admin">Admin</option></select></label><button>Add user</button></form></div><div class="card"><h3>Users</h3><div class="scroll"><table><tr><th>Name</th><th>Email</th><th>Role</th><th>Active</th></tr>${state.users.map(u=>`<tr><td>${esc(u.name)}</td><td>${esc(u.email)}</td><td>${esc(u.role)}</td><td>${esc(u.active)}</td></tr>`).join('')}</table></div></div>`}
+function wire(){for(const [id,fn] of [['taskForm','createTask'],['hourForm','submitWorkHours'],['leaveForm','submitLeave'],['userForm','addUser']]){let form=document.getElementById(id);if(form)form.onsubmit=e=>{e.preventDefault();const data=Object.fromEntries(new FormData(form));call(fn,[data],reload)}}document.querySelectorAll('[data-complete]').forEach(b=>b.onclick=()=>{let n=prompt('Actual work minutes?');if(n===null)return;call('completeTask',[b.dataset.complete,Number(n),Number(b.dataset.v)],reload)});document.querySelectorAll('[data-assign]').forEach(b=>b.onclick=()=>{const email=prompt('Assigned user Google email?');if(email===null)return;call('assignTask',[b.dataset.assign,email,Number(b.dataset.v)],reload)});document.querySelectorAll('[data-review]').forEach(b=>b.onclick=()=>{if(!confirm('Confirm '+b.dataset.decision+'?'))return;call('reviewRequest',[b.dataset.review,b.dataset.id,b.dataset.decision],reload)})}reload();</script></body></html>
+
