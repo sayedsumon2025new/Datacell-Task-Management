@@ -1,0 +1,12 @@
+const fs=require('node:fs'),path=require('node:path'),zlib=require('node:zlib'),crypto=require('node:crypto');
+const root=__dirname;
+const files=['Core.gs','Code.gs','Dashboard.html','WorkHourPortal.html','WorkHourDashboard.html','appsscript.json'];
+const assets=Object.fromEntries(['Dashboard','WorkHourPortal','WorkHourDashboard'].map(name=>[name,zlib.gzipSync(fs.readFileSync(path.join(root,name+'.html')),{level:9}).toString('base64')]));
+const core=fs.readFileSync(path.join(root,'Core.gs'),'utf8');
+const glue=fs.readFileSync(path.join(root,'Code.gs'),'utf8').replace("HtmlService.createHtmlOutputFromFile('Dashboard')","HtmlService.createHtmlOutput(sheetsAsset_('Dashboard'))").replace("HtmlService.createHtmlOutputFromFile(name==='portal'?'WorkHourPortal':'WorkHourDashboard').getContent()","sheetsAsset_(name==='portal'?'WorkHourPortal':'WorkHourDashboard')");
+const helper="\nfunction sheetsAsset_(name){const encoded=DATACELL_BUNDLED_HTML_[name];if(!encoded)throw Error('Unknown bundled asset');return Utilities.ungzip(Utilities.newBlob(Utilities.base64Decode(encoded),'application/gzip')).getDataAsString('UTF-8');}\n";
+fs.writeFileSync(path.join(root,'Standalone-Code.gs'),core+'\n'+glue+helper+'\nconst DATACELL_BUNDLED_HTML_='+JSON.stringify(assets)+';\n');
+for(const [name,data]of Object.entries(assets))if(!zlib.gunzipSync(Buffer.from(data,'base64')).equals(fs.readFileSync(path.join(root,name+'.html'))))throw Error('Bundle mismatch');
+const hashes=[...files,'Standalone-Code.gs'].map(name=>crypto.createHash('sha256').update(fs.readFileSync(path.join(root,name))).digest('hex')+'  '+name);
+fs.writeFileSync(path.join(root,'SHA256SUMS.txt'),hashes.join('\n')+'\n');
+console.log('Single-file bundle generated and all three HTML assets verified.');

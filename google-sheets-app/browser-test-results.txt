@@ -1,0 +1,31 @@
+{
+  "passed": 24,
+  "checks": [
+    "Admin login and 93-task overview",
+    "Task assignment saved through RPC",
+    "Report publication",
+    "OVERVIEW navigation",
+    "KPI navigation",
+    "MULTI SKILL navigation",
+    "ALL TASKS navigation",
+    "WORKING HOURS navigation",
+    "LEAVE MANAGEMENT navigation",
+    "SETTINGS navigation",
+    "Work Hour p1",
+    "Work Hour p2",
+    "Work Hour p3",
+    "Work Hour p4",
+    "Work Hour p5",
+    "Work Hour p6",
+    "Work Hour p7",
+    "Work Hour User & Tab Access",
+    "Ordinary user sees only assigned tasks and allowed navigation",
+    "Direct unauthorized task write rejected",
+    "Untrusted task HTML did not execute",
+    "No Supabase network requests",
+    "No uncaught JavaScript errors",
+    "Source fixture unchanged"
+  ],
+  "chartRendering": "Chart API test double; actual chart rendering remains a live-deployment check",
+  "backend": "Actual server source with mocked Sheets services"
+}
